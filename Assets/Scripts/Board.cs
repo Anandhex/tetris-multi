@@ -28,8 +28,8 @@ public class Board : MonoBehaviour
        } 
    } 
 
-public float initialDropRate = 1.0f; // Initial time between drops
-public float speedIncreasePerMinute = 0.1f; // How much to decrease drop time per minute
+public float initialDropRate = 0.75f; // Initial time between drops
+public float speedIncreasePerMinute = 0.5f; // How much to decrease drop time per minute
 public float minimumDropRate = 0.1f; // Fastest allowed drop rate
 private float gameStartTime;
 
@@ -148,7 +148,7 @@ public float CurrentDropRate {
     
     // Calculate score speed bonus based on player score
     // This creates a gradual speed increase as score goes up
-    scoreSpeedBonus = Mathf.Min(playerScore / 10000f, 0.5f);
+    scoreSpeedBonus = Mathf.Min(playerScore / 10000f, 1.0f);
 
     if (linesCleared >= 4) {
         // Tetris (4 lines) gives temporary significant speed boost
