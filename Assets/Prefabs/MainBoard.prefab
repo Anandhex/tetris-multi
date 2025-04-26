@@ -75,6 +75,8 @@ MonoBehaviour:
     tile: {fileID: 11400000, guid: 3653eb614d5ae4611b090f385310dd3b, type: 2}
   - tetromino: 6
     tile: {fileID: 11400000, guid: 518bff1b5bade4dc682a939aa4e10876, type: 2}
+  fireBorderController: {fileID: 0}
+  debrisPrefab: {fileID: 7462014480564348719, guid: 51cbaab57cbfd41dea7605a30e66ed7c, type: 3}
   spawnPosition: {x: -1, y: 8, z: 0}
   boardSize: {x: 10, y: 20}
   playerScoreToDisplay: {fileID: 8639489407357629593}

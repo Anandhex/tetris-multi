@@ -12,6 +12,9 @@ public class Board : MonoBehaviour
     public TetrominoData nextPieceData { get; private set; }
     public string playerTag;
     public TetrominoData[] tetrominoes;
+    // public FireBorderController fireBorderController;
+    [SerializeField] private GameObject debrisPrefab;
+
     public Vector3Int spawnPosition;
     public Vector2Int boardSize = new Vector2Int(10, 20);
     private float scoreSpeedBonus = 0f;
@@ -85,6 +88,10 @@ public class Board : MonoBehaviour
     private void Update()
     {
         this.playerScoreToDisplay.text = this.playerScore.ToString();
+        // if (fireBorderController != null)
+        // {
+        //     fireBorderController.SetGameSpeed(1f / CurrentDropRate);
+        // }
     }
 
     public void GenerateNextPiece()
@@ -214,6 +221,28 @@ public class Board : MonoBehaviour
         temporarySpeedBoost -= amount;
     }
 
+
+    private void SpawnDebris(Vector3Int tilePosition, Color color)
+    {
+        Vector3 worldPosition = this.tilemap.CellToWorld(tilePosition) + new Vector3(0.5f, 0.5f, 0); // center it
+        GameObject debris = Instantiate(debrisPrefab, worldPosition, Quaternion.identity);
+        SpriteRenderer sr = debris.GetComponent<SpriteRenderer>();
+        sr.sortingOrder = 200;
+        if (sr != null)
+        {
+            sr.color = color;
+        }
+
+        Rigidbody2D rb = debris.GetComponent<Rigidbody2D>();
+        if (rb != null)
+        {
+            float randomForceX = Random.Range(-1f, 1f); // scatter a little
+            float randomForceY = Random.Range(1f, 3f);  // upward burst
+            rb.AddForce(new Vector2(randomForceX, randomForceY), ForceMode2D.Impulse);
+        }
+
+        Destroy(debris, 2f); // destroy after 2 seconds
+    }
     private bool IsLineFull(int row)
     {
         RectInt bounds = this.Bounds;
@@ -233,7 +262,25 @@ public class Board : MonoBehaviour
         for (int col = bounds.xMin; col < bounds.xMax; col++)
         {
             Vector3Int position = new Vector3Int(col, row, 0);
+            TileBase tile = this.tilemap.GetTile(position);
+            Sprite sprite = this.tilemap.GetSprite(position);
             this.tilemap.SetTile(position, null);
+            Color tileColor = Color.white; // fallback
+            if (sprite != null)
+            {
+                Texture2D texture = sprite.texture;
+                if (texture != null)
+                {
+                    // Sample pixel from the center of the sprite's rect
+                    int centerX = Mathf.FloorToInt(sprite.rect.x + sprite.rect.width / 2f);
+                    int centerY = Mathf.FloorToInt(sprite.rect.y + sprite.rect.height / 2f);
+
+                    // Use GetPixelBilinear if you want normalized 0..1 coords
+                    tileColor = texture.GetPixel(centerX, centerY);
+                }
+            }
+            SpawnDebris(position, tileColor); // SPAWN DEBRIS
+            tilemap.SetTile(position, null);
         }
 
         while (row < bounds.yMax)
