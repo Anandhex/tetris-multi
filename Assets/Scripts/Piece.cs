@@ -7,6 +7,8 @@ public class Piece : MonoBehaviour
     public Vector3Int[] cells { get; private set; }
     public Vector3Int position { get; private set; }
     public int rotationIndex { get; private set; }
+    private IPlayerInputController inputController;
+
 
     public float stepDelay = 1f;
     public float moveDelay = 0.1f;
@@ -16,57 +18,86 @@ public class Piece : MonoBehaviour
     private float moveTime;
     private float lockTime;
 
-    
 
-    public void Initialize(Board board, Vector3Int position, TetrominoData data)
+
+    public void Initialize(Board board, Vector3Int position, TetrominoData data, IPlayerInputController controller)
     {
+
+        if (board == null)
+        {
+            Debug.LogError("Board is null in Piece.Initialize");
+            return;
+        }
+
+        if (controller == null)
+        {
+            Debug.LogError("InputController is null in Piece.Initialize");
+            return; // Don't continue with initialization if controller is null
+        }
+
         this.data = data;
         this.board = board;
         this.position = position;
+        this.inputController = controller;
+
 
         rotationIndex = 0;
         moveTime = Time.time + moveDelay;
         lockTime = 0f;
 
-         UpdateStepDelay();
+        UpdateStepDelay();
 
-        if (cells == null) {
+        if (cells == null)
+        {
             cells = new Vector3Int[data.cells.Length];
         }
 
-        for (int i = 0; i < cells.Length; i++) {
+        for (int i = 0; i < cells.Length; i++)
+        {
             cells[i] = (Vector3Int)data.cells[i];
         }
     }
 
     private void UpdateStepDelay()
-{
-    stepDelay = board.CurrentDropRate;
-    stepTime = Time.time + stepDelay;
-}
+    {
+        stepDelay = board.CurrentDropRate;
+        stepTime = Time.time + stepDelay;
+    }
 
 
     private void Update()
     {
+        if (board == null || inputController == null)
+        {
+            Debug.LogWarning("Piece not properly initialized, skipping update");
+            return;
+        }
+
         board.Clear(this);
 
         lockTime += Time.deltaTime;
 
-        if (Input.GetKeyDown(KeyCode.Q)) {
+        if (this.inputController.GetRotateLeft())
+        {
             Rotate(-1);
-        } else if (Input.GetKeyDown(KeyCode.E)) {
+        }
+        else if (this.inputController.GetRotateRight())
+        {
             Rotate(1);
         }
 
-        if (Input.GetKeyDown(KeyCode.Space)) {
+        if (this.inputController.GetHardDrop())
+        {
             HardDrop();
         }
 
-        if (Time.time > moveTime) {
+        if (Time.time > moveTime)
+        {
             HandleMoveInputs();
         }
 
-        if (Time.time > stepTime) {
+        if (Time.time > stepTime)
+        {
             Step();
         }
 
@@ -75,35 +106,41 @@ public class Piece : MonoBehaviour
 
     private void HandleMoveInputs()
     {
-        if (Input.GetKey(KeyCode.S)|| Input.GetKey(KeyCode.DownArrow))
+        if (this.inputController.GetDown())
         {
-            if (Move(Vector2Int.down)) {
+            if (Move(Vector2Int.down))
+            {
                 stepTime = Time.time + stepDelay;
             }
         }
 
-        if (Input.GetKey(KeyCode.A)|| Input.GetKey(KeyCode.LeftArrow)) {
+        if (this.inputController.GetLeft())
+        {
             Move(Vector2Int.left);
-        } else if (Input.GetKey(KeyCode.D)|| Input.GetKey(KeyCode.RightArrow)) {
+        }
+        else if (this.inputController.GetRight())
+        {
             Move(Vector2Int.right);
         }
     }
 
     private void Step()
     {
-         UpdateStepDelay();
+        UpdateStepDelay();
         stepTime = Time.time + stepDelay;
 
         Move(Vector2Int.down);
 
-        if (lockTime >= lockDelay) {
+        if (lockTime >= lockDelay)
+        {
             Lock();
         }
     }
 
     private void HardDrop()
     {
-        while (Move(Vector2Int.down)) {
+        while (Move(Vector2Int.down))
+        {
             continue;
         }
 
@@ -187,7 +224,8 @@ public class Piece : MonoBehaviour
         {
             Vector2Int translation = data.wallKicks[wallKickIndex, i];
 
-            if (Move(translation)) {
+            if (Move(translation))
+            {
                 return true;
             }
         }
@@ -199,7 +237,8 @@ public class Piece : MonoBehaviour
     {
         int wallKickIndex = rotationIndex * 2;
 
-        if (rotationDirection < 0) {
+        if (rotationDirection < 0)
+        {
             wallKickIndex--;
         }
 
@@ -208,9 +247,12 @@ public class Piece : MonoBehaviour
 
     private int Wrap(int input, int min, int max)
     {
-        if (input < min) {
+        if (input < min)
+        {
             return max - (min - input) % (max - min);
-        } else {
+        }
+        else
+        {
             return min + (input - min) % (max - min);
         }
     }

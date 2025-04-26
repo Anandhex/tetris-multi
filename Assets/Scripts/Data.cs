@@ -51,4 +51,5 @@ public static class Data
         { Tetromino.Z, WallKicksJLOSTZ },
     };
     public static int PlayerScore = 0;
+    public static BoardManager.GameMode gameMode = BoardManager.GameMode.SinglePlayer;
 }

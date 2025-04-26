@@ -4,17 +4,20 @@ using TMPro;
 
 public class GameOver : MonoBehaviour
 {
-   public TMP_Text scoreText;
+  public TMP_Text scoreText;
 
-   public void OnRetryClick(){
+  public void OnRetryClick()
+  {
     SceneManager.LoadScene(1);
-   }
+  }
 
-   public void Start(){
-     this.scoreText.text = "Player Score " + Data.PlayerScore;
-   }
+  public void Start()
+  {
+    this.scoreText.text = "Player Score " + Data.PlayerScore;
+  }
 
-   public void OnMenuClick(){
+  public void OnMenuClick()
+  {
     SceneManager.LoadScene(0);
-   }
+  }
 }
