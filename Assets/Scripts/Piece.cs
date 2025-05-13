@@ -129,11 +129,17 @@ public class Piece : MonoBehaviour
         UpdateStepDelay();
         stepTime = Time.time + stepDelay;
 
-        Move(Vector2Int.down);
+        // Attempt to move the piece down
+        bool movedDown = Move(Vector2Int.down);
 
-        if (lockTime >= lockDelay)
+        // If it couldn't move down, trigger lock after the lock delay
+        if (!movedDown && lockTime >= lockDelay)
         {
             Lock();
+        }
+        else if (movedDown)
+        {
+            lockTime = 0f; // reset lock time when the piece moves down
         }
     }
 
@@ -166,7 +172,8 @@ public class Piece : MonoBehaviour
         {
             position = newPosition;
             moveTime = Time.time + moveDelay;
-            lockTime = 0f; // reset
+            if (translation == Vector2Int.down)
+                lockTime = 0f; // reset
         }
 
         return valid;

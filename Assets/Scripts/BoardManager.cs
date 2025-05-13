@@ -5,13 +5,14 @@ public class BoardManager : MonoBehaviour
     public GameObject boardPrefab;  // Assign your BoardResuse prefab here
 
     public enum GameMode { SinglePlayer, TwoPlayer, VsAI, AIVsAI, AI };
-    private GameMode currentMode = Data.gameMode;
+    public GameMode currentMode = Data.gameMode;
 
     public Vector3Int singlePlayerPosition = new Vector3Int(0, 0, 0);
     public Vector3Int player1Position = new Vector3Int(-10, 0, 0);
     public Vector3Int player2Position = new Vector3Int(10, 0, 0);
 
     private Board[] activeBoards;
+
 
     void Start()
     {
@@ -55,18 +56,38 @@ public class BoardManager : MonoBehaviour
         {
             activeBoards = new Board[2];
             activeBoards[0] = CreateBoard(player1Position, new Player1InputController(), "Human Player");
-            activeBoards[1] = CreateBoard(player2Position, new AIController(), "AI Player");
+
+            // Use TetrisMLAgent instead of AIController
+            TetrisMLAgent mlAgent = gameObject.AddComponent<TetrisMLAgent>();
+            activeBoards[1] = CreateBoard(player2Position, mlAgent, "ML Player");
         }
         else if (currentMode == GameMode.AI)
         {
             activeBoards = new Board[1];
-            activeBoards[0] = CreateBoard(singlePlayerPosition, new AIController(), "AI Player");
+            TetrisMLAgent[] existingAgents = FindObjectsOfType<TetrisMLAgent>();
+            foreach (TetrisMLAgent agent in existingAgents)
+            {
+                if (agent != null)
+                {
+                    Debug.Log($"Destroying existing agent: {agent.GetInstanceID()}");
+                    Destroy(agent);
+                }
+            }
+
+            // Use TetrisMLAgent instead of AIController
+            TetrisMLAgent mlAgent = gameObject.AddComponent<TetrisMLAgent>();
+            activeBoards[0] = CreateBoard(singlePlayerPosition, mlAgent, "ML Player");
         }
         else if (currentMode == GameMode.AIVsAI)
         {
             activeBoards = new Board[2];
-            activeBoards[0] = CreateBoard(player1Position, new AIController(), "AI Player 1");
-            activeBoards[0] = CreateBoard(player2Position, new AIController(), "AI Player 2");
+
+            // Use TetrisMLAgents for both players
+            TetrisMLAgent mlAgent1 = gameObject.AddComponent<TetrisMLAgent>();
+            TetrisMLAgent mlAgent2 = gameObject.AddComponent<TetrisMLAgent>();
+
+            activeBoards[0] = CreateBoard(player1Position, mlAgent1, "ML Player 1");
+            activeBoards[1] = CreateBoard(player2Position, mlAgent2, "ML Player 2");
         }
         else
         {
@@ -75,7 +96,6 @@ public class BoardManager : MonoBehaviour
             activeBoards[1] = CreateBoard(player2Position, new Player2InputController(), "Player 2");
         }
     }
-
     Board CreateBoard(Vector3Int position, IPlayerInputController input, string playerLabel)
     {
         Debug.Log($"Creating board for {playerLabel} at position {position}");
@@ -99,9 +119,14 @@ public class BoardManager : MonoBehaviour
 
         // Set the input controller
         board.inputController = input;
+
+        // Special handling for ML agent
+        // if (input is TetrisMLAgent mlAgent)
+        // {
+        //     mlAgent.Initialize(board);
+        // }
+
         board.playerTag = playerLabel;
-
-
 
         return board;
     }

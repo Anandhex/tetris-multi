@@ -3,6 +3,7 @@ using UnityEngine.Tilemaps;
 using UnityEngine.SceneManagement;
 using TMPro;
 using System.Collections;
+using System.Collections.Generic;
 
 
 public class Board : MonoBehaviour
@@ -16,7 +17,7 @@ public class Board : MonoBehaviour
     [SerializeField] private GameObject debrisPrefab;
 
     public Vector3Int spawnPosition;
-    public Vector2Int boardSize = new Vector2Int(10, 20);
+    public Vector2Int boardSize = new Vector2Int(10, 70);
     private float scoreSpeedBonus = 0f;
 
     public IPlayerInputController inputController;
@@ -26,6 +27,8 @@ public class Board : MonoBehaviour
     public TMP_Text playerTagHolder;
     public NextPiece nextPieceDisplay;
 
+    // Flag to check if we're in ML training mode
+    private bool isMLTraining = false;
 
     public RectInt Bounds
     {
@@ -65,6 +68,8 @@ public class Board : MonoBehaviour
         {
             this.tetrominoes[i].Initialize();
         }
+
+        // Check if we're using ML-Agent as input controller
     }
 
     private void Start()
@@ -82,12 +87,21 @@ public class Board : MonoBehaviour
         {
             Debug.LogError("Cannot spawn piece: Required components not initialized");
         }
-        this.playerTagHolder.text = playerTag;
+
+        if (playerTagHolder != null)
+        {
+            this.playerTagHolder.text = playerTag;
+        }
     }
 
     private void Update()
     {
-        this.playerScoreToDisplay.text = this.playerScore.ToString();
+
+
+        if (playerScoreToDisplay != null)
+        {
+            this.playerScoreToDisplay.text = this.playerScore.ToString();
+        }
         // if (fireBorderController != null)
         // {
         //     fireBorderController.SetGameSpeed(1f / CurrentDropRate);
@@ -101,7 +115,6 @@ public class Board : MonoBehaviour
 
         if (nextPieceDisplay != null)
         {
-            Debug.Log("called for the next piece");
             nextPieceDisplay.DisplayNextPiece(this.nextPieceData);
         }
     }
@@ -109,14 +122,20 @@ public class Board : MonoBehaviour
 
     public void SpawnPiece()
     {
-
-
         int random = Random.Range(0, this.tetrominoes.Length);
         TetrominoData data = this.tetrominoes[random];
 
         TetrominoData pieceToUse = this.nextPieceData.Equals(default(TetrominoData)) ? data : this.nextPieceData;
 
         this.activePiece.Initialize(this, this.spawnPosition, pieceToUse, this.inputController);
+
+        // Inform ML agent about the new piece if applicable
+        TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
+        if (mlAgent != null)
+        {
+            mlAgent.SetCurrentPiece(this.activePiece);
+        }
+
         GenerateNextPiece();
 
         if (IsValidPosition(this.activePiece, this.spawnPosition))
@@ -129,10 +148,178 @@ public class Board : MonoBehaviour
             GameOver();
         }
     }
+
+    public float CalculateStackHeight()
+    {
+        int maxHeight = 0;
+        for (int x = Bounds.xMin; x < Bounds.xMax; x++)
+        {
+            for (int y = Bounds.yMax - 1; y >= Bounds.yMin; y--)
+            {
+                if (tilemap.HasTile(new Vector3Int(x, y, 0))) // Found a filled cell
+                {
+                    maxHeight = Mathf.Max(maxHeight, Bounds.yMax - y);
+                    break;
+                }
+            }
+        }
+        return maxHeight;
+    }
+
+    public List<Vector2Int> GetHolePositions()
+    {
+        List<Vector2Int> holes = new List<Vector2Int>();
+        RectInt bounds = this.Bounds;
+
+        for (int x = bounds.xMin; x < bounds.xMax; x++)
+        {
+            bool blockAbove = false;
+            for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
+            {
+                if (tilemap.HasTile(new Vector3Int(x, y, 0)))
+                {
+                    blockAbove = true;
+                }
+                else if (blockAbove)
+                {
+                    holes.Add(new Vector2Int(x, y));
+                }
+            }
+        }
+        return holes;
+    }
+    public int CountHoles()
+    {
+        int holes = 0;
+        for (int x = Bounds.xMin; x < Bounds.xMax; x++)
+        {
+            bool blockFound = false;
+            for (int y = Bounds.yMax - 1; y >= Bounds.yMin; y--)
+            {
+                if (tilemap.HasTile(new Vector3Int(x, y, 0)))
+                {
+                    blockFound = true;
+                }
+                else if (blockFound)
+                {
+                    // Empty cell below a block is a hole
+                    holes++;
+                }
+            }
+        }
+        return holes;
+    }
+
+    public bool IsPerfectClear()
+    {
+        RectInt bounds = this.Bounds;
+
+        for (int x = bounds.xMin; x < bounds.xMax; x++)
+        {
+            for (int y = bounds.yMin; y < bounds.yMax; y++)
+            {
+                if (tilemap.HasTile(new Vector3Int(x, y, 0)))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    public bool LastRotationWasUseless(Piece piece, Vector3Int originalPosition, Vector3Int[] originalCells)
+    {
+        Vector3Int[] rotatedCells = piece.cells;
+        for (int i = 0; i < originalCells.Length; i++)
+        {
+            if (originalCells[i] + originalPosition != rotatedCells[i] + piece.position)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public bool HasDeepWell(int depthThreshold = 4)
+    {
+        RectInt bounds = this.Bounds;
+
+        for (int x = bounds.xMin + 1; x < bounds.xMax - 1; x++)
+        {
+            int currentDepth = 0;
+            for (int y = bounds.yMin; y < bounds.yMax; y++)
+            {
+                bool centerEmpty = !tilemap.HasTile(new Vector3Int(x, y, 0));
+                bool leftFilled = tilemap.HasTile(new Vector3Int(x - 1, y, 0));
+                bool rightFilled = tilemap.HasTile(new Vector3Int(x + 1, y, 0));
+
+                if (centerEmpty && leftFilled && rightFilled)
+                {
+                    currentDepth++;
+                    if (currentDepth >= depthThreshold)
+                    {
+                        return true;
+                    }
+                }
+                else
+                {
+                    currentDepth = 0;
+                }
+            }
+        }
+
+        return false;
+    }
     private void GameOver()
     {
+        // Notify ML agent if this is an ML agent-controlled board
+        TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
+        if (mlAgent != null)
+        {
+            mlAgent.OnGameOver();
+
+            // If in ML training mode, reset the game instead of loading the game over scene
+
+            StartCoroutine(ResetGameForMLTraining());
+            return;
+        }
+
+        // Store the score for the game over screen
+        Data.PlayerScore = this.playerScore;
+
+        // Load game over scene only if not in ML training
         SceneManager.LoadScene(2);
     }
+
+    private IEnumerator ResetGameForMLTraining()
+    {
+        // Short delay to ensure ML Agent has processed the game over
+        yield return new WaitForSeconds(0.1f);
+
+        // Reset the board
+        ClearBoard();
+        this.playerScore = 0;
+        this.gameStartTime = Time.time;
+
+        // Spawn a new piece to start the game again
+        SpawnPiece();
+    }
+
+    private void ClearBoard()
+    {
+        // Clear the entire tilemap
+        RectInt bounds = this.Bounds;
+        for (int row = bounds.yMin; row < bounds.yMax; row++)
+        {
+            for (int col = bounds.xMin; col < bounds.xMax; col++)
+            {
+                Vector3Int position = new Vector3Int(col, row, 0);
+                this.tilemap.SetTile(position, null);
+            }
+        }
+    }
+
     public void Set(Piece piece)
     {
         for (int i = 0; i < piece.cells.Length; i++)
@@ -224,6 +411,9 @@ public class Board : MonoBehaviour
 
     private void SpawnDebris(Vector3Int tilePosition, Color color)
     {
+        // Skip debris generation during ML training to improve performance
+        if (isMLTraining) return;
+
         Vector3 worldPosition = this.tilemap.CellToWorld(tilePosition) + new Vector3(0.5f, 0.5f, 0); // center it
         GameObject debris = Instantiate(debrisPrefab, worldPosition, Quaternion.identity);
         SpriteRenderer sr = debris.GetComponent<SpriteRenderer>();
