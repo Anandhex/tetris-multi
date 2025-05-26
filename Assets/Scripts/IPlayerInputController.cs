@@ -6,4 +6,5 @@ public interface IPlayerInputController
     bool GetRotateLeft();
     bool GetRotateRight();
     bool GetHardDrop();
+    void InvertControls(bool invert);
 }

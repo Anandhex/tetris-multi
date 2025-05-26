@@ -210,7 +210,7 @@ public class Board : MonoBehaviour
         }
     }
 
-    private float temporarySpeedBoost = 0f;
+    public float temporarySpeedBoost = 0f;
 
     private IEnumerator ApplyTemporarySpeedBoost(float amount, float duration)
     {
@@ -296,4 +296,120 @@ public class Board : MonoBehaviour
             row++;
         }
     }
+
+
+    // Add this method for power-up system
+    public void AddPoints(int points)
+    {
+        this.playerScore += points;
+    }
+
+    // Clear a specific row (for power-ups)
+    public void ClearSpecificRow(int row)
+    {
+        RectInt bounds = this.Bounds;
+
+        // First, clear the selected row
+        for (int col = bounds.xMin; col < bounds.xMax; col++)
+        {
+            Vector3Int position = new Vector3Int(col, row, 0);
+
+            // Spawn debris effect for the cleared tile
+            TileBase tile = this.tilemap.GetTile(position);
+            if (tile != null)
+            {
+                // Get the color for debris
+                Color tileColor = Color.white; // fallback
+                Sprite sprite = this.tilemap.GetSprite(position);
+                if (sprite != null && sprite.texture != null)
+                {
+                    int centerX = Mathf.FloorToInt(sprite.rect.x + sprite.rect.width / 2f);
+                    int centerY = Mathf.FloorToInt(sprite.rect.y + sprite.rect.height / 2f);
+                    tileColor = sprite.texture.GetPixel(centerX, centerY);
+                }
+
+                SpawnDebris(position, tileColor);
+                this.tilemap.SetTile(position, null);
+            }
+        }
+
+        // Then move all rows above it down
+        for (int y = row; y < bounds.yMax - 1; y++)
+        {
+            for (int col = bounds.xMin; col < bounds.xMax; col++)
+            {
+                Vector3Int position = new Vector3Int(col, y + 1, 0);
+                TileBase above = this.tilemap.GetTile(position);
+
+                position = new Vector3Int(col, y, 0);
+                this.tilemap.SetTile(position, above);
+            }
+        }
+
+        // Add points for cleared row
+        playerScore += 50;
+    }
+
+    // Add garbage rows from the bottom
+    public void AddGarbageRows(int rowCount)
+    {
+        RectInt bounds = this.Bounds;
+
+        // First move all existing blocks up
+        for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
+        {
+            for (int col = bounds.xMin; col < bounds.xMax; col++)
+            {
+                Vector3Int position = new Vector3Int(col, y, 0);
+                TileBase tile = this.tilemap.GetTile(position);
+
+                if (tile != null)
+                {
+                    // If this would push a block out of bounds, trigger game over
+                    if (y + rowCount >= bounds.yMax)
+                    {
+                        GameOver();
+                        return;
+                    }
+
+                    // Move the tile up
+                    Vector3Int newPosition = new Vector3Int(col, y + rowCount, 0);
+                    this.tilemap.SetTile(newPosition, tile);
+                    this.tilemap.SetTile(position, null);
+                }
+            }
+        }
+
+        // Add garbage rows
+        for (int row = 0; row < rowCount; row++)
+        {
+            int garbageY = bounds.yMin + row;
+
+            // Create garbage with a single gap
+            int gapCol = Random.Range(bounds.xMin, bounds.xMax);
+
+            for (int col = bounds.xMin; col < bounds.xMax; col++)
+            {
+                if (col != gapCol) // Leave one gap
+                {
+                    Vector3Int position = new Vector3Int(col, garbageY, 0);
+
+                    // Use a special garbage tile (or regular tile)
+                    TileBase garbageTile = tetrominoes[0].tile; // Use the first tetromino's tile
+                    this.tilemap.SetTile(position, garbageTile);
+                }
+            }
+        }
+    }
+
+    // Get board world size (for visual effects)
+    public Vector3 GetBoardWorldSize()
+    {
+        RectInt bounds = this.Bounds;
+        Vector3 min = this.tilemap.CellToWorld(new Vector3Int(bounds.xMin, bounds.yMin, 0));
+        Vector3 max = this.tilemap.CellToWorld(new Vector3Int(bounds.xMax, bounds.yMax, 0));
+
+        return new Vector3(max.x - min.x, max.y - min.y, 0);
+    }
+
 }

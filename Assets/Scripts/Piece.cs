@@ -18,6 +18,18 @@ public class Piece : MonoBehaviour
     private float moveTime;
     private float lockTime;
 
+    // Existing code...
+
+    private bool isFrozen = false;
+
+    // Add this method for power-up system
+    public void SetFrozen(bool frozen)
+    {
+        this.isFrozen = frozen;
+    }
+
+
+
 
 
     public void Initialize(Board board, Vector3Int position, TetrominoData data, IPlayerInputController controller)
@@ -75,30 +87,34 @@ public class Piece : MonoBehaviour
 
         board.Clear(this);
 
-        lockTime += Time.deltaTime;
+        // Only proceed with normal piece update if not frozen
+        if (!isFrozen)
+        {
+            lockTime += Time.deltaTime;
 
-        if (this.inputController.GetRotateLeft())
-        {
-            Rotate(-1);
-        }
-        else if (this.inputController.GetRotateRight())
-        {
-            Rotate(1);
-        }
+            if (this.inputController.GetRotateLeft())
+            {
+                Rotate(-1);
+            }
+            else if (this.inputController.GetRotateRight())
+            {
+                Rotate(1);
+            }
 
-        if (this.inputController.GetHardDrop())
-        {
-            HardDrop();
-        }
+            if (this.inputController.GetHardDrop())
+            {
+                HardDrop();
+            }
 
-        if (Time.time > moveTime)
-        {
-            HandleMoveInputs();
-        }
+            if (Time.time > moveTime)
+            {
+                HandleMoveInputs();
+            }
 
-        if (Time.time > stepTime)
-        {
-            Step();
+            if (Time.time > stepTime)
+            {
+                Step();
+            }
         }
 
         board.Set(this);
@@ -172,7 +188,7 @@ public class Piece : MonoBehaviour
         return valid;
     }
 
-    private void Rotate(int direction)
+    public void Rotate(int direction)
     {
         int originalRotation = rotationIndex;
 
@@ -256,5 +272,8 @@ public class Piece : MonoBehaviour
             return min + (input - min) % (max - min);
         }
     }
+
+
+
 
 }
