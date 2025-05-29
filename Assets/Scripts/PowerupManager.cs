@@ -132,22 +132,20 @@ public class PowerUpManager : MonoBehaviour
     {
         if (availablePowerUps == null || availablePowerUps.Length == 0)
         {
+            // Simplified to just 5 essential power-ups
             availablePowerUps = new PowerUp[]
             {
+                // Self-benefit power-ups (Green)
                 new PowerUp(PowerUpType.ClearRow, "Clear Row", "Clear a row from your board"),
-                new PowerUp(PowerUpType.SlowDown, "Slow Down", "Slow down your game temporarily"),
                 new PowerUp(PowerUpType.BonusPoints, "Bonus Points", "Get 500 bonus points"),
-                new PowerUp(PowerUpType.BlockFreeze, "Freeze Block", "Current piece stops falling"),
-                new PowerUp(PowerUpType.ExtraPiece, "Store Piece", "Store current piece for later"),
+                new PowerUp(PowerUpType.SlowDown, "Slow Down", "Slow down your game temporarily"),
+                
+                // Opponent-affecting power-ups (Red)
                 new PowerUp(PowerUpType.AddGarbage, "Add Garbage", "Add garbage rows to opponent"),
-                new PowerUp(PowerUpType.SpeedUp, "Speed Up", "Increase opponent's speed"),
-                new PowerUp(PowerUpType.Confusion, "Confusion", "Rotate opponent's controls"),
-                new PowerUp(PowerUpType.BlockFlip, "Block Flip", "Rotate opponent's current piece"),
-                new PowerUp(PowerUpType.BlindMode, "Blind Mode", "Hide opponent's board partially"),
-                new PowerUp(PowerUpType.SwapPiece, "Swap Piece", "Swap current piece with opponent")
+                new PowerUp(PowerUpType.SpeedUp, "Speed Up", "Increase opponent's drop speed")
             };
 
-            // Assign default icons until proper ones are set
+            // Assign default icons
             foreach (PowerUp powerUp in availablePowerUps)
             {
                 if (powerUp.icon == null)
@@ -155,9 +153,7 @@ public class PowerUpManager : MonoBehaviour
                     // Create a simple colored sprite icon based on self/opponent effect
                     bool isSelfBenefit = powerUp.type == PowerUpType.ClearRow ||
                                         powerUp.type == PowerUpType.SlowDown ||
-                                        powerUp.type == PowerUpType.BonusPoints ||
-                                        powerUp.type == PowerUpType.BlockFreeze ||
-                                        powerUp.type == PowerUpType.ExtraPiece;
+                                        powerUp.type == PowerUpType.BonusPoints;
 
                     Color iconColor = isSelfBenefit ? Color.green : Color.red;
                     powerUp.icon = CreateSquareSprite(iconColor);
@@ -221,15 +217,30 @@ public class PowerUpManager : MonoBehaviour
     public void PowerUpSlotClicked(int index)
     {
         if (index < 0 || index >= activePowerUps.Length || activePowerUps[index] == null)
+        {
+            Debug.LogWarning($"Invalid power-up slot clicked: {index}");
             return;
+        }
 
         Debug.Log($"PowerUp slot {index + 1} clicked with power-up: {activePowerUps[index].name}");
 
         // Get the BoardManager to check game mode
         BoardManager boardManager = FindObjectOfType<BoardManager>();
-        if (boardManager == null || boardManager.activeBoards == null)
+        if (boardManager == null)
         {
-            Debug.LogWarning("BoardManager not found or no active boards");
+            Debug.LogError("BoardManager not found!");
+            return;
+        }
+
+        if (boardManager.activeBoards == null)
+        {
+            Debug.LogError("BoardManager.activeBoards is null!");
+            return;
+        }
+
+        if (boardManager.activeBoards.Length == 0)
+        {
+            Debug.LogError("No active boards found!");
             return;
         }
 
@@ -297,8 +308,11 @@ public class PowerUpManager : MonoBehaviour
             playerSelectionPanel.SetActive(true);
 
             // Update text to show which power-up is being used
-            PowerUp powerUp = activePowerUps[pendingPowerUpIndex];
-            instructionsText.text = $"Using Power-Up: {powerUp.name}\n\nPress 1 for Player 1\nPress 2 for Player 2\n\nPress ESC to cancel";
+            if (pendingPowerUpIndex >= 0 && pendingPowerUpIndex < activePowerUps.Length && activePowerUps[pendingPowerUpIndex] != null)
+            {
+                PowerUp powerUp = activePowerUps[pendingPowerUpIndex];
+                instructionsText.text = $"Using Power-Up: {powerUp.name}\n\nPress 1 for Player 1\nPress 2 for Player 2\n\nPress ESC to cancel";
+            }
         }
     }
 
@@ -338,10 +352,38 @@ public class PowerUpManager : MonoBehaviour
 
     private void UsePowerUpForPlayer(int powerUpIndex, int playerIndex)
     {
-        BoardManager boardManager = FindObjectOfType<BoardManager>();
-        if (boardManager == null || boardManager.activeBoards == null)
+        // Add comprehensive null checks
+        if (powerUpIndex < 0 || powerUpIndex >= activePowerUps.Length)
         {
-            Debug.LogWarning("BoardManager not found or no active boards");
+            Debug.LogError($"Invalid powerUpIndex: {powerUpIndex}");
+            return;
+        }
+
+        if (activePowerUps[powerUpIndex] == null)
+        {
+            Debug.LogError($"PowerUp at index {powerUpIndex} is null");
+            return;
+        }
+
+        // Store the power-up name BEFORE using it (since UsePowerUp will null it out)
+        string powerUpName = activePowerUps[powerUpIndex].name;
+
+        BoardManager boardManager = FindObjectOfType<BoardManager>();
+        if (boardManager == null)
+        {
+            Debug.LogError("BoardManager not found!");
+            return;
+        }
+
+        if (boardManager.activeBoards == null)
+        {
+            Debug.LogError("BoardManager.activeBoards is null!");
+            return;
+        }
+
+        if (boardManager.activeBoards.Length == 0)
+        {
+            Debug.LogError("No active boards found!");
             return;
         }
 
@@ -354,36 +396,79 @@ public class PowerUpManager : MonoBehaviour
         {
             userBoard = boardManager.activeBoards[0];
             targetBoard = userBoard; // Target self in single player
+
+            if (userBoard == null)
+            {
+                Debug.LogError("Single player board is null!");
+                return;
+            }
         }
         // Two player mode
         else if (boardManager.activeBoards.Length > 1)
         {
             if (playerIndex == 0) // Player 1
             {
-                userBoard = boardManager.activeBoards[0];
-                targetBoard = boardManager.activeBoards[1];
+                if (boardManager.activeBoards.Length > 0)
+                    userBoard = boardManager.activeBoards[0];
+                if (boardManager.activeBoards.Length > 1)
+                    targetBoard = boardManager.activeBoards[1];
             }
             else // Player 2
             {
-                userBoard = boardManager.activeBoards[1];
-                targetBoard = boardManager.activeBoards[0];
+                if (boardManager.activeBoards.Length > 1)
+                    userBoard = boardManager.activeBoards[1];
+                if (boardManager.activeBoards.Length > 0)
+                    targetBoard = boardManager.activeBoards[0];
+            }
+
+            if (userBoard == null)
+            {
+                Debug.LogError($"User board for player {playerIndex + 1} is null!");
+                return;
+            }
+
+            if (targetBoard == null)
+            {
+                Debug.LogError($"Target board for player {(playerIndex == 0 ? 2 : 1)} is null!");
+                return;
             }
         }
 
         if (userBoard != null && targetBoard != null)
         {
             UsePowerUp(powerUpIndex, userBoard, targetBoard);
-            Debug.Log($"Power-up {activePowerUps[powerUpIndex].name} used by player {playerIndex + 1}");
+            // Use the stored name instead of accessing the now-null power-up
+            Debug.Log($"Power-up {powerUpName} used by player {playerIndex + 1}");
+        }
+        else
+        {
+            Debug.LogError("Failed to get valid user and target boards");
         }
     }
 
     public void UsePowerUp(int index, Board userBoard, Board targetBoard)
     {
         if (index < 0 || index >= activePowerUps.Length || activePowerUps[index] == null)
+        {
+            Debug.LogError($"Invalid power-up usage attempt at index {index}");
             return;
+        }
+
+        if (userBoard == null)
+        {
+            Debug.LogError("User board is null in UsePowerUp");
+            return;
+        }
+
+        if (targetBoard == null)
+        {
+            Debug.LogError("Target board is null in UsePowerUp");
+            return;
+        }
 
         PowerUp powerUp = activePowerUps[index];
 
+        Debug.Log($"Using power-up: {powerUp.name}");
         // Apply the power-up effect
         ApplyPowerUpEffect(powerUp, userBoard, targetBoard);
 
@@ -394,6 +479,23 @@ public class PowerUpManager : MonoBehaviour
 
     private void ApplyPowerUpEffect(PowerUp powerUp, Board userBoard, Board targetBoard)
     {
+        Debug.Log("In here");
+        if (powerUp == null)
+        {
+            Debug.LogError("PowerUp is null in ApplyPowerUpEffect");
+            return;
+        }
+        if (userBoard == null)
+        {
+            Debug.LogError("userBoard is null in ApplyPowerUpEffect");
+            return;
+        }
+        if (targetBoard == null)
+        {
+            Debug.LogError("targetBoard is null in ApplyPowerUpEffect");
+            return;
+        }
+
         switch (powerUp.type)
         {
             // Self-benefit power-ups
@@ -402,19 +504,11 @@ public class PowerUpManager : MonoBehaviour
                 break;
 
             case PowerUpType.SlowDown:
-                StartCoroutine(ModifyDropRate(userBoard, 0.5f, powerUp.duration));
+                StartCoroutine(ModifyDropRate(userBoard, 0.5f, 10f)); // 10 second duration
                 break;
 
             case PowerUpType.BonusPoints:
                 userBoard.AddPoints(500);
-                break;
-
-            case PowerUpType.BlockFreeze:
-                StartCoroutine(FreezePiece(userBoard, powerUp.duration));
-                break;
-
-            case PowerUpType.ExtraPiece:
-                // Implementation depends on your hold piece system
                 break;
 
             // Opponent-affecting power-ups
@@ -423,23 +517,7 @@ public class PowerUpManager : MonoBehaviour
                 break;
 
             case PowerUpType.SpeedUp:
-                StartCoroutine(ModifyDropRate(targetBoard, -0.3f, powerUp.duration));
-                break;
-
-            case PowerUpType.Confusion:
-                StartCoroutine(ConfuseControls(targetBoard, powerUp.duration));
-                break;
-
-            case PowerUpType.BlockFlip:
-                FlipCurrentPiece(targetBoard);
-                break;
-
-            case PowerUpType.BlindMode:
-                StartCoroutine(EnableBlindMode(targetBoard, powerUp.duration));
-                break;
-
-            case PowerUpType.SwapPiece:
-                SwapPieces(userBoard, targetBoard);
+                StartCoroutine(ModifyDropRate(targetBoard, -0.3f, 10f)); // 10 second duration
                 break;
         }
 
@@ -450,6 +528,12 @@ public class PowerUpManager : MonoBehaviour
     // PowerUp effect implementations
     private IEnumerator ClearRandomRow(Board board)
     {
+        if (board == null)
+        {
+            Debug.LogError("Board is null in ClearRandomRow");
+            yield break;
+        }
+
         // Randomly select a row to clear
         RectInt bounds = board.Bounds;
         int randomRow = Random.Range(bounds.yMin, bounds.yMax);
@@ -458,11 +542,20 @@ public class PowerUpManager : MonoBehaviour
         yield return StartCoroutine(HighlightRow(board, randomRow, Color.green, 0.5f));
 
         // Clear the row (similar to LineClear logic)
-        board.ClearSpecificRow(randomRow);
+        if (board != null) // Double-check in case board was destroyed during coroutine
+        {
+            board.ClearSpecificRow(randomRow);
+        }
     }
 
     private IEnumerator ModifyDropRate(Board board, float modifier, float duration)
     {
+        if (board == null)
+        {
+            Debug.LogError("Board is null in ModifyDropRate");
+            yield break;
+        }
+
         // Store the original drop rate
         float originalDropRateModifier = board.temporarySpeedBoost;
 
@@ -473,108 +566,38 @@ public class PowerUpManager : MonoBehaviour
         yield return new WaitForSeconds(duration);
 
         // Restore the original drop rate
-        board.temporarySpeedBoost = originalDropRateModifier;
-    }
-
-    private IEnumerator FreezePiece(Board board, float duration)
-    {
-        if (board.activePiece != null)
+        if (board != null) // Check if board still exists
         {
-            board.activePiece.SetFrozen(true);
-            yield return new WaitForSeconds(duration);
-            board.activePiece.SetFrozen(false);
-        }
-        else
-        {
-            yield return null;
+            board.temporarySpeedBoost = originalDropRateModifier;
         }
     }
 
     private IEnumerator AddGarbageRows(Board board, int rowCount)
     {
+        if (board == null)
+        {
+            Debug.LogError("Board is null in AddGarbageRows");
+            yield break;
+        }
+
         // Visual effect before adding garbage
         yield return StartCoroutine(FlashEffect(board.gameObject, Color.red, 0.5f));
 
-        board.AddGarbageRows(rowCount);
-    }
-
-    private IEnumerator ConfuseControls(Board board, float duration)
-    {
-        if (board.inputController != null)
+        if (board != null) // Check if board still exists
         {
-            // Implement control inversion in your input controller
-            board.inputController.InvertControls(true);
-            yield return new WaitForSeconds(duration);
-            board.inputController.InvertControls(false);
-        }
-        else
-        {
-            yield return null;
-        }
-    }
-
-    private void FlipCurrentPiece(Board board)
-    {
-        if (board.activePiece != null)
-        {
-            // Randomly rotate the piece 1-3 times
-            int rotations = Random.Range(1, 4);
-            for (int i = 0; i < rotations; i++)
-            {
-                board.activePiece.Rotate(1);
-            }
-        }
-    }
-
-    private IEnumerator EnableBlindMode(Board board, float duration)
-    {
-        // Create a semi-transparent overlay on the board
-        GameObject overlay = new GameObject("BlindOverlay");
-        overlay.transform.SetParent(board.transform);
-        SpriteRenderer renderer = overlay.AddComponent<SpriteRenderer>();
-
-        // Set up the overlay
-        renderer.color = new Color(0, 0, 0, 0.7f);
-        renderer.sortingOrder = 100;
-
-        // Scale and position to cover the board
-        Vector3 boardSize = board.GetBoardWorldSize();
-        overlay.transform.localScale = new Vector3(boardSize.x, boardSize.y, 1);
-        overlay.transform.localPosition = Vector3.zero;
-
-        yield return new WaitForSeconds(duration);
-
-        Destroy(overlay);
-    }
-
-    private void SwapPieces(Board userBoard, Board targetBoard)
-    {
-        if (userBoard.activePiece != null && targetBoard.activePiece != null)
-        {
-            // Store piece data
-            TetrominoData userPieceData = userBoard.activePiece.data;
-            TetrominoData targetPieceData = targetBoard.activePiece.data;
-
-            // Clear current pieces
-            userBoard.Clear(userBoard.activePiece);
-            targetBoard.Clear(targetBoard.activePiece);
-
-            // Respawn with swapped data
-            Vector3Int userPosition = userBoard.activePiece.position;
-            Vector3Int targetPosition = targetBoard.activePiece.position;
-
-            userBoard.activePiece.Initialize(userBoard, userPosition, targetPieceData, userBoard.inputController);
-            targetBoard.activePiece.Initialize(targetBoard, targetPosition, userPieceData, targetBoard.inputController);
-
-            // Set the pieces to make them visible
-            userBoard.Set(userBoard.activePiece);
-            targetBoard.Set(targetBoard.activePiece);
+            board.AddGarbageRows(rowCount);
         }
     }
 
     // Visual effect helpers
     private IEnumerator HighlightRow(Board board, int row, Color color, float duration)
     {
+        if (board == null || board.tilemap == null)
+        {
+            Debug.LogError("Board or tilemap is null in HighlightRow");
+            yield break;
+        }
+
         RectInt bounds = board.Bounds;
         GameObject[] highlights = new GameObject[bounds.width];
 
@@ -607,6 +630,12 @@ public class PowerUpManager : MonoBehaviour
 
     private IEnumerator FlashEffect(GameObject target, Color color, float duration)
     {
+        if (target == null)
+        {
+            Debug.LogError("Target is null in FlashEffect");
+            yield break;
+        }
+
         GameObject flashObj = new GameObject("FlashEffect");
         flashObj.transform.SetParent(target.transform);
         flashObj.transform.localPosition = Vector3.zero;
@@ -628,30 +657,43 @@ public class PowerUpManager : MonoBehaviour
         float flashSpeed = 4f;
         float startTime = Time.time;
 
-        while (Time.time - startTime < duration)
+        while (Time.time - startTime < duration && flashObj != null)
         {
             float alpha = Mathf.PingPong((Time.time - startTime) * flashSpeed, 0.5f);
-            renderer.color = new Color(color.r, color.g, color.b, alpha);
+            if (renderer != null)
+            {
+                renderer.color = new Color(color.r, color.g, color.b, alpha);
+            }
             yield return null;
         }
 
-        Destroy(flashObj);
+        if (flashObj != null)
+        {
+            Destroy(flashObj);
+        }
     }
 
     private void ShowPowerUpEffect(Board userBoard, Board targetBoard, PowerUp powerUp)
     {
+        if (powerUp == null)
+        {
+            Debug.LogError("PowerUp is null in ShowPowerUpEffect");
+            return;
+        }
+
         Board affectedBoard = IsSelfBenefit(powerUp.type) ? userBoard : targetBoard;
 
-        StartCoroutine(FlashEffect(affectedBoard.gameObject, powerUp.effectColor, 0.5f));
+        if (affectedBoard != null && affectedBoard.gameObject != null)
+        {
+            StartCoroutine(FlashEffect(affectedBoard.gameObject, powerUp.effectColor, 0.5f));
+        }
     }
 
     private bool IsSelfBenefit(PowerUpType type)
     {
         return type == PowerUpType.ClearRow ||
                type == PowerUpType.SlowDown ||
-               type == PowerUpType.BonusPoints ||
-               type == PowerUpType.BlockFreeze ||
-               type == PowerUpType.ExtraPiece;
+               type == PowerUpType.BonusPoints;
     }
 
     private Sprite CreateSquareSprite(Color color)
