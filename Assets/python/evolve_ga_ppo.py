@@ -13,18 +13,18 @@ CONFIG_DIR = "configs"
 RESULTS_DIR = "results"
 ENV_PATH = "./../../Build/tetris.app"
 MAX_STEPS = 500_000
-POP_SIZE = 4
-N_GEN = 3
+POP_SIZE = 20
+N_GEN = 15
 
 # Search space for hyperparams + reward weights
 PARAM_BOUNDS = {
     # PPO Hyperparameters
     "learning_rate": (1e-5, 5e-4),
-    "batch_size": (128, 1024),        # integer
-    "beta": (1e-4, 0.02),
+    "batch_size": (256, 512),        # integer
+    "beta": (1e-4, 0.05),
     "epsilon": (0.1, 0.5),            # PPO clip param
     "lambd": (0.9, 1.0),
-    "num_epoch": (1, 10),             # integer epochs
+    "num_epoch": (3, 15),             # integer epochs
 
     # Reward Weights from RewardWeights class
     "clearReward": (0.5, 2.0),

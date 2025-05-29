@@ -32,7 +32,36 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     private int stepsSinceLastClear = 0;
     private float previousHeight;
     private List<Vector2Int> previousHolePositions = new List<Vector2Int>();
+    private RewardWeights rewardWeights = new RewardWeights();
+    public override void Initialize()
+    {
+        var envParams = Academy.Instance.EnvironmentParameters;
 
+        rewardWeights.clearReward = envParams.GetWithDefault("clearReward", 1.0f);
+        rewardWeights.comboMultiplier = envParams.GetWithDefault("comboMultiplier", 0.2f);
+        rewardWeights.perfectClearBonus = envParams.GetWithDefault("perfectClearBonus", 20.0f);
+        rewardWeights.stagnationPenaltyFactor = envParams.GetWithDefault("stagnationPenaltyFactor", 0.01f);
+        rewardWeights.roughnessRewardMultiplier = envParams.GetWithDefault("roughnessRewardMultiplier", 0.3f);
+        rewardWeights.roughnessPenaltyMultiplier = envParams.GetWithDefault("roughnessPenaltyMultiplier", 0.05f);
+        rewardWeights.holeFillReward = envParams.GetWithDefault("holeFillReward", 0.3f);
+        rewardWeights.holeCreationPenalty = envParams.GetWithDefault("holeCreationPenalty", 0.2f);
+        rewardWeights.wellRewardMultiplier = envParams.GetWithDefault("wellRewardMultiplier", 0.1f);
+        rewardWeights.iPieceInWellBonus = envParams.GetWithDefault("iPieceInWellBonus", 0.3f);
+        rewardWeights.stackHeightPenalty = envParams.GetWithDefault("stackHeightPenalty", 0.1f);
+        rewardWeights.uselessRotationPenalty = envParams.GetWithDefault("uselessRotationPenalty", 0.05f);
+        rewardWeights.tSpinReward = envParams.GetWithDefault("tSpinReward", 0.5f);
+        rewardWeights.iPieceGapFillBonus = envParams.GetWithDefault("iPieceGapFillBonus", 0.4f);
+        rewardWeights.accessibilityRewardMultiplier = envParams.GetWithDefault("accessibilityRewardMultiplier", 0.2f);
+        rewardWeights.accessibilityPenaltyMultiplier = envParams.GetWithDefault("accessibilityPenaltyMultiplier", 0.1f);
+        rewardWeights.deathPenalty = envParams.GetWithDefault("deathPenalty", 10.0f);
+        rewardWeights.idleActionPenalty = envParams.GetWithDefault("idleActionPenalty", 0.01f);
+        rewardWeights.moveDownActionReward = envParams.GetWithDefault("moveDownActionReward", 0.01f);
+        rewardWeights.hardDropActionReward = envParams.GetWithDefault("hardDropActionReward", 0.025f);
+        rewardWeights.doubleLineClearRewardMultiplier = envParams.GetWithDefault("doubleLineClearRewardMultiplier", 3.0f);
+        rewardWeights.tripleLineClearRewardMultiplier = envParams.GetWithDefault("tripleLineClearRewardMultiplier", 7.0f);
+        rewardWeights.tetrisClearRewardMultiplier = envParams.GetWithDefault("tetrisClearRewardMultiplier", 15.0f);
+        rewardWeights.maxWellRewardCap = envParams.GetWithDefault("maxWellRewardCap", 0.5f);
+    }
     private void Awake()
     {
         debugger = GetComponent<MLAgentDebugger>();
@@ -114,6 +143,12 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         rotateRight = false;
         moveDown = false;
         hardDrop = false;
+    }
+
+    private void SaveFitnessScore(float score)
+    {
+        string path = "fitness_score.txt";
+        System.IO.File.WriteAllText(path, score.ToString());
     }
 
     public override void CollectObservations(VectorSensor sensor)
@@ -213,13 +248,13 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         // Basic action rewards - simplified
         switch (actionIndex)
         {
-            case 0: AddReward(-0.01f); break; // Do nothing - small penalty
+            case 0: AddReward(-rewardWeights.idleActionPenalty); break; // Do nothing - small penalty
             case 1: moveLeft = true; break;   // Neutral - let outcomes determine reward
             case 2: moveRight = true; break;  // Neutral - let outcomes determine reward
             case 3: rotateLeft = true; break; // Neutral - let outcomes determine reward
             case 4: rotateRight = true; break; // Neutral - let outcomes determine reward
-            case 5: moveDown = true; AddReward(0.01f); break; // Small reward for efficiency
-            case 6: hardDrop = true; AddReward(0.025f); break; // Reduced from 0.05 to prevent premature dropping
+            case 5: moveDown = true; AddReward(rewardWeights.moveDownActionReward); break; // Small reward for efficiency
+            case 6: hardDrop = true; AddReward(rewardWeights.hardDropActionReward); break; // Reduced from 0.05 to prevent premature dropping
         }
 
         if (board == null)
@@ -235,16 +270,16 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             float clearReward = 0f;
             switch (linesCleared)
             {
-                case 1: clearReward = 1.0f; break;
-                case 2: clearReward = 3.0f; break;
-                case 3: clearReward = 7.0f; break;
-                case 4: clearReward = 15.0f; break; // Increased Tetris reward
+                case 1: clearReward = rewardWeights.clearReward; break;
+                case 2: clearReward = rewardWeights.clearReward * rewardWeights.doubleLineClearRewardMultiplier; break; // Use new multiplier
+                case 3: clearReward = rewardWeights.clearReward * rewardWeights.tripleLineClearRewardMultiplier; break; // Use new multiplier
+                case 4: clearReward = rewardWeights.clearReward * rewardWeights.tetrisClearRewardMultiplier; break; // Use new multiplier for Tetris
             }
 
             // Combo system with increasing returns
             if (consecutiveClears > 0)
             {
-                clearReward *= (1.0f + (consecutiveClears * 0.2f)); // Scale by combo count
+                clearReward *= (1.0f + (consecutiveClears * rewardWeights.comboMultiplier)); // Scale by combo count
             }
             consecutiveClears++;
 
@@ -255,7 +290,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             // Perfect clear bonus (keep as is - good reward)
             if (board.IsPerfectClear())
             {
-                AddReward(20.0f);
+                AddReward(rewardWeights.perfectClearBonus);
             }
         }
         else
@@ -267,7 +302,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             if (stepsSinceLastClear > 50)
             {
                 // Gradually increasing penalty for stagnation
-                float stagnationPenalty = Mathf.Min((stepsSinceLastClear - 50) * 0.01f, 1.0f);
+                float stagnationPenalty = Mathf.Min((stepsSinceLastClear - 50) * rewardWeights.stagnationPenaltyFactor, 1.0f);
                 AddReward(-stagnationPenalty);
             }
         }
@@ -280,9 +315,9 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         float roughnessDelta = previousRoughness - currentRoughness;
 
         if (roughnessDelta > 0)
-            AddReward(roughnessDelta * 0.3f); // Reward smoother surface
+            AddReward(roughnessDelta * rewardWeights.roughnessRewardMultiplier); // Reward smoother surface
         else if (roughnessDelta < -1) // Only penalize significant roughness increases
-            AddReward(roughnessDelta * 0.05f);
+            AddReward(roughnessDelta * rewardWeights.roughnessPenaltyMultiplier);
 
         lastSurfaceRoughness = currentRoughness;
 
@@ -298,8 +333,8 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             foreach (var pos in filledHoles)
             {
                 // Scale reward by position - filling deeper holes is better
-                float depthFactor = 1f + (pos.y * 0.1f); // Higher reward for deeper holes
-                holeReward += 0.3f * depthFactor;
+                float depthFactor = 1f + (pos.y * 0.1f); // Higher reward for deeper holes (0.1f here is a scaling factor, not a reward itself)
+                holeReward += rewardWeights.holeFillReward * depthFactor;
             }
             AddReward(holeReward);
         }
@@ -314,8 +349,8 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             {
                 // Scale penalty by position - creating higher holes is worse
                 int boardHeight = board.boardSize[0];
-                float heightFactor = 1f + ((boardHeight - pos.y) * 0.1f);
-                holePenalty += 0.2f * heightFactor;
+                float heightFactor = 1f + ((boardHeight - pos.y) * 0.1f); // 0.1f here is a scaling factor, not a reward itself
+                holePenalty += rewardWeights.holeCreationPenalty * heightFactor;
             }
             AddReward(-holePenalty);
         }
@@ -327,13 +362,13 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         if (wellDepth >= 3)
         {
             // Better reward for deeper wells, but cap at reasonable depth
-            float wellReward = Mathf.Min(wellDepth * 0.1f, 0.5f);
+            float wellReward = Mathf.Min(wellDepth * rewardWeights.wellRewardMultiplier, rewardWeights.maxWellRewardCap); // Use new cap
             AddReward(wellReward);
 
             // Extra reward if the I-piece is next and we have a good well for it
             if (IsIPieceNext() && wellDepth >= 4)
             {
-                AddReward(0.3f);
+                AddReward(rewardWeights.iPieceInWellBonus);
             }
         }
 
@@ -346,7 +381,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         if (currentHeight > 10) // Only care about height when it's getting dangerous
         {
             float heightFactor = Mathf.Max(0, (currentHeight - 10) / 10f); // Scale from 0 to 1
-            AddReward(-0.1f * heightFactor); // Progressive penalty for having a tall stack
+            AddReward(-rewardWeights.stackHeightPenalty * heightFactor); // Progressive penalty for having a tall stack
         }
 
         previousHeight = currentHeight;
@@ -357,21 +392,21 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             // Reward good T-piece placements (potential T-spins)
             if (board.activePiece.data.tetromino == Tetromino.T && IsPotentialTSpin())
             {
-                AddReward(0.5f);
+                AddReward(rewardWeights.tSpinReward);
             }
 
             // Reward I-piece horizontal placements that fill gaps
             if (board.activePiece.data.tetromino == Tetromino.I &&
                 IsHorizontalPiece() && FillsMultipleGaps())
             {
-                AddReward(0.4f);
+                AddReward(rewardWeights.iPieceGapFillBonus);
             }
         }
 
         // --- Penalize Inefficient Play ---
         if ((rotateLeft || rotateRight) && board.LastRotationWasUseless(board.activePiece, prevPosition, prevCells))
         {
-            AddReward(-0.05f);  // Penalize useless rotations
+            AddReward(-rewardWeights.uselessRotationPenalty);  // Penalize useless rotations
         }
 
         // --- Accessibility Reward ---
@@ -379,13 +414,12 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         float accessibilityDelta = accessibilityScore - previousAccessibility;
 
         if (accessibilityDelta > 0)
-            AddReward(accessibilityDelta * 0.2f);
+            AddReward(accessibilityDelta * rewardWeights.accessibilityRewardMultiplier);
         else if (accessibilityDelta < 0)
-            AddReward(accessibilityDelta * 0.1f);
+            AddReward(accessibilityDelta * rewardWeights.accessibilityPenaltyMultiplier);
 
         previousAccessibility = accessibilityScore;
     }
-
     // New helper methods for enhanced rewards
 
     // Calculate surface roughness by measuring height differences between adjacent columns
@@ -573,6 +607,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     public void OnGameOver()
     {
         AddReward(-10.0f); // Big penalty for losing
+        SaveFitnessScore(GetCumulativeReward());
         EndEpisode();
         Debug.Log("Game over - episode ended");
     }
