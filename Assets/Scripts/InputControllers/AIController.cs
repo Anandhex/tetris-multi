@@ -37,6 +37,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     private RewardWeights rewardWeights = new RewardWeights();
     [Header("Curriculum Parameters")]
     public int allowedTetrominoTypes = 7;
+    public int curriculumBoardPreset;
     public float curriculumBoardHeight = 20f;
     public float curriculumDropSpeed = 0.75f;
     public float curriculumHolePenaltyWeight = 0.5f;
@@ -46,6 +47,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     {
         var envParams = Academy.Instance.EnvironmentParameters;
         m_StatsRecorder = Academy.Instance.StatsRecorder;
+        curriculumBoardPreset = (int)Academy.Instance.EnvironmentParameters.GetWithDefault("board_preset", 6);
 
 
         // Get curriculum parameters
@@ -92,6 +94,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         rewardWeights.maxWellRewardCap = envParams.GetWithDefault("maxWellRewardCap", 1.0f); // Increased from 0.5f
 
         rewardWeights.partialRowFillRewardMultiplier = 0.01f;
+        rewardWeights.horizontalStackingRewardMultiplier = 0.5f;
     }
     private void Awake()
     {
@@ -112,7 +115,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         {
             behavior = gameObject.AddComponent<BehaviorParameters>();
             behavior.BehaviorName = "TetrisAgent";
-            behavior.BrainParameters.VectorObservationSize = 217;
+            behavior.BrainParameters.VectorObservationSize = 228;
             behavior.BrainParameters.NumStackedVectorObservations = 1;
 
             // Set up discrete actions (7 possible actions)
@@ -122,7 +125,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         else
         {
             behavior.BehaviorName = "TetrisAgent";
-            behavior.BrainParameters.VectorObservationSize = 217;
+            behavior.BrainParameters.VectorObservationSize = 228;
             behavior.BrainParameters.NumStackedVectorObservations = 1;
 
             // Set up discrete actions (7 possible actions)
@@ -167,6 +170,8 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         curriculumDropSpeed = envParams.GetWithDefault("drop_speed", 0.75f);
         curriculumHolePenaltyWeight = envParams.GetWithDefault("hole_penalty_weight", 0.5f);
         enableAdvancedMechanics = envParams.GetWithDefault("enable_t_spins", 0f) > 0.5f;
+        curriculumBoardPreset = (int)envParams.GetWithDefault("board_preset", 6);
+
 
         // Apply curriculum settings to reward weights
         rewardWeights.holeCreationPenalty *= curriculumHolePenaltyWeight;
@@ -205,12 +210,23 @@ public class TetrisMLAgent : Agent, IPlayerInputController
 
         // 1. Board state (200 observations for 10x20 board)
         RectInt bounds = board.Bounds;
-        for (int y = bounds.yMin; y < bounds.yMax; y++)
+        int maxBoardHeight = 20;
+        int boardWidth = 10;
+
+        for (int y = 0; y < maxBoardHeight; y++)
         {
-            for (int x = bounds.xMin; x < bounds.xMax; x++)
+            for (int x = 0; x < boardWidth; x++)
             {
-                sensor.AddObservation(board.tilemap.HasTile(new Vector3Int(x, y, 0)) ? 1f : 0f);
-                obsCount++;
+                bool insideCurrentBoard = (y < bounds.height);
+                if (insideCurrentBoard)
+                {
+                    bool tile = board.tilemap.HasTile(new Vector3Int(x, y, 0));
+                    sensor.AddObservation(tile ? 1f : 0f);
+                }
+                else
+                {
+                    sensor.AddObservation(0f); // padded empty row
+                }
             }
         }
 
@@ -261,9 +277,47 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             obsCount++;
         }
 
+        // 5. Column Heights (10 observations)
+        for (int x = bounds.xMin; x < bounds.xMax; x++)
+        {
+            int height = 0;
+            for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
+            {
+                if (board.tilemap.HasTile(new Vector3Int(x, y, 0)))
+                {
+                    height = y - bounds.yMin + 1;
+                    break;
+                }
+            }
+            sensor.AddObservation(height / (float)bounds.height);
+            obsCount++;
+        }
+
+        int holeCount = 0;
+        for (int x = bounds.xMin; x < bounds.xMax; x++)
+        {
+            bool blockSeen = false;
+            for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
+            {
+                if (board.tilemap.HasTile(new Vector3Int(x, y, 0)))
+                {
+                    blockSeen = true;
+                }
+                else if (blockSeen)
+                {
+                    holeCount++;
+                }
+            }
+        }
+        sensor.AddObservation(holeCount / 20.0f); // normalize
+        obsCount++;
+
+
+
 
 
     }
+
 
     private List<Vector2Int> previousBottomRowHoles = new List<Vector2Int>();
     private int steps = 0;
@@ -409,6 +463,24 @@ public class TetrisMLAgent : Agent, IPlayerInputController
 
         lastSurfaceRoughness = currentRoughness;
 
+        int bottomCheckHeight = board.Bounds.height / 2; // Check first few rows (customize as needed)
+        int minRowCoverage = Mathf.CeilToInt(maxWidth * 0.65f); // At least 50% coverage
+
+        int wideBaseRows = 0;
+        for (int y = 0; y < bottomCheckHeight; y++)
+        {
+            int rowFill = rowFills[y];
+            if (rowFill >= minRowCoverage)
+                wideBaseRows++;
+        }
+
+        // Apply reward for horizontal base building
+        if (wideBaseRows > 0)
+        {
+            float stackingReward = wideBaseRows * rewardWeights.horizontalStackingRewardMultiplier;
+            AddReward(stackingReward);
+            m_StatsRecorder.Add("action-rewarded/horizontal-stack", stackingReward);
+        }
         // --- Hole Management ---
         List<Vector2Int> currentHoles = board.GetHolePositions();
 
@@ -543,7 +615,50 @@ public class TetrisMLAgent : Agent, IPlayerInputController
 
 
     }
-    // New helper methods for enhanced rewards
+    // // New helper methods for enhanced rewards
+
+    // public override void OnActionReceived(ActionBuffers actions)
+    // {
+    //     episodeSteps++;
+
+    //     // Reset action flags
+    //     moveLeft = false;
+    //     moveRight = false;
+    //     rotateLeft = false;
+    //     rotateRight = false;
+    //     moveDown = false;
+    //     hardDrop = false;
+
+    //     Vector3Int prevPosition = board.activePiece.position;
+    //     Vector3Int[] prevCells = (Vector3Int[])board.activePiece.cells.Clone();
+    //     steps++;
+    //     // Debug.Log("Action received: " + actions.DiscreteActions[0]);
+
+    //     int actionIndex = actions.DiscreteActions[0];
+
+    //     switch (actionIndex)
+    //     {
+    //         case 1: moveLeft = true; break;
+    //         case 2: moveRight = true; break;
+    //         case 3: rotateLeft = true; break;
+    //         case 4: rotateRight = true; break;
+    //         case 5: moveDown = true; break;
+    //         case 6: hardDrop = true; break;
+    //     }
+
+    //     if (moveLeft)
+    //     {
+    //         AddReward(1.0f);
+    //     }
+    //     else
+    //     {
+    //         AddReward(-1.0f);
+    //     }
+
+    //     // === REWARD TRACKING ===
+    //     float cumulativeReward = GetCumulativeReward();
+    //     m_StatsRecorder.Add("reward/cumulative", cumulativeReward);
+    // }
 
     // Calculate surface roughness by measuring height differences between adjacent columns
     private float CalculateSurfaceRoughness()
@@ -557,6 +672,14 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         }
 
         return roughness;
+    }
+
+    public float CalculateColumnHeightVariance()
+    {
+        int[] heights = GetColumnHeights();
+        double mean = heights.Average();
+        double variance = heights.Select(h => Mathf.Pow((float)(h - mean), 2)).Average();
+        return Mathf.Sqrt((float)variance); // Standard deviation
     }
 
     // Get heights of each column

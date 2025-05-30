@@ -26,4 +26,5 @@ public class RewardWeights
     public float tetrisClearRewardMultiplier;     // Multiplier for 4 lines (Tetris)
     public float maxWellRewardCap; // Maximum reward for well formation
     public float partialRowFillRewardMultiplier;
+    public float horizontalStackingRewardMultiplier;
 }

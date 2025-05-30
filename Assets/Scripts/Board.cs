@@ -116,6 +116,74 @@ public class Board : MonoBehaviour
         }
     }
 
+    // Your board class
+    public void ApplyCurriculumBoardPreset()
+    {
+        int preset = 6; // Default to empty board
+        TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
+
+        if (mlAgent != null)
+        {
+            preset = (int)mlAgent.curriculumBoardPreset;
+        }
+
+        ClearBoard(); // Always start clean
+
+        switch (preset)
+        {
+            case 0: // intro_gap with two consecutive gaps
+                {
+                    int startGap = Random.Range(Bounds.xMin + 1, Bounds.xMax - 1); // avoid edges
+                    FillRow(Bounds.yMin, startGap, startGap + 1);
+                }
+                break;
+            case 1: // two_line_clear with consecutive gaps on two rows
+                {
+                    int startGap = Random.Range(Bounds.xMin + 1, Bounds.xMax - 2); // ensure space for consecutive in next row
+                    FillRow(Bounds.yMin, startGap);
+                    FillRow(Bounds.yMin + 1, startGap + 1);
+                }
+                break;
+            case 2: // mid_stack
+                FillRows(Bounds.yMin, Bounds.yMin + 3, withRandomGaps: true);
+                break;
+            case 3: // flat_stack
+                FillRows(Bounds.yMin, Bounds.yMin + 4);
+                break;
+            case 4: // messy_stack
+                FillRows(Bounds.yMin, Bounds.yMin + 7, withRandomGaps: true);
+                break;
+            case 5: // high_risk
+                FillRows(Bounds.yMin + 8, Bounds.yMin + 15, withRandomGaps: true);
+                break;
+            case 6: // empty_board
+            default:
+                // Do nothing (already cleared)
+                break;
+        }
+
+        Debug.Log($"[Board] Applied board_preset {preset}");
+    }
+
+    private void FillRow(int row, int gapAt1 = -1, int gapAt2 = -1)
+    {
+        for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+        {
+            if (col == gapAt1) continue; // original logic for one gap
+            if (col == gapAt2) continue; // skip second gap as well
+
+            tilemap.SetTile(new Vector3Int(col, row, 0), tetrominoes[0].tile);
+        }
+    }
+
+    private void FillRows(int startRow, int endRow, bool withRandomGaps = false)
+    {
+        for (int row = startRow; row <= endRow; row++)
+        {
+            int gap = withRandomGaps ? Random.Range(Bounds.xMin, Bounds.xMax) : -1;
+            FillRow(row, gap);
+        }
+    }
     private void Update()
     {
 
@@ -173,6 +241,7 @@ public class Board : MonoBehaviour
                 UpdateGridVisualization();
 
                 ClearBoard();
+                ApplyCurriculumBoardPreset();
 
                 // Reset the active piece to reflect curriculum change:
                 if (activePiece != null)
@@ -407,6 +476,7 @@ public class Board : MonoBehaviour
 
         // Reset the board
         ClearBoard();
+        ApplyCurriculumBoardPreset();
         this.playerScore = 0;
         this.gameStartTime = Time.time;
 
