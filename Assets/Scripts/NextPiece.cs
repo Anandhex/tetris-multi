@@ -22,7 +22,7 @@ public class NextPiece : MonoBehaviour
 
         if (data.Equals(default(TetrominoData)))
         {
-            Debug.LogWarning("NextPiece: Received default TetrominoData.");
+            // Debug.LogWarning("NextPiece: Received default TetrominoData.");
             return;
         }
 

@@ -72,3 +72,5 @@ crashlytics-build.properties
 
 /[Aa]ssets/python/configs/*
 /[Aa]ssets/python/results/*
+/[Aa]ssets/python/configs2/*
+/[Aa]ssets/python/results2/*
