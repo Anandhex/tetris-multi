@@ -28,7 +28,7 @@ Transform:
   m_GameObject: {fileID: 102491360067750926}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 10.98, y: -8.37, z: 0.040181894}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -61,10 +61,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   playerTag: 
   tetrominoes:
-  - tetromino: 0
-    tile: {fileID: 11400000, guid: b1a7a7557876e426f8ef11c829e05d57, type: 2}
   - tetromino: 1
     tile: {fileID: 11400000, guid: 0c3274955f8444257a94a88eecbfe877, type: 2}
+  - tetromino: 0
+    tile: {fileID: 11400000, guid: b1a7a7557876e426f8ef11c829e05d57, type: 2}
   - tetromino: 2
     tile: {fileID: 11400000, guid: 2ad55ee77311d41ae8224dc57dd9d0b0, type: 2}
   - tetromino: 3
@@ -75,9 +75,9 @@ MonoBehaviour:
     tile: {fileID: 11400000, guid: 3653eb614d5ae4611b090f385310dd3b, type: 2}
   - tetromino: 6
     tile: {fileID: 11400000, guid: 518bff1b5bade4dc682a939aa4e10876, type: 2}
-  fireBorderController: {fileID: 0}
   debrisPrefab: {fileID: 7462014480564348719, guid: 51cbaab57cbfd41dea7605a30e66ed7c, type: 3}
-  spawnPosition: {x: -1, y: 8, z: 0}
+  gridSpriteRenderer: {fileID: 1036416070660855848}
+  baseSpawnPosition: {x: 0, y: 0, z: 0}
   boardSize: {x: 10, y: 20}
   playerScoreToDisplay: {fileID: 8639489407357629593}
   playerTagHolder: {fileID: 3256479484690809420}
@@ -85,6 +85,8 @@ MonoBehaviour:
   initialDropRate: 1
   speedIncreasePerMinute: 0.1
   minimumDropRate: 0.1
+  maxTetrominoTypes: 7
+  curriculumBoardHeight: 20
 --- !u!114 &1840312990462139365
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -299,7 +301,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
-  m_AnchoredPosition: {x: 3.3099995, y: -16.25}
+  m_AnchoredPosition: {x: -7.95, y: -7.8}
   m_SizeDelta: {x: 500, y: 500}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!223 &2754254243754562850
@@ -527,7 +529,7 @@ Transform:
   m_GameObject: {fileID: 2525533928832153479}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 10.98, y: -8.37, z: 0.040181894}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -751,7 +753,7 @@ Transform:
   m_GameObject: {fileID: 5521407303628688710}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 10.98, y: -8.37, z: 0.040181894}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -812,7 +814,7 @@ Transform:
   m_GameObject: {fileID: 6431849782196042181}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0.59, y: -1.53, z: 0.040181894}
+  m_LocalPosition: {x: -10.87, y: 6.03, z: 0.040181894}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -993,7 +995,7 @@ Transform:
   m_GameObject: {fileID: 6554307897055365507}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 10.98, y: -8.37, z: 0.040181894}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []

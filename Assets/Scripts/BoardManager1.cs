@@ -41,7 +41,7 @@ public class BoardManager1 : MonoBehaviour
             var board = boardObj.GetComponentInChildren<Board>();
             if (board == null)
             {
-                Debug.LogError("Board component missing from prefab!");
+                // Debug.LogError("Board component missing from prefab!");
                 return;
             }
 
@@ -56,7 +56,7 @@ public class BoardManager1 : MonoBehaviour
             // Store reference to the board
             activeBoards = new[] { board };
 
-            Debug.Log("AI Board setup complete");
+            // Debug.Log("AI Board setup complete");
         }
     }
 

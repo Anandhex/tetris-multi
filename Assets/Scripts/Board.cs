@@ -16,7 +16,25 @@ public class Board : MonoBehaviour
     // public FireBorderController fireBorderController;
     [SerializeField] private GameObject debrisPrefab;
 
-    public Vector3Int spawnPosition;
+    [Header("Visual Grid")]
+    public SpriteRenderer gridSpriteRenderer;
+
+    private int lastBoardHeight = -1;
+    public Vector3Int baseSpawnPosition;
+    public Vector3Int spawnPosition
+    {
+        get
+        {
+            TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
+            if (mlAgent != null)
+            {
+                int currentHeight = (int)mlAgent.curriculumBoardHeight;
+                // Adjust spawn position to be at the top of the current board height
+                return new Vector3Int(baseSpawnPosition.x, currentHeight / 2 - 2, baseSpawnPosition.z);
+            }
+            return baseSpawnPosition;
+        }
+    }
     public Vector2Int boardSize = new Vector2Int(10, 70);
     private float scoreSpeedBonus = 0f;
 
@@ -32,11 +50,13 @@ public class Board : MonoBehaviour
 
     public RectInt Bounds
     {
-
         get
         {
-            Vector2Int position = new Vector2Int(-this.boardSize.x / 2, -this.boardSize.y / 2);
-            return new RectInt(position, this.boardSize);
+            TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
+            int height = (mlAgent != null) ? (int)mlAgent.curriculumBoardHeight : boardSize.y;
+
+            Vector2Int position = new Vector2Int(-this.boardSize.x / 2, -height / 2);
+            return new RectInt(position, new Vector2Int(boardSize.x, height));
         }
     }
 
@@ -78,6 +98,8 @@ public class Board : MonoBehaviour
         this.playerScore = 0;
         this.gameStartTime = Time.time;
 
+        UpdateGridVisualization();
+
         // Only spawn a piece if all components are properly initialized
         if (activePiece != null && tetrominoes != null && tetrominoes.Length > 0)
         {
@@ -85,7 +107,7 @@ public class Board : MonoBehaviour
         }
         else
         {
-            Debug.LogError("Cannot spawn piece: Required components not initialized");
+            // Debug.LogError("Cannot spawn piece: Required components not initialized");
         }
 
         if (playerTagHolder != null)
@@ -102,21 +124,88 @@ public class Board : MonoBehaviour
         {
             this.playerScoreToDisplay.text = this.playerScore.ToString();
         }
+
+        CheckForBoardHeightChange();
         // if (fireBorderController != null)
         // {
         //     fireBorderController.SetGameSpeed(1f / CurrentDropRate);
         // }
     }
 
+    [Header("Curriculum Settings")]
+    public int maxTetrominoTypes = 7;
+    public float curriculumBoardHeight = 20f;
+
     public void GenerateNextPiece()
     {
-        int random = Random.Range(0, this.tetrominoes.Length);
+        // Get curriculum parameters from ML agent
+        TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
+        int allowedTypes = (mlAgent != null) ? mlAgent.allowedTetrominoTypes : 7;
+
+        // Limit piece selection based on curriculum
+        int maxIndex = Mathf.Min(allowedTypes, this.tetrominoes.Length);
+        int random = Random.Range(0, maxIndex);
         this.nextPieceData = this.tetrominoes[random];
 
         if (nextPieceDisplay != null)
         {
             nextPieceDisplay.DisplayNextPiece(this.nextPieceData);
         }
+    }
+
+    private void CheckForBoardHeightChange()
+    {
+        TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
+        if (mlAgent != null)
+        {
+            // Debug.Log("Curriculum Board Height: " + mlAgent.curriculumBoardHeight);
+            int currentHeight = (int)mlAgent.curriculumBoardHeight;
+            // Debug.Log("Here:" + currentHeight + ":" + lastBoardHeight);
+
+            if (currentHeight != lastBoardHeight)
+            {
+                // Debug.Log("In Here");
+
+                // Debug.Log("LastBoardHeight:" + lastBoardHeight);
+                lastBoardHeight = currentHeight;
+                // Debug.Log("CurrentBoardHeight:" + lastBoardHeight);
+
+                UpdateGridVisualization();
+
+                ClearBoard();
+
+                // Reset the active piece to reflect curriculum change:
+                if (activePiece != null)
+                {
+                    // Clear the piece tiles from tilemap
+                    Clear(activePiece);
+                }
+
+                // Spawn a new piece using updated curriculum parameters
+                SpawnPiece();
+            }
+        }
+    }
+    private void UpdateGridVisualization()
+    {
+        if (gridSpriteRenderer == null) return;
+
+        RectInt bounds = this.Bounds;
+
+        // Calculate the scale needed to match the current board size
+        // Assuming the original grid sprite is designed for 10x20
+        float originalWidth = 10f;
+        float originalHeight = 20f;
+
+        float scaleX = boardSize.x / originalWidth;
+        float scaleY = bounds.height / originalHeight;
+
+        // Apply the new scale
+        gridSpriteRenderer.transform.localScale = new Vector3(scaleX, scaleY, 1f);
+
+        // Position the grid to match the board bounds
+        Vector3 gridCenter = new Vector3(bounds.center.x, bounds.center.y, gridSpriteRenderer.transform.position.z);
+        gridSpriteRenderer.transform.position = gridCenter;
     }
 
 
@@ -208,6 +297,25 @@ public class Board : MonoBehaviour
             }
         }
         return holes;
+    }
+    public int[] GetRowFillCounts()
+    {
+        int[] rowFills = new int[Bounds.size.y];
+
+        for (int y = Bounds.yMin; y < Bounds.yMax; y++)
+        {
+            int fillCount = 0;
+            for (int x = Bounds.xMin; x < Bounds.xMax; x++)
+            {
+                if (tilemap.HasTile(new Vector3Int(x, y, 0)))
+                {
+                    fillCount++;
+                }
+            }
+            rowFills[y - Bounds.yMin] = fillCount;
+        }
+
+        return rowFills;
     }
 
     public bool IsPerfectClear()

@@ -1,0 +1,224 @@
+---
+default_settings:
+behaviors:
+  TetrisAgent:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 320
+      buffer_size: 100000
+      learning_rate: 0.0004025469901575765
+      beta: 0.012004972572562557
+      epsilon: 0.27295423629741494
+      lambd: 0.9828678313967116
+      num_epoch: 15
+      shared_critic: false
+      learning_rate_schedule: linear
+      beta_schedule: linear
+      epsilon_schedule: linear
+    network_settings:
+      normalize: true
+      hidden_units: 512
+      num_layers: 3 # Reduced from 4 to 3 layers for faster training
+      vis_encode_type: simple
+      memory:
+      goal_conditioning_type: hyper
+      deterministic: false
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+        network_settings:
+          normalize: false
+          hidden_units: 128
+          num_layers: 2
+          vis_encode_type: simple
+          memory:
+          goal_conditioning_type: hyper
+          deterministic: false
+      curiosity:
+        gamma: 0.99
+        strength: 0.3
+        network_settings:
+          normalize: false
+          hidden_units: 256
+          num_layers: 2
+          vis_encode_type: simple
+          memory:
+          goal_conditioning_type: hyper
+          deterministic: false
+        learning_rate: 0.001
+        encoding_size: 256
+    init_path:
+    keep_checkpoints: 5
+    checkpoint_interval: 5000
+    max_steps: 50000
+    time_horizon: 512
+    summary_freq: 1000
+    threaded: true
+    self_play:
+    behavioral_cloning:
+
+env_settings:
+  env_path: /Users/anandpatil/Documents/Projects/tetris-multi/Build/tetris.app
+  env_args:
+  base_port: 5005
+  num_envs: 4 # Increased from 1 to 4 to speed up training
+  num_areas: 1
+  seed: -1
+  max_lifetime_restarts: 10
+  restarts_rate_limit_n: 1
+  restarts_rate_limit_period_s: 60
+
+engine_settings:
+  width: 84
+  height: 84
+  quality_level: 5
+  time_scale: 20
+  target_frame_rate: -1
+  capture_frame_rate: 60
+  no_graphics: true
+
+checkpoint_settings:
+  run_id: tetris_training
+  initialize_from:
+  load_model: false
+  resume: false
+  force: true
+  train_model: true
+  inference: false
+  results_dir: results
+
+torch_settings:
+  device:
+
+debug: false
+
+environment_parameters:
+  tetromino_types:
+    curriculum:
+      - name: brain_dead
+        completion_criteria:
+          measure: reward
+          behavior: TetrisAgent
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 2.0
+        value: 1
+      - name: basic_placement
+        completion_criteria:
+          measure: reward
+          behavior: TetrisAgent
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 5.0
+        value: 2
+      - name: intermediate_shapes
+        completion_criteria:
+          measure: reward
+          behavior: TetrisAgent
+          signal_smoothing: true
+          min_lesson_length: 150
+          threshold: 15.0
+        value: 4
+      - name: advanced_tetris
+        completion_criteria:
+          measure: reward
+          behavior: TetrisAgent
+          signal_smoothing: true
+          min_lesson_length: 200
+          threshold: 30.0
+        value: 7
+
+  board_height:
+    curriculum:
+      - name: brain_dead
+        completion_criteria:
+          measure: reward
+          behavior: TetrisAgent
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 2.0
+        value: 8
+      - name: basic_placement
+        completion_criteria:
+          measure: reward
+          behavior: TetrisAgent
+          signal_smoothing: true
+          min_lesson_length: 150
+          threshold: 10.0
+        value: 10
+      - name: intermediate_shapes
+        completion_criteria:
+          measure: reward
+          behavior: TetrisAgent
+          signal_smoothing: true
+          min_lesson_length: 150
+          threshold: 15.0
+        value: 15
+      - name: advanced_tetris
+        completion_criteria:
+          measure: reward
+          behavior: TetrisAgent
+          signal_smoothing: true
+          min_lesson_length: 200
+          threshold: 30.0
+        value: 20
+
+  hole_penalty_weight:
+    curriculum:
+      - name: brain_dead
+        completion_criteria:
+          measure: reward
+          behavior: TetrisAgent
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 2.0
+        value: 0.1
+      - name: basic_placement
+        completion_criteria:
+          measure: reward
+          behavior: TetrisAgent
+          signal_smoothing: true
+          min_lesson_length: 100
+          threshold: 5.0
+        value: 0.1
+      - name: intermediate_shapes
+        completion_criteria:
+          measure: reward
+          behavior: TetrisAgent
+          signal_smoothing: true
+          min_lesson_length: 150
+          threshold: 15.0
+        value: 0.3
+      - name: advanced_tetris
+        completion_criteria:
+          measure: reward
+          behavior: TetrisAgent
+          signal_smoothing: true
+          min_lesson_length: 200
+          threshold: 30.0
+        value: 0.5
+  clearReward: 1.9906519017999227
+  comboMultiplier: 1.6114237039882078
+  perfectClearBonus: 3.0705840623051364
+  stagnationPenaltyFactor: 0.20881281439203025
+  roughnessRewardMultiplier: 1.3053324097854957
+  roughnessPenaltyMultiplier: 1.1796024905152636
+  holeFillReward: 2.1853264390570777
+  holeCreationPenalty: 0.5715291000669095
+  wellRewardMultiplier: 0.25779375507504687
+  iPieceInWellBonus: 1.981944637996403
+  stackHeightPenalty: 0.38746688722310274
+  uselessRotationPenalty: 0.6047344669903989
+  tSpinReward: 2.7472018166551218
+  iPieceGapFillBonus: 1.5788885353209032
+  accessibilityRewardMultiplier: 0.8727984633340267
+  accessibilityPenaltyMultiplier: 0.6821537039950816
+  deathPenalty: -1.0088212100337968
+  idleActionPenalty: -0.8024182759466918
+  moveDownActionReward: 0.4482111140485522
+  hardDropActionReward: 0.669943563403399
+  doubleLineClearRewardMultiplier: 2.923679540074221
+  tripleLineClearRewardMultiplier: 1.0726240609848015
+  tetrisClearRewardMultiplier: 2.3856532792683787
+  maxWellRewardCap: 4.9369978673208275

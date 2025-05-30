@@ -18,7 +18,7 @@ public class BoardManager : MonoBehaviour
     {
         if (boardPrefab == null)
         {
-            Debug.LogError("Board Prefab is not assigned in the inspector!");
+            // Debug.LogError("Board Prefab is not assigned in the inspector!");
             return;
         }
 
@@ -26,7 +26,7 @@ public class BoardManager : MonoBehaviour
         Board prefabBoard = boardPrefab.GetComponentInChildren<Board>();
         if (prefabBoard == null)
         {
-            Debug.LogError("No Board component found in the prefab hierarchy! Make sure Board script is attached to a GameObject in the prefab.");
+            // Debug.LogError("No Board component found in the prefab hierarchy! Make sure Board script is attached to a GameObject in the prefab.");
             return;
         }
 
@@ -69,7 +69,7 @@ public class BoardManager : MonoBehaviour
             {
                 if (agent != null)
                 {
-                    Debug.Log($"Destroying existing agent: {agent.GetInstanceID()}");
+                    // Debug.Log($"Destroying existing agent: {agent.GetInstanceID()}");
                     Destroy(agent);
                 }
             }
@@ -98,7 +98,7 @@ public class BoardManager : MonoBehaviour
     }
     Board CreateBoard(Vector3Int position, IPlayerInputController input, string playerLabel)
     {
-        Debug.Log($"Creating board for {playerLabel} at position {position}");
+        // Debug.Log($"Creating board for {playerLabel} at position {position}");
 
         // Create a container for the board
         GameObject container = new GameObject(playerLabel + " Container");
@@ -112,7 +112,7 @@ public class BoardManager : MonoBehaviour
         Board board = boardObj.GetComponentInChildren<Board>();
         if (board == null)
         {
-            Debug.LogError("Board component not found in instantiated prefab hierarchy!");
+            // Debug.LogError("Board component not found in instantiated prefab hierarchy!");
             Destroy(container);
             return null;
         }

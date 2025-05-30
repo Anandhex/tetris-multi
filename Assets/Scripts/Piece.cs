@@ -25,13 +25,13 @@ public class Piece : MonoBehaviour
 
         if (board == null)
         {
-            Debug.LogError("Board is null in Piece.Initialize");
+            // Debug.LogError("Board is null in Piece.Initialize");
             return;
         }
 
         if (controller == null)
         {
-            Debug.LogError("InputController is null in Piece.Initialize");
+            // Debug.LogError("InputController is null in Piece.Initialize");
             return; // Don't continue with initialization if controller is null
         }
 
@@ -69,7 +69,7 @@ public class Piece : MonoBehaviour
     {
         if (board == null || inputController == null)
         {
-            Debug.LogWarning("Piece not properly initialized, skipping update");
+            // Debug.LogWarning("Piece not properly initialized, skipping update");
             return;
         }
 

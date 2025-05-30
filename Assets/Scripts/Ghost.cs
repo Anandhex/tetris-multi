@@ -50,7 +50,7 @@ public class Ghost : MonoBehaviour
         // Safety check
         if (trackingPiece == null || trackingPiece.cells == null)
         {
-            Debug.LogWarning("Cannot copy from tracking piece: null or uninitialized");
+            // Debug.LogWarning("Cannot copy from tracking piece: null or uninitialized");
             return;
         }
 

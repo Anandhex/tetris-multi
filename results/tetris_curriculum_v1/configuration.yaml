@@ -1,0 +1,251 @@
+default_settings: null
+behaviors:
+  TetrisAgent:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 256
+      buffer_size: 100000
+      learning_rate: 0.0003
+      beta: 0.005
+      epsilon: 0.2
+      lambd: 0.98
+      num_epoch: 3
+      shared_critic: false
+      learning_rate_schedule: linear
+      beta_schedule: linear
+      epsilon_schedule: linear
+    network_settings:
+      normalize: true
+      hidden_units: 512
+      num_layers: 4
+      vis_encode_type: simple
+      memory: null
+      goal_conditioning_type: hyper
+      deterministic: false
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+        network_settings:
+          normalize: false
+          hidden_units: 128
+          num_layers: 2
+          vis_encode_type: simple
+          memory: null
+          goal_conditioning_type: hyper
+          deterministic: false
+      curiosity:
+        gamma: 0.99
+        strength: 0.3
+        network_settings:
+          normalize: false
+          hidden_units: 256
+          num_layers: 2
+          vis_encode_type: simple
+          memory: null
+          goal_conditioning_type: hyper
+          deterministic: false
+        learning_rate: 0.001
+        encoding_size: 256
+    init_path: null
+    keep_checkpoints: 5
+    checkpoint_interval: 500000
+    max_steps: 10000000
+    time_horizon: 512
+    summary_freq: 10000
+    threaded: true
+    self_play: null
+    behavioral_cloning: null
+env_settings:
+  env_path: null
+  env_args: null
+  base_port: 5005
+  num_envs: 1
+  num_areas: 1
+  seed: -1
+  max_lifetime_restarts: 10
+  restarts_rate_limit_n: 1
+  restarts_rate_limit_period_s: 60
+engine_settings:
+  width: 84
+  height: 84
+  quality_level: 5
+  time_scale: 20
+  target_frame_rate: -1
+  capture_frame_rate: 60
+  no_graphics: false
+environment_parameters:
+  tetromino_types:
+    curriculum:
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 827
+          value: 1
+      name: brain_dead
+      completion_criteria:
+        behavior: TetrisAgent
+        measure: reward
+        min_lesson_length: 100
+        signal_smoothing: true
+        threshold: 2.0
+        require_reset: false
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 828
+          value: 2
+      name: basic_placement
+      completion_criteria:
+        behavior: TetrisAgent
+        measure: reward
+        min_lesson_length: 100
+        signal_smoothing: true
+        threshold: 5.0
+        require_reset: false
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 829
+          value: 4
+      name: intermediate_shapes
+      completion_criteria:
+        behavior: TetrisAgent
+        measure: reward
+        min_lesson_length: 150
+        signal_smoothing: true
+        threshold: 15.0
+        require_reset: false
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 830
+          value: 7
+      name: advanced_tetris
+      completion_criteria:
+        behavior: TetrisAgent
+        measure: reward
+        min_lesson_length: 200
+        signal_smoothing: true
+        threshold: 30.0
+        require_reset: false
+  board_height:
+    curriculum:
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 831
+          value: 8
+      name: brain_dead
+      completion_criteria:
+        behavior: TetrisAgent
+        measure: reward
+        min_lesson_length: 100
+        signal_smoothing: true
+        threshold: 2.0
+        require_reset: false
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 832
+          value: 10
+      name: basic_placement
+      completion_criteria:
+        behavior: TetrisAgent
+        measure: reward
+        min_lesson_length: 150
+        signal_smoothing: true
+        threshold: 10.0
+        require_reset: false
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 833
+          value: 15
+      name: intermediate_shapes
+      completion_criteria:
+        behavior: TetrisAgent
+        measure: reward
+        min_lesson_length: 150
+        signal_smoothing: true
+        threshold: 15.0
+        require_reset: false
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 834
+          value: 20
+      name: advanced_tetris
+      completion_criteria:
+        behavior: TetrisAgent
+        measure: reward
+        min_lesson_length: 200
+        signal_smoothing: true
+        threshold: 30.0
+        require_reset: false
+  hole_penalty_weight:
+    curriculum:
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 835
+          value: 0.1
+      name: brain_dead
+      completion_criteria:
+        behavior: TetrisAgent
+        measure: reward
+        min_lesson_length: 100
+        signal_smoothing: true
+        threshold: 2.0
+        require_reset: false
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 836
+          value: 0.1
+      name: basic_placement
+      completion_criteria:
+        behavior: TetrisAgent
+        measure: reward
+        min_lesson_length: 100
+        signal_smoothing: true
+        threshold: 5.0
+        require_reset: false
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 837
+          value: 0.3
+      name: intermediate_shapes
+      completion_criteria:
+        behavior: TetrisAgent
+        measure: reward
+        min_lesson_length: 150
+        signal_smoothing: true
+        threshold: 15.0
+        require_reset: false
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 838
+          value: 0.5
+      name: advanced_tetris
+      completion_criteria:
+        behavior: TetrisAgent
+        measure: reward
+        min_lesson_length: 200
+        signal_smoothing: true
+        threshold: 30.0
+        require_reset: false
+checkpoint_settings:
+  run_id: tetris_curriculum_v1
+  initialize_from: null
+  load_model: false
+  resume: false
+  force: true
+  train_model: false
+  inference: false
+  results_dir: results
+torch_settings:
+  device: null
+debug: false

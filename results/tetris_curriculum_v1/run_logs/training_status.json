@@ -1,0 +1,38 @@
+{
+    "tetromino_types": {
+        "lesson_num": 2
+    },
+    "board_height": {
+        "lesson_num": 1
+    },
+    "hole_penalty_weight": {
+        "lesson_num": 2
+    },
+    "TetrisAgent": {
+        "checkpoints": [
+            {
+                "steps": 168046,
+                "file_path": "results/tetris_curriculum_v1/TetrisAgent/TetrisAgent-168046.onnx",
+                "reward": 275.82613362899195,
+                "creation_time": 1748561194.800978,
+                "auxillary_file_paths": [
+                    "results/tetris_curriculum_v1/TetrisAgent/TetrisAgent-168046.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 168046,
+            "file_path": "results/tetris_curriculum_v1/TetrisAgent.onnx",
+            "reward": 275.82613362899195,
+            "creation_time": 1748561194.800978,
+            "auxillary_file_paths": [
+                "results/tetris_curriculum_v1/TetrisAgent/TetrisAgent-168046.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "0.30.0",
+        "torch_version": "1.11.0"
+    }
+}
