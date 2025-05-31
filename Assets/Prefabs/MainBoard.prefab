@@ -61,10 +61,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   playerTag: 
   tetrominoes:
-  - tetromino: 1
-    tile: {fileID: 11400000, guid: 0c3274955f8444257a94a88eecbfe877, type: 2}
   - tetromino: 0
     tile: {fileID: 11400000, guid: b1a7a7557876e426f8ef11c829e05d57, type: 2}
+  - tetromino: 1
+    tile: {fileID: 11400000, guid: 0c3274955f8444257a94a88eecbfe877, type: 2}
   - tetromino: 2
     tile: {fileID: 11400000, guid: 2ad55ee77311d41ae8224dc57dd9d0b0, type: 2}
   - tetromino: 3

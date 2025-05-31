@@ -32,206 +32,354 @@ behaviors:
     threaded: true
 
 environment_parameters:
+  # Tetromino progression - start simple, add complexity
   tetromino_types:
     curriculum:
-      - name: "brain_dead"
-        value: 1
+      - name: "single_piece"
+        value: 1 # Only I-pieces
         completion_criteria:
-          min_lesson_length: 100
-          measure: "reward"
-          behavior: "TetrisAgent"
-          signal_smoothing: true
-          threshold: 2.0
-      - name: "basic_placement"
-        value: 2
-        completion_criteria:
-          min_lesson_length: 100
-          measure: "reward"
-          behavior: "TetrisAgent"
-          signal_smoothing: true
-          threshold: 5.0
-      - name: "two_line_clear"
-        value: 3
-        completion_criteria:
-          min_lesson_length: 100
+          min_lesson_length: 100000
           measure: "reward"
           behavior: "TetrisAgent"
           signal_smoothing: true
           threshold: 8.0
-      - name: "mid_stack"
-        value: 4
+      - name: "basic_shapes"
+        value: 2 # I and O pieces
         completion_criteria:
-          min_lesson_length: 150
+          min_lesson_length: 150000
           measure: "reward"
           behavior: "TetrisAgent"
           signal_smoothing: true
           threshold: 12.0
-      - name: "flat_stack"
-        value: 5
+      - name: "simple_shapes"
+        value: 3 # I, O, T pieces
         completion_criteria:
-          min_lesson_length: 150
+          min_lesson_length: 200000
           measure: "reward"
           behavior: "TetrisAgent"
           signal_smoothing: true
           threshold: 18.0
-      - name: "empty_board"
-        value: 7
+      - name: "most_shapes"
+        value: 5 # All except S and Z
         completion_criteria:
-          min_lesson_length: 300
+          min_lesson_length: 250000
           measure: "reward"
           behavior: "TetrisAgent"
           signal_smoothing: true
-          threshold: 30.0
+          threshold: 25.0
+      - name: "all_shapes"
+        value: 7 # All tetrominoes
+        completion_criteria:
+          min_lesson_length: 300000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 35.0
 
+  # Board height progression
   board_height:
     curriculum:
-      - name: "brain_dead"
-        value: 8
+      - name: "single_piece"
+        value: 8 # Very small for basic placement
         completion_criteria:
-          min_lesson_length: 100
-          measure: "reward"
-          behavior: "TetrisAgent"
-          signal_smoothing: true
-          threshold: 2.0
-      - name: "basic_placement"
-        value: 10
-        completion_criteria:
-          min_lesson_length: 150
-          measure: "reward"
-          behavior: "TetrisAgent"
-          signal_smoothing: true
-          threshold: 5.0
-      - name: "two_line_clear"
-        value: 12
-        completion_criteria:
-          min_lesson_length: 100
+          min_lesson_length: 100000
           measure: "reward"
           behavior: "TetrisAgent"
           signal_smoothing: true
           threshold: 8.0
-      - name: "mid_stack"
-        value: 14
+      - name: "basic_shapes"
+        value: 10 # Small board
         completion_criteria:
-          min_lesson_length: 150
+          min_lesson_length: 150000
           measure: "reward"
           behavior: "TetrisAgent"
           signal_smoothing: true
           threshold: 12.0
-      - name: "flat_stack"
-        value: 18
+      - name: "simple_shapes"
+        value: 14 # Medium board
         completion_criteria:
-          min_lesson_length: 150
+          min_lesson_length: 200000
           measure: "reward"
           behavior: "TetrisAgent"
           signal_smoothing: true
           threshold: 18.0
-      - name: "empty_board"
-        value: 20
+      - name: "most_shapes"
+        value: 18 # Large board
         completion_criteria:
-          min_lesson_length: 300
+          min_lesson_length: 250000
           measure: "reward"
           behavior: "TetrisAgent"
           signal_smoothing: true
-          threshold: 30.0
+          threshold: 25.0
+      - name: "all_shapes"
+        value: 20 # Full size
+        completion_criteria:
+          min_lesson_length: 300000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 35.0
 
+  # Progressive hole penalty
   hole_penalty_weight:
     curriculum:
-      - name: "brain_dead"
-        value: 0.1
+      - name: "single_piece"
+        value: 0.02 # Very gentle - focus on basic placement
         completion_criteria:
-          min_lesson_length: 100
-          measure: "reward"
-          behavior: "TetrisAgent"
-          signal_smoothing: true
-          threshold: 2.0
-      - name: "basic_placement"
-        value: 0.1
-        completion_criteria:
-          min_lesson_length: 100
-          measure: "reward"
-          behavior: "TetrisAgent"
-          signal_smoothing: true
-          threshold: 5.0
-      - name: "two_line_clear"
-        value: 0.2
-        completion_criteria:
-          min_lesson_length: 100
+          min_lesson_length: 100000
           measure: "reward"
           behavior: "TetrisAgent"
           signal_smoothing: true
           threshold: 8.0
-      - name: "mid_stack"
-        value: 0.3
+      - name: "basic_shapes"
+        value: 0.05 # Light penalty
         completion_criteria:
-          min_lesson_length: 150
+          min_lesson_length: 150000
           measure: "reward"
           behavior: "TetrisAgent"
           signal_smoothing: true
           threshold: 12.0
-      - name: "flat_stack"
-        value: 0.4
+      - name: "simple_shapes"
+        value: 0.1 # Moderate penalty
         completion_criteria:
-          min_lesson_length: 150
+          min_lesson_length: 200000
           measure: "reward"
           behavior: "TetrisAgent"
           signal_smoothing: true
           threshold: 18.0
-      - name: "empty_board"
-        value: 0.5
+      - name: "most_shapes"
+        value: 0.2 # Higher penalty
         completion_criteria:
-          min_lesson_length: 300
+          min_lesson_length: 250000
           measure: "reward"
           behavior: "TetrisAgent"
           signal_smoothing: true
-          threshold: 30.0
+          threshold: 25.0
+      - name: "all_shapes"
+        value: 0.3 # Full penalty (reduced from 0.5)
+        completion_criteria:
+          min_lesson_length: 300000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 35.0
 
+  # Board preset progression - CORRECTED to match C# switch cases
   board_preset:
     curriculum:
-      - name: "brain_dead"
-        value: 0
+      - name: "single_piece"
+        value: 1 # minimal_pre_config - Single I-piece placement
         completion_criteria:
-          min_lesson_length: 100
-          measure: "reward"
-          behavior: "TetrisAgent"
-          signal_smoothing: true
-          threshold: 2.0
-      - name: "basic_placement"
-        value: 1
-        completion_criteria:
-          min_lesson_length: 100
-          measure: "reward"
-          behavior: "TetrisAgent"
-          signal_smoothing: true
-          threshold: 5.0
-      - name: "two_line_clear"
-        value: 2
-        completion_criteria:
-          min_lesson_length: 100
+          min_lesson_length: 100000
           measure: "reward"
           behavior: "TetrisAgent"
           signal_smoothing: true
           threshold: 8.0
-      - name: "mid_stack"
-        value: 3
+      - name: "basic_shapes"
+        value: 2 # basic_placement - Two-piece scenarios (I and O)
         completion_criteria:
-          min_lesson_length: 150
+          min_lesson_length: 150000
           measure: "reward"
           behavior: "TetrisAgent"
           signal_smoothing: true
           threshold: 12.0
-      - name: "flat_stack"
-        value: 4
+      - name: "simple_shapes"
+        value: 3 # guided_stacking - Multi-piece practice (I, O, T)
         completion_criteria:
-          min_lesson_length: 150
+          min_lesson_length: 200000
           measure: "reward"
           behavior: "TetrisAgent"
           signal_smoothing: true
           threshold: 18.0
-      - name: "empty_board"
-        value: 6
+      - name: "most_shapes"
+        value: 4 # structured_challenge - Multi-piece strategy
         completion_criteria:
-          min_lesson_length: 300
+          min_lesson_length: 250000
           measure: "reward"
           behavior: "TetrisAgent"
           signal_smoothing: true
-          threshold: 30.0
+          threshold: 25.0
+      - name: "all_shapes"
+        value: 5 # complex_scenario - Advanced multi-level challenge
+        completion_criteria:
+          min_lesson_length: 300000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 35.0
+
+  # Reward scaling to compensate for increased difficulty
+  clearReward:
+    curriculum:
+      - name: "single_piece"
+        value: 3.0 # Lower base reward for simple scenarios
+        completion_criteria:
+          min_lesson_length: 100000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 8.0
+      - name: "basic_shapes"
+        value: 4.0 # Slight increase
+        completion_criteria:
+          min_lesson_length: 150000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 12.0
+      - name: "simple_shapes"
+        value: 5.0 # Your current base
+        completion_criteria:
+          min_lesson_length: 200000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 18.0
+      - name: "most_shapes"
+        value: 6.0 # Higher to compensate for difficulty
+        completion_criteria:
+          min_lesson_length: 250000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 25.0
+      - name: "all_shapes"
+        value: 7.0 # Highest for full complexity
+        completion_criteria:
+          min_lesson_length: 300000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 35.0
+
+  # Progressive T-spin enablement
+  enable_t_spins:
+    curriculum:
+      - name: "single_piece"
+        value: 0.0 # Disabled for early learning
+        completion_criteria:
+          min_lesson_length: 100000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 8.0
+      - name: "basic_shapes"
+        value: 0.0 # Still disabled
+        completion_criteria:
+          min_lesson_length: 150000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 12.0
+      - name: "simple_shapes"
+        value: 1.0 # Enable when T-pieces are introduced
+        completion_criteria:
+          min_lesson_length: 200000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 18.0
+      - name: "most_shapes"
+        value: 1.0 # Keep enabled
+        completion_criteria:
+          min_lesson_length: 250000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 25.0
+      - name: "all_shapes"
+        value: 1.0 # Keep enabled
+        completion_criteria:
+          min_lesson_length: 300000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 35.0
+
+  # Perfect clear bonus scaling
+  perfectClearBonus:
+    curriculum:
+      - name: "single_piece"
+        value: 20.0 # Lower for simple scenarios
+        completion_criteria:
+          min_lesson_length: 100000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 8.0
+      - name: "basic_shapes"
+        value: 30.0
+        completion_criteria:
+          min_lesson_length: 150000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 12.0
+      - name: "simple_shapes"
+        value: 40.0
+        completion_criteria:
+          min_lesson_length: 200000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 18.0
+      - name: "most_shapes"
+        value: 50.0 # Your current value
+        completion_criteria:
+          min_lesson_length: 250000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 25.0
+      - name: "all_shapes"
+        value: 60.0 # Higher for full complexity
+        completion_criteria:
+          min_lesson_length: 300000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 35.0
+
+  # Stagnation penalty factor - more forgiving early on
+  stagnationPenaltyFactor:
+    curriculum:
+      - name: "single_piece"
+        value: 0.0005 # Very light
+        completion_criteria:
+          min_lesson_length: 100000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 8.0
+      - name: "basic_shapes"
+        value: 0.0007
+        completion_criteria:
+          min_lesson_length: 150000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 12.0
+      - name: "simple_shapes"
+        value: 0.001 # Your current value
+        completion_criteria:
+          min_lesson_length: 200000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 18.0
+      - name: "most_shapes"
+        value: 0.0012
+        completion_criteria:
+          min_lesson_length: 250000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 25.0
+      - name: "all_shapes"
+        value: 0.0015 # Slightly more aggressive for full game
+        completion_criteria:
+          min_lesson_length: 300000
+          measure: "reward"
+          behavior: "TetrisAgent"
+          signal_smoothing: true
+          threshold: 35.0

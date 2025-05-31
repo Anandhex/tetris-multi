@@ -323,7 +323,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     private int steps = 0;
     public override void OnActionReceived(ActionBuffers actions)
     {
-
+        // Base survival reward - keep consistent across curriculum
         AddReward(0.01f);
         m_StatsRecorder.Add("action-rewarded/survival", 0.01f);
 
@@ -346,32 +346,33 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         if (debugger != null)
             debugger.SetLastAction(actionIndex);
 
-        // Basic action rewards - simplified
+        // Action rewards using your reward weights
         switch (actionIndex)
         {
             case 0:
                 AddReward(-rewardWeights.idleActionPenalty);
                 m_StatsRecorder.Add("action-rewarded/do-nothing", -rewardWeights.idleActionPenalty);
-
-                break; // Do nothing - small penalty
-            case 1: moveLeft = true; break;   // Neutral - let outcomes determine reward
-            case 2: moveRight = true; break;  // Neutral - let outcomes determine reward
-            case 3: rotateLeft = true; break; // Neutral - let outcomes determine reward
-            case 4: rotateRight = true; break; // Neutral - let outcomes determine reward
+                break;
+            case 1: moveLeft = true; break;
+            case 2: moveRight = true; break;
+            case 3: rotateLeft = true; break;
+            case 4: rotateRight = true; break;
             case 5:
-                moveDown = true; AddReward(rewardWeights.moveDownActionReward);
+                moveDown = true;
+                AddReward(rewardWeights.moveDownActionReward);
                 m_StatsRecorder.Add("action-rewarded/move-down", rewardWeights.moveDownActionReward);
-
-                break; // Small reward for efficiency
+                break;
             case 6:
-                hardDrop = true; AddReward(rewardWeights.hardDropActionReward);
+                hardDrop = true;
+                AddReward(rewardWeights.hardDropActionReward);
                 m_StatsRecorder.Add("action-rewarded/hard-drop", rewardWeights.hardDropActionReward);
-                break; // Reduced from 0.05 to prevent premature dropping
+                break;
         }
 
         if (board == null)
             return;
 
+        // Partial row fill rewards
         int[] rowFills = board.GetRowFillCounts();
         int maxWidth = board.Bounds.size.x;
 
@@ -387,43 +388,47 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             }
         }
 
-
         // === LINE CLEAR REWARDS ===
         if (board.playerScore > previousScore)
         {
             int scoreDelta = board.playerScore - previousScore;
             int linesCleared = scoreDelta / 100; // Each line is worth 100 points in Board.cs
 
-            // Exponential reward scaling for multiple lines
+            // Line clear rewards with proper multipliers
             float clearReward = 0f;
             switch (linesCleared)
             {
-                case 1: clearReward = rewardWeights.clearReward; break;
-                case 2: clearReward = rewardWeights.clearReward * rewardWeights.doubleLineClearRewardMultiplier; break; // Use new multiplier
-                case 3: clearReward = rewardWeights.clearReward * rewardWeights.tripleLineClearRewardMultiplier; break; // Use new multiplier
-                case 4: clearReward = rewardWeights.clearReward * rewardWeights.tetrisClearRewardMultiplier; break; // Use new multiplier for Tetris
+                case 1:
+                    clearReward = rewardWeights.clearReward;
+                    break;
+                case 2:
+                    clearReward = rewardWeights.clearReward * rewardWeights.doubleLineClearRewardMultiplier;
+                    break;
+                case 3:
+                    clearReward = rewardWeights.clearReward * rewardWeights.tripleLineClearRewardMultiplier;
+                    break;
+                case 4:
+                    clearReward = rewardWeights.clearReward * rewardWeights.tetrisClearRewardMultiplier;
+                    break;
             }
 
-            // Combo system with increasing returns
+            // Combo system
             if (consecutiveClears > 0)
             {
-                clearReward *= (1.0f + (consecutiveClears * rewardWeights.comboMultiplier)); // Scale by combo count
+                clearReward *= (1.0f + (consecutiveClears * rewardWeights.comboMultiplier));
             }
             consecutiveClears++;
 
-
-
             AddReward(clearReward);
-            m_StatsRecorder.Add("action-rewarded/clear-reward", rewardWeights.clearReward);
+            m_StatsRecorder.Add("action-rewarded/clear-reward", clearReward); // Fixed: was using base reward instead of actual
             previousScore = board.playerScore;
             stepsSinceLastClear = 0;
 
-            // Perfect clear bonus (keep as is - good reward)
+            // Perfect clear bonus
             if (board.IsPerfectClear())
             {
                 AddReward(rewardWeights.perfectClearBonus);
                 m_StatsRecorder.Add("action-rewarded/perfect-clear", rewardWeights.perfectClearBonus);
-
             }
         }
         else
@@ -431,191 +436,196 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             consecutiveClears = 0;
             stepsSinceLastClear++;
 
-            // LESS AGGRESSIVE stagnation penalty
-            if (stepsSinceLastClear > 100) // Increased threshold from 50 to 100
+            // Stagnation penalty - curriculum aware through penalty factor
+            if (stepsSinceLastClear > 100)
             {
-                float stagnationPenalty = Mathf.Min((stepsSinceLastClear - 100) * rewardWeights.stagnationPenaltyFactor, 0.1f); // Capped at 0.1f instead of 1.0f
+                float stagnationPenalty = Mathf.Min((stepsSinceLastClear - 100) * rewardWeights.stagnationPenaltyFactor, 0.1f);
                 AddReward(-stagnationPenalty);
-                m_StatsRecorder.Add("action-rewarded/stagination-penalty", -rewardWeights.stackHeightPenalty);
-
+                m_StatsRecorder.Add("action-rewarded/stagnation-penalty", -stagnationPenalty); // Fixed: was using wrong variable
             }
         }
 
         // === BOARD STATE EVALUATION ===
 
-        // --- Surface Smoothness Reward ---
+        // Surface Smoothness - Normalized to prevent explosion
         float previousRoughness = lastSurfaceRoughness;
         float currentRoughness = CalculateSurfaceRoughness();
-        float roughnessDelta = previousRoughness - currentRoughness;
 
-        if (roughnessDelta > 0)
+        // Normalize roughness by board dimensions to prevent extreme values
+        float maxPossibleRoughness = maxWidth * curriculumBoardHeight;
+        float normalizedCurrentRoughness = Mathf.Min(currentRoughness / maxPossibleRoughness, 1.0f);
+        float normalizedPreviousRoughness = Mathf.Min(previousRoughness / maxPossibleRoughness, 1.0f);
+
+        float roughnessDelta = normalizedPreviousRoughness - normalizedCurrentRoughness;
+
+        if (roughnessDelta > 0.01f) // Significant improvement
         {
-            AddReward(roughnessDelta * rewardWeights.roughnessRewardMultiplier); // Reward smoother surface
-            m_StatsRecorder.Add("action-rewarded/roughnessDelta", roughnessDelta * rewardWeights.roughnessRewardMultiplier);
-
+            float roughnessReward = roughnessDelta * rewardWeights.roughnessRewardMultiplier;
+            AddReward(roughnessReward);
+            m_StatsRecorder.Add("action-rewarded/roughness-improvement", roughnessReward);
         }
-        else if (roughnessDelta < -1) // Only penalize significant roughness increases
+        else if (roughnessDelta < -0.02f) // Significant worsening
         {
-            AddReward(roughnessDelta * rewardWeights.roughnessPenaltyMultiplier);
-            m_StatsRecorder.Add("action-rewarded/roughnessDelta", roughnessDelta * rewardWeights.roughnessRewardMultiplier);
-
+            float roughnessPenalty = Mathf.Abs(roughnessDelta) * rewardWeights.roughnessPenaltyMultiplier;
+            AddReward(-roughnessPenalty);
+            m_StatsRecorder.Add("action-rewarded/roughness-penalty", -roughnessPenalty);
         }
 
         lastSurfaceRoughness = currentRoughness;
 
-        int bottomCheckHeight = board.Bounds.height / 2; // Check first few rows (customize as needed)
-        int minRowCoverage = Mathf.CeilToInt(maxWidth * 0.65f); // At least 50% coverage
+        // Wide base building
+        int bottomCheckHeight = Mathf.Max(3, (int)(curriculumBoardHeight / 3));
+        int minRowCoverage = Mathf.CeilToInt(maxWidth * 0.65f);
 
         int wideBaseRows = 0;
-        for (int y = 0; y < bottomCheckHeight; y++)
+        for (int y = 0; y < bottomCheckHeight && y < rowFills.Length; y++)
         {
             int rowFill = rowFills[y];
             if (rowFill >= minRowCoverage)
                 wideBaseRows++;
         }
 
-        // Apply reward for horizontal base building
         if (wideBaseRows > 0)
         {
             float stackingReward = wideBaseRows * rewardWeights.horizontalStackingRewardMultiplier;
             AddReward(stackingReward);
             m_StatsRecorder.Add("action-rewarded/horizontal-stack", stackingReward);
         }
-        // --- Hole Management ---
+
+        // === HOLE MANAGEMENT ===
         List<Vector2Int> currentHoles = board.GetHolePositions();
 
         // Reward filling existing holes
         var filledHoles = previousHolePositions.Where(oldPos => !currentHoles.Contains(oldPos)).ToList();
         if (filledHoles.Count > 0)
         {
-            // Higher reward for filling holes in lower rows
             float holeReward = 0f;
             foreach (var pos in filledHoles)
             {
-                // Scale reward by position - filling deeper holes is better
-                float depthFactor = 1f + (pos.y * 0.1f); // Higher reward for deeper holes (0.1f here is a scaling factor, not a reward itself)
+                // Scale reward by depth - deeper holes are more valuable to fill
+                float depthFactor = 1f + (pos.y * 0.1f);
                 holeReward += rewardWeights.holeFillReward * depthFactor;
             }
             AddReward(holeReward);
-            m_StatsRecorder.Add("action-rewarded/hole-reward", holeReward);
-
+            m_StatsRecorder.Add("action-rewarded/hole-fill", holeReward);
         }
 
-        // Penalty for creating new holes - more severe
+        // Penalty for creating new holes - uses curriculum-adjusted penalty
         var newHoles = currentHoles.Where(newPos => !previousHolePositions.Contains(newPos)).ToList();
         if (newHoles.Count > 0)
         {
-            // Higher penalty for creating holes in higher positions
             float holePenalty = 0f;
             foreach (var pos in newHoles)
             {
-                // Scale penalty by position - creating higher holes is worse
-                int boardHeight = board.boardSize[0];
-                float heightFactor = 1f + ((boardHeight - pos.y) * 0.1f); // 0.1f here is a scaling factor, not a reward itself
+                // Higher penalty for creating holes higher up
+                float heightFactor = 1f + ((curriculumBoardHeight - pos.y) * 0.1f);
                 holePenalty += rewardWeights.holeCreationPenalty * heightFactor;
             }
             AddReward(-holePenalty);
-            m_StatsRecorder.Add("action-rewarded/hole-peanlity", -holePenalty);
-
+            m_StatsRecorder.Add("action-rewarded/hole-creation", -holePenalty);
         }
 
         previousHolePositions = currentHoles;
 
-        // --- Well Formation Reward ---
+        // === WELL FORMATION ===
         (int wellCol, int wellDepth) = GetDeepestWell();
         if (wellDepth >= 3)
         {
-            // Better reward for deeper wells, but cap at reasonable depth
-            float wellReward = Mathf.Min(wellDepth * rewardWeights.wellRewardMultiplier, rewardWeights.maxWellRewardCap); // Use new cap
+            float wellReward = Mathf.Min(wellDepth * rewardWeights.wellRewardMultiplier, rewardWeights.maxWellRewardCap);
             AddReward(wellReward);
-            m_StatsRecorder.Add("action-rewarded/well-reward", wellReward);
+            m_StatsRecorder.Add("action-rewarded/well-formation", wellReward);
 
-
-            // Extra reward if the I-piece is next and we have a good well for it
+            // I-piece in well bonus
             if (IsIPieceNext() && wellDepth >= 4)
             {
                 AddReward(rewardWeights.iPieceInWellBonus);
-                m_StatsRecorder.Add("action-rewarded/i-peiece-reward", rewardWeights.iPieceInWellBonus);
-
+                m_StatsRecorder.Add("action-rewarded/i-piece-well-setup", rewardWeights.iPieceInWellBonus);
             }
         }
 
-        // --- Stack Height Management ---
+        // === STACK HEIGHT MANAGEMENT ===
         float currentHeight = board.CalculateStackHeight();
-        float heightDelta = previousHeight - currentHeight;
 
-        // Dynamic height penalty based on current stack height
-        // Heavier penalty when stack is already high
-        if (currentHeight > 10) // Only care about height when it's getting dangerous
+        // Progressive height penalty based on curriculum board height
+        float heightRatio = currentHeight / curriculumBoardHeight;
+        if (heightRatio > 0.5f) // Only penalize when stack gets to half the board height
         {
-            float heightFactor = Mathf.Max(0, (currentHeight - 10) / 10f); // Scale from 0 to 1
-            AddReward(-rewardWeights.stackHeightPenalty * heightFactor); // Progressive penalty for having a tall stack
-            m_StatsRecorder.Add("action-rewarded/tall-stack", -rewardWeights.stackHeightPenalty * heightFactor);
-
+            // Exponential penalty for dangerous heights
+            float heightFactor = Mathf.Pow(heightRatio - 0.5f, 2) * 2.0f; // Quadratic scaling
+            float heightPenalty = rewardWeights.stackHeightPenalty * heightFactor;
+            AddReward(-heightPenalty);
+            m_StatsRecorder.Add("action-rewarded/height-penalty", -heightPenalty);
         }
 
         previousHeight = currentHeight;
 
-        // --- Piece-specific strategy rewards ---
+        // === PIECE-SPECIFIC STRATEGY REWARDS ===
         if (actionIndex == 6) // Hard drop - evaluate final placement
         {
-            // Reward good T-piece placements (potential T-spins)
-            if (board.activePiece.data.tetromino == Tetromino.T && IsPotentialTSpin())
+            // T-spin rewards (only if advanced mechanics are enabled)
+            if (enableAdvancedMechanics && board.activePiece.data.tetromino == Tetromino.T && IsPotentialTSpin())
             {
                 AddReward(rewardWeights.tSpinReward);
-                m_StatsRecorder.Add("action-rewarded/t-spin", rewardWeights.tSpinReward);
-
+                m_StatsRecorder.Add("action-rewarded/t-spin-setup", rewardWeights.tSpinReward);
             }
 
-            // Reward I-piece horizontal placements that fill gaps
+            // I-piece gap filling
             if (board.activePiece.data.tetromino == Tetromino.I &&
                 IsHorizontalPiece() && FillsMultipleGaps())
             {
                 AddReward(rewardWeights.iPieceGapFillBonus);
-                m_StatsRecorder.Add("action-rewarded/i-peice-gap", rewardWeights.iPieceGapFillBonus);
-
+                m_StatsRecorder.Add("action-rewarded/i-piece-gap-fill", rewardWeights.iPieceGapFillBonus);
             }
         }
 
-        // --- Penalize Inefficient Play ---
+        // === EFFICIENCY PENALTIES ===
         if ((rotateLeft || rotateRight) && board.LastRotationWasUseless(board.activePiece, prevPosition, prevCells))
         {
-            AddReward(-rewardWeights.uselessRotationPenalty);  // Penalize useless rotations
+            AddReward(-rewardWeights.uselessRotationPenalty);
             m_StatsRecorder.Add("action-rewarded/useless-rotation", -rewardWeights.uselessRotationPenalty);
-
         }
 
-        // --- Accessibility Reward ---
+        // === ACCESSIBILITY EVALUATION ===
         float accessibilityScore = EvaluateAccessibility();
         float accessibilityDelta = accessibilityScore - previousAccessibility;
 
-        if (accessibilityDelta > 0)
+        // Cap accessibility changes to prevent reward explosion
+        const float MAX_ACCESSIBILITY_CHANGE = 0.1f;
+        accessibilityDelta = Mathf.Clamp(accessibilityDelta, -MAX_ACCESSIBILITY_CHANGE, MAX_ACCESSIBILITY_CHANGE);
+
+        if (accessibilityDelta > 0.02f) // Significant improvement
         {
-            AddReward(accessibilityDelta * rewardWeights.accessibilityRewardMultiplier);
-            m_StatsRecorder.Add("action-rewarded/accessibilityDelta", accessibilityDelta * rewardWeights.accessibilityRewardMultiplier);
+            float accessibilityReward = accessibilityDelta * rewardWeights.accessibilityRewardMultiplier;
+            AddReward(accessibilityReward);
+            m_StatsRecorder.Add("action-rewarded/accessibility-improvement", accessibilityReward);
         }
-        else if (accessibilityDelta < 0)
+        else if (accessibilityDelta < -0.02f) // Significant degradation
         {
-            AddReward(accessibilityDelta * rewardWeights.accessibilityPenaltyMultiplier);
-            m_StatsRecorder.Add("action-rewarded/accessibilityDelta", accessibilityDelta * rewardWeights.accessibilityRewardMultiplier);
-
+            float accessibilityPenalty = Mathf.Abs(accessibilityDelta) * rewardWeights.accessibilityPenaltyMultiplier;
+            AddReward(-accessibilityPenalty);
+            m_StatsRecorder.Add("action-rewarded/accessibility-loss", -accessibilityPenalty);
         }
-
-
 
         previousAccessibility = accessibilityScore;
 
+        // === CURRICULUM PROGRESS TRACKING ===
         if (episodeSteps % 1000 == 0)
         {
-            // Debug.Log($"Episode steps: {episodeSteps}, Cumulative reward: {GetCumulativeReward()}");
+            float cumulativeReward = GetCumulativeReward();
+            m_StatsRecorder.Add("reward/cumulative", cumulativeReward);
+
+            // Track curriculum parameters for debugging
+            m_StatsRecorder.Add("curriculum/board-height", curriculumBoardHeight);
+            m_StatsRecorder.Add("curriculum/hole-penalty-weight", curriculumHolePenaltyWeight);
+            m_StatsRecorder.Add("curriculum/tetromino-types", allowedTetrominoTypes);
+            m_StatsRecorder.Add("curriculum/board-preset", curriculumBoardPreset);
+
+            // Track key metrics
+            m_StatsRecorder.Add("metrics/current-holes", currentHoles.Count);
+            m_StatsRecorder.Add("metrics/stack-height", currentHeight);
+            m_StatsRecorder.Add("metrics/surface-roughness", normalizedCurrentRoughness);
         }
-        float cumulativeReward = GetCumulativeReward();
-        m_StatsRecorder.Add("reward/cumulative", cumulativeReward);
-
-
-
-    }
-    // // New helper methods for enhanced rewards
+    } // // New helper methods for enhanced rewards
 
     // public override void OnActionReceived(ActionBuffers actions)
     // {
@@ -835,18 +845,26 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     private float EvaluateAccessibility()
     {
         int[] colHeights = GetColumnHeights();
-        float accessibility = 0f;
+        if (colHeights == null || colHeights.Length == 0) return 0f;
 
-        // Reward having space at the top for new pieces
+        float accessibility = 0f;
+        float maxBoardHeight = curriculumBoardHeight;
+
         for (int i = 0; i < colHeights.Length; i++)
         {
-            // Give more value to center columns being lower
-            float centerFactor = 1.0f - (Mathf.Abs(i - (colHeights.Length / 2)) / (float)colHeights.Length);
-            float heightValue = Mathf.Max(0, 20 - colHeights[i]) / 20f; // 0-1 scale
-            accessibility += heightValue * (1 + centerFactor);
+            // Center columns are more important for piece placement
+            float centerDistance = Mathf.Abs(i - (colHeights.Length / 2.0f));
+            float maxCenterDistance = colHeights.Length / 2.0f;
+            float centerFactor = 1.0f - (centerDistance / maxCenterDistance);
+            centerFactor = 0.3f + (centerFactor * 0.7f); // Scale to 0.3-1.0 range
+
+            // Height accessibility: more open space = better
+            float heightValue = Mathf.Clamp01((maxBoardHeight - colHeights[i]) / maxBoardHeight);
+
+            accessibility += heightValue * centerFactor;
         }
 
-        return accessibility / colHeights.Length;
+        return accessibility / colHeights.Length; // Normalize by column count
     }
     // Check if a move is safe
     // Called by Board.cs when game over occurs

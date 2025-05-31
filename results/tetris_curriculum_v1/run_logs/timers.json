@@ -1,0 +1,803 @@
+{
+    "name": "root",
+    "gauges": {
+        "TetrisAgent.Policy.Entropy.mean": {
+            "value": 1.747502326965332,
+            "min": 1.7277147769927979,
+            "max": 1.9459060430526733,
+            "count": 291
+        },
+        "TetrisAgent.Policy.Entropy.sum": {
+            "value": 24665.99609375,
+            "min": 9318.3388671875,
+            "max": 25836.70703125,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.survival.mean": {
+            "value": 0.009999999776482582,
+            "min": 0.009999999776482582,
+            "max": 0.009999999776482582,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.survival.sum": {
+            "value": 141.14999684505165,
+            "min": 52.849998818710446,
+            "max": 147.39999670535326,
+            "count": 291
+        },
+        "TetrisAgent.Environment.LessonNumber.tetromino_types.mean": {
+            "value": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "count": 291
+        },
+        "TetrisAgent.Environment.LessonNumber.tetromino_types.sum": {
+            "value": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "count": 291
+        },
+        "TetrisAgent.Environment.LessonNumber.board_height.mean": {
+            "value": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "count": 291
+        },
+        "TetrisAgent.Environment.LessonNumber.board_height.sum": {
+            "value": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "count": 291
+        },
+        "TetrisAgent.Environment.LessonNumber.hole_penalty_weight.mean": {
+            "value": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "count": 291
+        },
+        "TetrisAgent.Environment.LessonNumber.hole_penalty_weight.sum": {
+            "value": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "count": 291
+        },
+        "TetrisAgent.Environment.LessonNumber.board_preset.mean": {
+            "value": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "count": 291
+        },
+        "TetrisAgent.Environment.LessonNumber.board_preset.sum": {
+            "value": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "count": 291
+        },
+        "TetrisAgent.Environment.LessonNumber.clearReward.mean": {
+            "value": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "count": 291
+        },
+        "TetrisAgent.Environment.LessonNumber.clearReward.sum": {
+            "value": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "count": 291
+        },
+        "TetrisAgent.Environment.LessonNumber.enable_t_spins.mean": {
+            "value": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "count": 291
+        },
+        "TetrisAgent.Environment.LessonNumber.enable_t_spins.sum": {
+            "value": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "count": 291
+        },
+        "TetrisAgent.Environment.LessonNumber.perfectClearBonus.mean": {
+            "value": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "count": 291
+        },
+        "TetrisAgent.Environment.LessonNumber.perfectClearBonus.sum": {
+            "value": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "count": 291
+        },
+        "TetrisAgent.Environment.LessonNumber.stagnationPenaltyFactor.mean": {
+            "value": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "count": 291
+        },
+        "TetrisAgent.Environment.LessonNumber.stagnationPenaltyFactor.sum": {
+            "value": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.do-nothing.mean": {
+            "value": -0.0010000000474974513,
+            "min": -0.0010000000474974513,
+            "max": -0.0010000000474974513,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.do-nothing.sum": {
+            "value": -1.5850000752834603,
+            "min": -1.6990000806981698,
+            "max": -0.6090000289259478,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.roughness-penalty.mean": {
+            "value": -0.0007939189044509066,
+            "min": -0.0009908940132695022,
+            "max": -0.0006858974317229019,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.roughness-penalty.sum": {
+            "value": -0.17624999678810127,
+            "min": -0.20874999454827048,
+            "max": -0.07549999852199107,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.hole-creation.mean": {
+            "value": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.hole-creation.sum": {
+            "value": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.height-penalty.mean": {
+            "value": -0.008856045250958679,
+            "min": -0.009999999776482582,
+            "max": -0.00752894436298856,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.height-penalty.sum": {
+            "value": -121.77062220068183,
+            "min": -134.82499689911492,
+            "max": -49.453123873332515,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.accessibility-improvement.mean": {
+            "value": 0.014753210248754305,
+            "min": 0.012830520085022822,
+            "max": 0.01632290210162524,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.accessibility-improvement.sum": {
+            "value": 2.758850316517055,
+            "min": 1.1459001353941858,
+            "max": 3.144700320903212,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.useless-rotation.mean": {
+            "value": -0.009999999776482582,
+            "min": -0.009999999776482582,
+            "max": -0.009999999776482582,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.useless-rotation.sum": {
+            "value": -52.609998824074864,
+            "min": -63.15999858826399,
+            "max": -20.619999539107084,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.move-down.mean": {
+            "value": 0.019999999552965164,
+            "min": 0.019999999552965164,
+            "max": 0.019999999552965164,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.move-down.sum": {
+            "value": 31.499999295920134,
+            "min": 10.359999768435955,
+            "max": 31.499999295920134,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.hard-drop.mean": {
+            "value": 0.05000000074505806,
+            "min": 0.05000000074505806,
+            "max": 0.05000000074505806,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.hard-drop.sum": {
+            "value": 90.55000134930015,
+            "min": 30.4000004529953,
+            "max": 91.55000136420131,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.i-piece-gap-fill.mean": {
+            "value": 0.800000011920929,
+            "min": 0.800000011920929,
+            "max": 0.800000011920929,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.i-piece-gap-fill.sum": {
+            "value": 498.40000742673874,
+            "min": 162.40000241994858,
+            "max": 888.0000132322311,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.roughness-improvement.mean": {
+            "value": 0.01997650437988341,
+            "min": 0.01715023010657297,
+            "max": 0.026187845981726167,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.roughness-improvement.sum": {
+            "value": 5.313750165048987,
+            "min": 2.28000007965602,
+            "max": 6.296250158920884,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.hole-fill.mean": {
+            "value": 6.572154758543503,
+            "min": 5.306060736501184,
+            "max": 7.8349435519088395,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.hole-fill.sum": {
+            "value": 3233.5001412034035,
+            "min": 1113.4000368714333,
+            "max": 3658.3001794219017,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.accessibility-loss.mean": {
+            "value": -0.003185682208277285,
+            "min": -0.0035814658173991517,
+            "max": -0.0029367381740906615,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.accessibility-loss.sum": {
+            "value": -0.7008500858210027,
+            "min": -0.8243750630645081,
+            "max": -0.29755004320759326,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.clear-reward.mean": {
+            "value": 3.75,
+            "min": 3.0,
+            "max": 9.0,
+            "count": 265
+        },
+        "TetrisAgent.action-rewarded.clear-reward.sum": {
+            "value": 30.0,
+            "min": 3.0,
+            "max": 39.0,
+            "count": 265
+        },
+        "TetrisAgent.action-rewarded.stagnation-penalty.mean": {
+            "value": -0.08187507522934631,
+            "min": -0.08760896806437278,
+            "max": -0.0718958002165816,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.stagnation-penalty.sum": {
+            "value": -974.8865207558265,
+            "min": -1034.5500218712841,
+            "max": -388.85000794607913,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.well-formation.mean": {
+            "value": 0.8436719729955161,
+            "min": 0.8073745739084419,
+            "max": 0.9216406119672074,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.well-formation.sum": {
+            "value": 5946.200065672398,
+            "min": 2424.4000232219696,
+            "max": 6930.000060021877,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.i-piece-well-setup.mean": {
+            "value": 0.5,
+            "min": 0.5,
+            "max": 0.5,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.i-piece-well-setup.sum": {
+            "value": 2858.5,
+            "min": 1133.0,
+            "max": 3685.5,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.partial-row-fill.mean": {
+            "value": 0.007447917648418751,
+            "min": 0.007052532611548751,
+            "max": 0.00789106748582215,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.partial-row-fill.sum": {
+            "value": 74.57599941361696,
+            "min": 11.891000031027943,
+            "max": 108.12599912798032,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.horizontal-stack.mean": {
+            "value": 0.6117724867724867,
+            "min": 0.5,
+            "max": 0.8789016858621265,
+            "count": 291
+        },
+        "TetrisAgent.action-rewarded.horizontal-stack.sum": {
+            "value": 3700.0,
+            "min": 550.5,
+            "max": 6230.5,
+            "count": 291
+        },
+        "TetrisAgent.Step.mean": {
+            "value": 2909585.0,
+            "min": 9534.0,
+            "max": 2909585.0,
+            "count": 291
+        },
+        "TetrisAgent.Step.sum": {
+            "value": 2909585.0,
+            "min": 9534.0,
+            "max": 2909585.0,
+            "count": 291
+        },
+        "TetrisAgent.Policy.ExtrinsicValueEstimate.mean": {
+            "value": 101.76862335205078,
+            "min": 0.02039055898785591,
+            "max": 116.1802749633789,
+            "count": 291
+        },
+        "TetrisAgent.Policy.ExtrinsicValueEstimate.sum": {
+            "value": 2544.215576171875,
+            "min": 0.5913262367248535,
+            "max": 3296.4375,
+            "count": 291
+        },
+        "TetrisAgent.Policy.CuriosityValueEstimate.mean": {
+            "value": 1.6349257230758667,
+            "min": -0.006940603721886873,
+            "max": 1.7097101211547852,
+            "count": 291
+        },
+        "TetrisAgent.Policy.CuriosityValueEstimate.sum": {
+            "value": 40.87314224243164,
+            "min": -0.20821811258792877,
+            "max": 50.71464538574219,
+            "count": 291
+        },
+        "TetrisAgent.Environment.EpisodeLength.mean": {
+            "value": 847.9375,
+            "min": 378.037037037037,
+            "max": 909.6363636363636,
+            "count": 291
+        },
+        "TetrisAgent.Environment.EpisodeLength.sum": {
+            "value": 13567.0,
+            "min": 4726.0,
+            "max": 15212.0,
+            "count": 291
+        },
+        "TetrisAgent.Environment.CumulativeReward.mean": {
+            "value": 903.9691321055094,
+            "min": 303.9551844149828,
+            "max": 1320.4593456441705,
+            "count": 291
+        },
+        "TetrisAgent.Environment.CumulativeReward.sum": {
+            "value": 10847.629585266113,
+            "min": 7294.924425959587,
+            "max": 15278.58214187622,
+            "count": 291
+        },
+        "TetrisAgent.Policy.ExtrinsicReward.mean": {
+            "value": 903.9691321055094,
+            "min": 303.9551844149828,
+            "max": 1320.4593456441705,
+            "count": 291
+        },
+        "TetrisAgent.Policy.ExtrinsicReward.sum": {
+            "value": 10847.629585266113,
+            "min": 7294.924425959587,
+            "max": 15278.58214187622,
+            "count": 291
+        },
+        "TetrisAgent.Policy.CuriosityReward.mean": {
+            "value": 14.568244089682898,
+            "min": 0.0,
+            "max": 16.113936509429053,
+            "count": 291
+        },
+        "TetrisAgent.Policy.CuriosityReward.sum": {
+            "value": 174.81892907619476,
+            "min": 0.0,
+            "max": 200.8390573747456,
+            "count": 291
+        },
+        "TetrisAgent.IsTraining.mean": {
+            "value": 1.0,
+            "min": 1.0,
+            "max": 1.0,
+            "count": 291
+        },
+        "TetrisAgent.IsTraining.sum": {
+            "value": 1.0,
+            "min": 1.0,
+            "max": 1.0,
+            "count": 291
+        },
+        "TetrisAgent.reward.cumulative.mean": {
+            "value": 979.4428558349609,
+            "min": 326.27752685546875,
+            "max": 2104.039794921875,
+            "count": 203
+        },
+        "TetrisAgent.reward.cumulative.sum": {
+            "value": 3917.7714233398438,
+            "min": 326.27752685546875,
+            "max": 8972.319213867188,
+            "count": 203
+        },
+        "TetrisAgent.curriculum.board-height.mean": {
+            "value": 8.0,
+            "min": 8.0,
+            "max": 8.0,
+            "count": 203
+        },
+        "TetrisAgent.curriculum.board-height.sum": {
+            "value": 32.0,
+            "min": 8.0,
+            "max": 40.0,
+            "count": 203
+        },
+        "TetrisAgent.curriculum.hole-penalty-weight.mean": {
+            "value": 0.019999999552965164,
+            "min": 0.019999999552965164,
+            "max": 0.019999999552965164,
+            "count": 203
+        },
+        "TetrisAgent.curriculum.hole-penalty-weight.sum": {
+            "value": 0.07999999821186066,
+            "min": 0.019999999552965164,
+            "max": 0.09999999776482582,
+            "count": 203
+        },
+        "TetrisAgent.curriculum.tetromino-types.mean": {
+            "value": 1.0,
+            "min": 1.0,
+            "max": 1.0,
+            "count": 203
+        },
+        "TetrisAgent.curriculum.tetromino-types.sum": {
+            "value": 4.0,
+            "min": 1.0,
+            "max": 5.0,
+            "count": 203
+        },
+        "TetrisAgent.curriculum.board-preset.mean": {
+            "value": 1.0,
+            "min": 1.0,
+            "max": 1.0,
+            "count": 203
+        },
+        "TetrisAgent.curriculum.board-preset.sum": {
+            "value": 4.0,
+            "min": 1.0,
+            "max": 5.0,
+            "count": 203
+        },
+        "TetrisAgent.metrics.current-holes.mean": {
+            "value": 15.5,
+            "min": 1.0,
+            "max": 31.0,
+            "count": 203
+        },
+        "TetrisAgent.metrics.current-holes.sum": {
+            "value": 62.0,
+            "min": 1.0,
+            "max": 89.0,
+            "count": 203
+        },
+        "TetrisAgent.metrics.stack-height.mean": {
+            "value": 7.0,
+            "min": 2.0,
+            "max": 8.0,
+            "count": 203
+        },
+        "TetrisAgent.metrics.stack-height.sum": {
+            "value": 28.0,
+            "min": 2.0,
+            "max": 38.0,
+            "count": 203
+        },
+        "TetrisAgent.metrics.surface-roughness.mean": {
+            "value": 0.14999999850988388,
+            "min": 0.03750000149011612,
+            "max": 0.375,
+            "count": 203
+        },
+        "TetrisAgent.metrics.surface-roughness.sum": {
+            "value": 0.5999999940395355,
+            "min": 0.03750000149011612,
+            "max": 1.2249999940395355,
+            "count": 203
+        },
+        "TetrisAgent.Losses.PolicyLoss.mean": {
+            "value": 0.05128863047781017,
+            "min": 0.04849924595978108,
+            "max": 0.052492252547644835,
+            "count": 29
+        },
+        "TetrisAgent.Losses.PolicyLoss.sum": {
+            "value": 0.05128863047781017,
+            "min": 0.04849924595978108,
+            "max": 0.052492252547644835,
+            "count": 29
+        },
+        "TetrisAgent.Losses.ValueLoss.mean": {
+            "value": 95.05834832805299,
+            "min": 92.74572580570049,
+            "max": 142.5400623279256,
+            "count": 29
+        },
+        "TetrisAgent.Losses.ValueLoss.sum": {
+            "value": 95.05834832805299,
+            "min": 92.74572580570049,
+            "max": 142.5400623279256,
+            "count": 29
+        },
+        "TetrisAgent.Policy.LearningRate.mean": {
+            "value": 0.00021277862907380002,
+            "min": 0.00021277862907380002,
+            "max": 0.00029699712100096,
+            "count": 29
+        },
+        "TetrisAgent.Policy.LearningRate.sum": {
+            "value": 0.00021277862907380002,
+            "min": 0.00021277862907380002,
+            "max": 0.00029699712100096,
+            "count": 29
+        },
+        "TetrisAgent.Policy.Epsilon.mean": {
+            "value": 0.17092620000000003,
+            "min": 0.17092620000000003,
+            "max": 0.19899904000000002,
+            "count": 29
+        },
+        "TetrisAgent.Policy.Epsilon.sum": {
+            "value": 0.17092620000000003,
+            "min": 0.17092620000000003,
+            "max": 0.19899904000000002,
+            "count": 29
+        },
+        "TetrisAgent.Policy.Beta.mean": {
+            "value": 0.0035492173800000006,
+            "min": 0.0035492173800000006,
+            "max": 0.004950052096,
+            "count": 29
+        },
+        "TetrisAgent.Policy.Beta.sum": {
+            "value": 0.0035492173800000006,
+            "min": 0.0035492173800000006,
+            "max": 0.004950052096,
+            "count": 29
+        },
+        "TetrisAgent.Losses.CuriosityForwardLoss.mean": {
+            "value": 0.018576672500180427,
+            "min": 0.008354513392643169,
+            "max": 0.018576672500180427,
+            "count": 29
+        },
+        "TetrisAgent.Losses.CuriosityForwardLoss.sum": {
+            "value": 0.018576672500180427,
+            "min": 0.008354513392643169,
+            "max": 0.018576672500180427,
+            "count": 29
+        },
+        "TetrisAgent.Losses.CuriosityInverseLoss.mean": {
+            "value": 1.7217551950501868,
+            "min": 1.7217551950501868,
+            "max": 1.9320998611555888,
+            "count": 29
+        },
+        "TetrisAgent.Losses.CuriosityInverseLoss.sum": {
+            "value": 1.7217551950501868,
+            "min": 1.7217551950501868,
+            "max": 1.9320998611555888,
+            "count": 29
+        }
+    },
+    "metadata": {
+        "timer_format_version": "0.1.0",
+        "start_time_seconds": "1748677939",
+        "python_version": "3.9.22 | packaged by conda-forge | (main, Apr 14 2025, 23:36:04) \n[Clang 18.1.8 ]",
+        "command_line_arguments": "/opt/anaconda3/envs/ml-unity/bin/mlagents-learn ./Assets/ML-Agents/Config/tetris_ml_config.yaml --run-id=tetris_curriculum_v1 --force",
+        "mlagents_version": "0.30.0",
+        "mlagents_envs_version": "0.30.0",
+        "communication_protocol_version": "1.5.0",
+        "pytorch_version": "1.11.0",
+        "numpy_version": "1.21.2",
+        "end_time_seconds": "1748687733"
+    },
+    "total": 9794.240812667,
+    "count": 1,
+    "self": 0.026234999999360298,
+    "children": {
+        "run_training.setup": {
+            "total": 0.015928500000000012,
+            "count": 1,
+            "self": 0.015928500000000012
+        },
+        "TrainerController.start_learning": {
+            "total": 9794.198649167,
+            "count": 1,
+            "self": 95.15893002990924,
+            "children": {
+                "TrainerController._reset_env": {
+                    "total": 5.530968583,
+                    "count": 1,
+                    "self": 5.530968583
+                },
+                "TrainerController.advance": {
+                    "total": 9693.407935013092,
+                    "count": 2914368,
+                    "self": 56.4631425263251,
+                    "children": {
+                        "env_step": {
+                            "total": 9636.944792486767,
+                            "count": 2914368,
+                            "self": 8412.284642737304,
+                            "children": {
+                                "SubprocessEnvManager._take_step": {
+                                    "total": 1210.4777539692725,
+                                    "count": 2914368,
+                                    "self": 39.464715316195,
+                                    "children": {
+                                        "TorchPolicy.evaluate": {
+                                            "total": 1171.0130386530775,
+                                            "count": 2914368,
+                                            "self": 1171.0130386530775
+                                        }
+                                    }
+                                },
+                                "workers": {
+                                    "total": 14.182395780191207,
+                                    "count": 2914367,
+                                    "self": 0.0,
+                                    "children": {
+                                        "worker_root": {
+                                            "total": 9750.637829540452,
+                                            "count": 2914367,
+                                            "is_parallel": true,
+                                            "self": 2367.620773757897,
+                                            "children": {
+                                                "steps_from_proto": {
+                                                    "total": 0.0013849580000000472,
+                                                    "count": 1,
+                                                    "is_parallel": true,
+                                                    "self": 0.0005368329999999588,
+                                                    "children": {
+                                                        "_process_rank_one_or_two_observation": {
+                                                            "total": 0.0008481250000000884,
+                                                            "count": 2,
+                                                            "is_parallel": true,
+                                                            "self": 0.0008481250000000884
+                                                        }
+                                                    }
+                                                },
+                                                "UnityEnvironment.step": {
+                                                    "total": 7383.015670824555,
+                                                    "count": 2914367,
+                                                    "is_parallel": true,
+                                                    "self": 165.11116253045748,
+                                                    "children": {
+                                                        "UnityEnvironment._generate_step_input": {
+                                                            "total": 146.14418559339924,
+                                                            "count": 2914367,
+                                                            "is_parallel": true,
+                                                            "self": 146.14418559339924
+                                                        },
+                                                        "communicator.exchange": {
+                                                            "total": 6776.587982747022,
+                                                            "count": 2914367,
+                                                            "is_parallel": true,
+                                                            "self": 6776.587982747022
+                                                        },
+                                                        "steps_from_proto": {
+                                                            "total": 295.1723399536767,
+                                                            "count": 2914367,
+                                                            "is_parallel": true,
+                                                            "self": 152.50502752655166,
+                                                            "children": {
+                                                                "_process_rank_one_or_two_observation": {
+                                                                    "total": 142.66731242712507,
+                                                                    "count": 5828734,
+                                                                    "is_parallel": true,
+                                                                    "self": 142.66731242712507
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "trainer_threads": {
+                    "total": 7.116599954315461e-05,
+                    "count": 1,
+                    "self": 7.116599954315461e-05,
+                    "children": {
+                        "thread_root": {
+                            "total": 0.0,
+                            "count": 0,
+                            "is_parallel": true,
+                            "self": 0.0,
+                            "children": {
+                                "trainer_advance": {
+                                    "total": 9640.838592434066,
+                                    "count": 56442843,
+                                    "is_parallel": true,
+                                    "self": 369.1936616825624,
+                                    "children": {
+                                        "process_trajectory": {
+                                            "total": 8201.865204835502,
+                                            "count": 56442843,
+                                            "is_parallel": true,
+                                            "self": 8201.2637698775,
+                                            "children": {
+                                                "RLTrainer._checkpoint": {
+                                                    "total": 0.6014349580018461,
+                                                    "count": 5,
+                                                    "is_parallel": true,
+                                                    "self": 0.6014349580018461
+                                                }
+                                            }
+                                        },
+                                        "_update_policy": {
+                                            "total": 1069.779725916001,
+                                            "count": 29,
+                                            "is_parallel": true,
+                                            "self": 539.9429347930584,
+                                            "children": {
+                                                "TorchPPOOptimizer.update": {
+                                                    "total": 529.8367911229427,
+                                                    "count": 34026,
+                                                    "is_parallel": true,
+                                                    "self": 529.8367911229427
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "TrainerController._save_models": {
+                    "total": 0.10074437499861233,
+                    "count": 1,
+                    "self": 0.004034791998492437,
+                    "children": {
+                        "RLTrainer._checkpoint": {
+                            "total": 0.09670958300011989,
+                            "count": 1,
+                            "self": 0.09670958300011989
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

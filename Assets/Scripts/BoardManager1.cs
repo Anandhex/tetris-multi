@@ -1,6 +1,7 @@
 using Unity.MLAgents;
 using Unity.MLAgents.Actuators;
 using Unity.MLAgents.Policies;
+using Unity.Sentis;
 using UnityEngine;
 
 public class BoardManager1 : MonoBehaviour
@@ -8,6 +9,7 @@ public class BoardManager1 : MonoBehaviour
     public GameObject boardPrefab;
     public GameMode currentMode = GameMode.AI;
     public Vector3Int singlePlayerPosition = new Vector3Int(0, 0, 0);
+    public ModelAsset nNModelAsset;
 
     private Board[] activeBoards;
 
@@ -56,6 +58,7 @@ public class BoardManager1 : MonoBehaviour
             // Store reference to the board
             activeBoards = new[] { board };
 
+            agent.SetModel("TetrisAgent", nNModelAsset, InferenceDevice.Default);
             // Debug.Log("AI Board setup complete");
         }
     }

@@ -119,71 +119,314 @@ public class Board : MonoBehaviour
     // Your board class
     public void ApplyCurriculumBoardPreset()
     {
-        int preset = 6; // Default to empty board
-        TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
+        int preset = 0; // Default to empty board
+        int boardHeight = 20; // Default board height
 
+        TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
         if (mlAgent != null)
         {
             preset = (int)mlAgent.curriculumBoardPreset;
+            boardHeight = (int)mlAgent.curriculumBoardHeight;
         }
 
         ClearBoard(); // Always start clean
 
+        // Adjust bounds based on curriculum board height
+        int maxY = Bounds.yMin + boardHeight - 1;
+
         switch (preset)
         {
-            case 0: // intro_gap with two consecutive gaps
+            case 0: // empty_board - Full Tetris game
+                    // Empty board - no pre-configuration
+                break;
+
+            case 1: // minimal_pre_config - Single obvious I-piece placement
                 {
-                    int startGap = Random.Range(Bounds.xMin + 1, Bounds.xMax - 1); // avoid edges
-                    FillRow(Bounds.yMin, startGap, startGap + 1);
+                    // For small boards (6-8 height), use bottom row
+                    // For larger boards, place higher to avoid immediate danger
+                    int targetRow = boardHeight <= 8 ? Bounds.yMin : Bounds.yMin + 1;
+
+                    // Create I-piece gap (4 spaces) - NEVER fill completely
+                    int gapStart = Random.Range(Bounds.xMin, Bounds.xMax - 3);
+                    int gapEnd = gapStart + 4;
+
+                    for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                    {
+                        if (col < gapStart || col >= gapEnd)
+                        {
+                            SetTile(col, targetRow);
+                        }
+                    }
+
+                    // Ensure we never create a complete line
+                    if (gapEnd - gapStart >= Bounds.xMax - Bounds.xMin)
+                    {
+                        // If gap would be entire row, add one tile
+                        SetTile(gapStart, targetRow);
+                    }
                 }
                 break;
-            case 1: // two_line_clear with consecutive gaps on two rows
+
+            case 2: // basic_placement - Two-piece scenarios
                 {
-                    int startGap = Random.Range(Bounds.xMin + 1, Bounds.xMax - 2); // ensure space for consecutive in next row
-                    FillRow(Bounds.yMin, startGap);
-                    FillRow(Bounds.yMin + 1, startGap + 1);
+                    int workingHeight = Mathf.Min(3, boardHeight - 1);
+
+                    // Bottom row: I-piece opportunity (4 gaps)
+                    int iPieceGap = Random.Range(Bounds.xMin, Bounds.xMax - 3);
+                    for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                    {
+                        if (col < iPieceGap || col >= iPieceGap + 4)
+                        {
+                            SetTile(col, Bounds.yMin);
+                        }
+                    }
+
+                    if (workingHeight >= 2)
+                    {
+                        // Second row: O-piece opportunity (2 gaps) - different position
+                        int oPieceGap = iPieceGap >= Bounds.xMin + 2 ?
+                            Random.Range(Bounds.xMin, iPieceGap - 1) :
+                            Random.Range(iPieceGap + 4, Bounds.xMax - 1);
+
+                        for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                        {
+                            if (col < oPieceGap || col >= oPieceGap + 2)
+                            {
+                                SetTile(col, Bounds.yMin + 1);
+                            }
+                        }
+                    }
                 }
                 break;
-            case 2: // mid_stack
-                FillRows(Bounds.yMin, Bounds.yMin + 3, withRandomGaps: true);
+
+            case 3: // guided_stacking - Multi-piece practice (I, O, T pieces)
+                {
+                    int workingHeight = Mathf.Min(4, boardHeight - 1);
+
+                    // Create multiple placement opportunities for different piece types
+                    int patternChoice = Random.Range(0, 3);
+
+                    switch (patternChoice)
+                    {
+                        case 0: // T-piece focused pattern
+                            {
+                                int tCenter = Random.Range(Bounds.xMin + 1, Bounds.xMax - 1);
+
+                                // Bottom row: fill everything except center gap for T-piece stem
+                                for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                                {
+                                    if (col != tCenter)
+                                    {
+                                        SetTile(col, Bounds.yMin);
+                                    }
+                                }
+
+                                if (workingHeight >= 2)
+                                {
+                                    // Second row: leave 3-wide gap for T-piece arms
+                                    for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                                    {
+                                        if (col < tCenter - 1 || col > tCenter + 1)
+                                        {
+                                            SetTile(col, Bounds.yMin + 1);
+                                        }
+                                    }
+                                }
+                            }
+                            break;
+
+                        case 1: // I-piece + O-piece pattern
+                            {
+                                // Create both a 4-wide gap (I-piece) and 2x2 area (O-piece)
+                                int iPieceStart = Random.Range(Bounds.xMin, Bounds.xMax - 3);
+
+                                // Bottom row: I-piece gap
+                                for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                                {
+                                    if (col < iPieceStart || col >= iPieceStart + 4)
+                                    {
+                                        SetTile(col, Bounds.yMin);
+                                    }
+                                }
+
+                                if (workingHeight >= 3)
+                                {
+                                    // Create O-piece opportunity in a different area
+                                    int oPieceStart = iPieceStart >= Bounds.xMin + 2 ?
+                                        Random.Range(Bounds.xMin, iPieceStart - 1) :
+                                        Random.Range(iPieceStart + 4, Bounds.xMax - 1);
+
+                                    // Rows 1 and 2: create 2x2 gap for O-piece
+                                    for (int row = 1; row <= 2; row++)
+                                    {
+                                        for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                                        {
+                                            if (col < oPieceStart || col >= oPieceStart + 2)
+                                            {
+                                                SetTile(col, Bounds.yMin + row);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            break;
+
+                        case 2: // Mixed opportunities - all three pieces
+                            {
+                                // Bottom: partial fill with I-piece gap
+                                int iPieceGap = Random.Range(Bounds.xMin, Bounds.xMax - 3);
+                                for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                                {
+                                    if (col < iPieceGap || col >= iPieceGap + 4)
+                                    {
+                                        SetTile(col, Bounds.yMin);
+                                    }
+                                }
+
+                                if (workingHeight >= 2)
+                                {
+                                    // Middle: O-piece opportunity
+                                    int oPieceGap = Random.Range(Bounds.xMin, Bounds.xMax - 1);
+                                    for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                                    {
+                                        if (col < oPieceGap || col >= oPieceGap + 2)
+                                        {
+                                            SetTile(col, Bounds.yMin + 1);
+                                        }
+                                    }
+                                }
+
+                                if (workingHeight >= 4)
+                                {
+                                    // Top: T-piece opportunity
+                                    int tCenter = Random.Range(Bounds.xMin + 1, Bounds.xMax - 1);
+
+                                    // Create inverted T cavity
+                                    for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                                    {
+                                        if (col != tCenter)
+                                        {
+                                            SetTile(col, Bounds.yMin + 2);
+                                        }
+                                    }
+
+                                    for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                                    {
+                                        if (col < tCenter - 1 || col > tCenter + 1)
+                                        {
+                                            SetTile(col, Bounds.yMin + 3);
+                                        }
+                                    }
+                                }
+                            }
+                            break;
+                    }
+
+                    Debug.Log($"[Board] Applied guided_stacking pattern {patternChoice}");
+                }
                 break;
-            case 3: // flat_stack
-                FillRows(Bounds.yMin, Bounds.yMin + 4);
+
+            case 4: // structured_challenge - Multi-piece strategy
+                {
+                    int workingHeight = Mathf.Min(6, boardHeight - 1);
+
+                    // Create stepped structure with placement opportunities
+                    for (int row = 0; row < workingHeight; row++)
+                    {
+                        int currentRow = Bounds.yMin + row;
+                        int blocksToPlace = (Bounds.xMax - Bounds.xMin) - (row + 2); // Fewer blocks each row up
+
+                        if (blocksToPlace > 0)
+                        {
+                            // Distribute blocks with strategic gaps
+                            int gapSize = Random.Range(2, 4); // Gap for different pieces
+                            int gapStart = Random.Range(Bounds.xMin, Bounds.xMax - gapSize);
+
+                            for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                            {
+                                if (col < gapStart || col >= gapStart + gapSize)
+                                {
+                                    SetTile(col, currentRow);
+                                }
+                            }
+                        }
+                    }
+                }
                 break;
-            case 4: // messy_stack
-                FillRows(Bounds.yMin, Bounds.yMin + 7, withRandomGaps: true);
+
+            case 5: // complex_scenario - Advanced multi-level challenge
+                {
+                    int workingHeight = Mathf.Min(8, boardHeight - 2); // Leave room at top
+
+                    // Create complex but solvable structure
+                    // Bottom foundation with wells
+                    for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                    {
+                        // Create wells every 5 columns for I-pieces
+                        bool isWell = (col - Bounds.xMin) % 5 == 2;
+                        if (!isWell)
+                        {
+                            // Fill bottom 3 rows of non-well columns
+                            for (int wellRow = 0; wellRow < 3 && wellRow < workingHeight; wellRow++)
+                            {
+                                SetTile(col, Bounds.yMin + wellRow);
+                            }
+                        }
+                    }
+
+                    // Mid-level irregular pattern
+                    if (workingHeight >= 5)
+                    {
+                        for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                        {
+                            int pattern = (col - Bounds.xMin) % 4;
+                            if (pattern == 0 || pattern == 3) // Irregular placement
+                            {
+                                SetTile(col, Bounds.yMin + 3);
+                                if (pattern == 0 && workingHeight >= 6)
+                                {
+                                    SetTile(col, Bounds.yMin + 4);
+                                }
+                            }
+                        }
+                    }
+
+                    // Top level structures
+                    if (workingHeight >= 7)
+                    {
+                        // Create scattered placement opportunities
+                        int structures = Random.Range(2, 4);
+                        for (int s = 0; s < structures; s++)
+                        {
+                            int structStart = Random.Range(Bounds.xMin, Bounds.xMax - 2);
+                            int structWidth = Random.Range(2, 4);
+
+                            for (int w = 0; w < structWidth && structStart + w < Bounds.xMax; w++)
+                            {
+                                SetTile(structStart + w, Bounds.yMin + 5 + s);
+                            }
+                        }
+                    }
+                }
                 break;
-            case 5: // high_risk
-                FillRows(Bounds.yMin + 8, Bounds.yMin + 15, withRandomGaps: true);
-                break;
-            case 6: // empty_board
+
             default:
-                // Do nothing (already cleared)
+                Debug.LogWarning($"[Board] Unknown board_preset {preset}, using empty board");
                 break;
         }
 
-        Debug.Log($"[Board] Applied board_preset {preset}");
+        Debug.Log($"[Board] Applied board_preset {preset} with height {boardHeight}");
     }
 
-    private void FillRow(int row, int gapAt1 = -1, int gapAt2 = -1)
+    private void SetTile(int x, int y)
     {
-        for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+        if (x >= Bounds.xMin && x < Bounds.xMax && y >= Bounds.yMin && y < Bounds.yMax)
         {
-            if (col == gapAt1) continue; // original logic for one gap
-            if (col == gapAt2) continue; // skip second gap as well
-
-            tilemap.SetTile(new Vector3Int(col, row, 0), tetrominoes[0].tile);
+            tilemap.SetTile(new Vector3Int(x, y, 0), tetrominoes[0].tile);
         }
     }
 
-    private void FillRows(int startRow, int endRow, bool withRandomGaps = false)
-    {
-        for (int row = startRow; row <= endRow; row++)
-        {
-            int gap = withRandomGaps ? Random.Range(Bounds.xMin, Bounds.xMax) : -1;
-            FillRow(row, gap);
-        }
-    }
+
     private void Update()
     {
 
