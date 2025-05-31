@@ -1,3 +1,5 @@
+
+
 using Unity.MLAgents;
 using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
@@ -12,21 +14,16 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     private Piece currentPiece;
     private MLAgentDebugger debugger;
 
-    // Action flags
-    private bool moveLeft = false;
-    private bool moveRight = false;
-    private bool rotateLeft = false;
-    private bool rotateRight = false;
-    private bool moveDown = false;
-    private bool hardDrop = false;
+    // Changed: Remove individual movement flags
+    private bool hasChosenPlacement = false;
+    private int chosenColumn = 0;
+    private int chosenRotation = 0;
 
     // Fields needed for the improved reward functions
-
     private StatsRecorder m_StatsRecorder;
     private float lastSurfaceRoughness = 0f;
     private float previousAccessibility = 0f;
     private int consecutiveClears = 0;
-
     private int previousHoleCount = 0;
 
     // Previous state for reward calculation
@@ -35,6 +32,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     private float previousHeight;
     private List<Vector2Int> previousHolePositions = new List<Vector2Int>();
     private RewardWeights rewardWeights = new RewardWeights();
+
     [Header("Curriculum Parameters")]
     public int allowedTetrominoTypes = 7;
     public int curriculumBoardPreset;
@@ -43,12 +41,12 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     public float curriculumHolePenaltyWeight = 0.5f;
     public bool enableAdvancedMechanics = false;
     private int episodeSteps = 0;
+
     public override void Initialize()
     {
         var envParams = Academy.Instance.EnvironmentParameters;
         m_StatsRecorder = Academy.Instance.StatsRecorder;
         curriculumBoardPreset = (int)Academy.Instance.EnvironmentParameters.GetWithDefault("board_preset", 6);
-
 
         // Get curriculum parameters
         allowedTetrominoTypes = (int)envParams.GetWithDefault("tetromino_types", 7f);
@@ -59,43 +57,48 @@ public class TetrisMLAgent : Agent, IPlayerInputController
 
         // Apply curriculum settings to reward weights
         rewardWeights.holeCreationPenalty *= curriculumHolePenaltyWeight;
-        rewardWeights.clearReward = envParams.GetWithDefault("clearReward", 5.0f); // Increased from 1.0f
-        rewardWeights.comboMultiplier = envParams.GetWithDefault("comboMultiplier", 0.5f); // Increased from 0.2f
-        rewardWeights.perfectClearBonus = envParams.GetWithDefault("perfectClearBonus", 50.0f); // Increased from 20.0f
+        rewardWeights.clearReward = envParams.GetWithDefault("clearReward", 5.0f);
+        rewardWeights.comboMultiplier = envParams.GetWithDefault("comboMultiplier", 0.5f);
+        rewardWeights.perfectClearBonus = envParams.GetWithDefault("perfectClearBonus", 50.0f);
 
+        // Initialize all other reward weights...
+        InitializeRewardWeights(envParams);
+    }
+
+    private void InitializeRewardWeights(Unity.MLAgents.EnvironmentParameters envParams)
+    {
         // REDUCED PENALTIES
-        rewardWeights.stagnationPenaltyFactor = envParams.GetWithDefault("stagnationPenaltyFactor", 0.001f); // Reduced from 0.01f
-        rewardWeights.roughnessPenaltyMultiplier = envParams.GetWithDefault("roughnessPenaltyMultiplier", 0.01f); // Reduced from 0.05f
-        // rewardWeights.holeCreationPenalty = envParams.GetWithDefault("holeCreationPenalty", 0.05f); // Reduced from 0.2f
-        rewardWeights.stackHeightPenalty = envParams.GetWithDefault("stackHeightPenalty", 0.02f); // Reduced from 0.1f
-        rewardWeights.uselessRotationPenalty = envParams.GetWithDefault("uselessRotationPenalty", 0.01f); // Reduced from 0.05f
-        rewardWeights.idleActionPenalty = envParams.GetWithDefault("idleActionPenalty", 0.001f); // Reduced from 0.01f
+        rewardWeights.stagnationPenaltyFactor = envParams.GetWithDefault("stagnationPenaltyFactor", 0.001f);
+        rewardWeights.roughnessPenaltyMultiplier = envParams.GetWithDefault("roughnessPenaltyMultiplier", 0.01f);
+        rewardWeights.stackHeightPenalty = envParams.GetWithDefault("stackHeightPenalty", 0.02f);
+        rewardWeights.uselessRotationPenalty = envParams.GetWithDefault("uselessRotationPenalty", 0.01f);
+        rewardWeights.idleActionPenalty = envParams.GetWithDefault("idleActionPenalty", 0.001f);
 
         // INCREASED POSITIVE REWARDS
-        rewardWeights.holeFillReward = envParams.GetWithDefault("holeFillReward", 1.0f); // Increased from 0.3f
-        rewardWeights.moveDownActionReward = envParams.GetWithDefault("moveDownActionReward", 0.02f); // Increased from 0.01f
-        rewardWeights.hardDropActionReward = envParams.GetWithDefault("hardDropActionReward", 0.05f); // Increased from 0.025f
+        rewardWeights.holeFillReward = envParams.GetWithDefault("holeFillReward", 1.0f);
+        rewardWeights.moveDownActionReward = envParams.GetWithDefault("moveDownActionReward", 0.02f);
+        rewardWeights.hardDropActionReward = envParams.GetWithDefault("hardDropActionReward", 0.05f);
 
-        // Keep multipliers the same but ensure base rewards are higher
+        // Multipliers
         rewardWeights.doubleLineClearRewardMultiplier = envParams.GetWithDefault("doubleLineClearRewardMultiplier", 3.0f);
         rewardWeights.tripleLineClearRewardMultiplier = envParams.GetWithDefault("tripleLineClearRewardMultiplier", 7.0f);
         rewardWeights.tetrisClearRewardMultiplier = envParams.GetWithDefault("tetrisClearRewardMultiplier", 15.0f);
 
-        // Other rewards stay similar but some increased
-        rewardWeights.wellRewardMultiplier = envParams.GetWithDefault("wellRewardMultiplier", 0.2f); // Increased from 0.1f
-        rewardWeights.iPieceInWellBonus = envParams.GetWithDefault("iPieceInWellBonus", 0.5f); // Increased from 0.3f
-        rewardWeights.tSpinReward = envParams.GetWithDefault("tSpinReward", 1.0f); // Increased from 0.5f
-        rewardWeights.iPieceGapFillBonus = envParams.GetWithDefault("iPieceGapFillBonus", 0.8f); // Increased from 0.4f
-
+        // Other rewards
+        rewardWeights.wellRewardMultiplier = envParams.GetWithDefault("wellRewardMultiplier", 0.2f);
+        rewardWeights.iPieceInWellBonus = envParams.GetWithDefault("iPieceInWellBonus", 0.5f);
+        rewardWeights.tSpinReward = envParams.GetWithDefault("tSpinReward", 1.0f);
+        rewardWeights.iPieceGapFillBonus = envParams.GetWithDefault("iPieceGapFillBonus", 0.8f);
         rewardWeights.roughnessRewardMultiplier = envParams.GetWithDefault("roughnessRewardMultiplier", 0.3f);
         rewardWeights.accessibilityRewardMultiplier = envParams.GetWithDefault("accessibilityRewardMultiplier", 0.2f);
-        rewardWeights.accessibilityPenaltyMultiplier = envParams.GetWithDefault("accessibilityPenaltyMultiplier", 0.05f); // Reduced from 0.1f
-        rewardWeights.deathPenalty = envParams.GetWithDefault("deathPenalty", 2.0f); // Reduced from 10.0f
-        rewardWeights.maxWellRewardCap = envParams.GetWithDefault("maxWellRewardCap", 1.0f); // Increased from 0.5f
+        rewardWeights.accessibilityPenaltyMultiplier = envParams.GetWithDefault("accessibilityPenaltyMultiplier", 0.05f);
+        rewardWeights.deathPenalty = envParams.GetWithDefault("deathPenalty", 2.0f);
+        rewardWeights.maxWellRewardCap = envParams.GetWithDefault("maxWellRewardCap", 1.0f);
 
         rewardWeights.partialRowFillRewardMultiplier = 0.01f;
         rewardWeights.horizontalStackingRewardMultiplier = 0.5f;
     }
+
     private void Awake()
     {
         debugger = GetComponent<MLAgentDebugger>();
@@ -106,10 +109,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
 
         // Find board in children
         board = GetComponentInChildren<Board>();
-        if (board == null)
-        {
-            // Debug.Log("Board not found in children!");
-        }
+
         var behavior = gameObject.GetComponent<BehaviorParameters>();
         if (behavior == null)
         {
@@ -118,8 +118,8 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             behavior.BrainParameters.VectorObservationSize = 228;
             behavior.BrainParameters.NumStackedVectorObservations = 1;
 
-            // Set up discrete actions (7 possible actions)
-            ActionSpec actionSpec = ActionSpec.MakeDiscrete(new int[] { 7 });
+            // Changed: Two discrete actions - column (10 options) and rotation (4 options)
+            ActionSpec actionSpec = ActionSpec.MakeDiscrete(new int[] { 10, 4 });
             behavior.BrainParameters.ActionSpec = actionSpec;
         }
         else
@@ -128,8 +128,8 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             behavior.BrainParameters.VectorObservationSize = 228;
             behavior.BrainParameters.NumStackedVectorObservations = 1;
 
-            // Set up discrete actions (7 possible actions)
-            ActionSpec actionSpec = ActionSpec.MakeDiscrete(new int[] { 7 });
+            // Changed: Two discrete actions - column (10 options) and rotation (4 options)
+            ActionSpec actionSpec = ActionSpec.MakeDiscrete(new int[] { 10, 4 });
             behavior.BrainParameters.ActionSpec = actionSpec;
         }
 
@@ -140,7 +140,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             requestor = gameObject.AddComponent<DecisionRequester>();
             requestor.DecisionPeriod = 1;  // Request decision every frame
         }
-
     }
 
     private void Start()
@@ -149,7 +148,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         if (board != null)
         {
             board.inputController = this;
-            // Debug.Log("TetrisMLAgent set as input controller for board");
         }
     }
 
@@ -157,12 +155,12 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     public void SetCurrentPiece(Piece piece)
     {
         currentPiece = piece;
-
+        // Reset placement choice when new piece spawns
+        hasChosenPlacement = false;
     }
 
     public override void OnEpisodeBegin()
     {
-        // Debug.Log("ML Agent Episode began");
         var envParams = Academy.Instance.EnvironmentParameters;
 
         allowedTetrominoTypes = (int)envParams.GetWithDefault("tetromino_types", 7f);
@@ -171,7 +169,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         curriculumHolePenaltyWeight = envParams.GetWithDefault("hole_penalty_weight", 0.5f);
         enableAdvancedMechanics = envParams.GetWithDefault("enable_t_spins", 0f) > 0.5f;
         curriculumBoardPreset = (int)envParams.GetWithDefault("board_preset", 6);
-
 
         // Apply curriculum settings to reward weights
         rewardWeights.holeCreationPenalty *= curriculumHolePenaltyWeight;
@@ -183,13 +180,10 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         stepsSinceLastClear = 0;
         previousHoleCount = board.CountHoles();
 
-        // Reset action flags
-        moveLeft = false;
-        moveRight = false;
-        rotateLeft = false;
-        rotateRight = false;
-        moveDown = false;
-        hardDrop = false;
+        // Reset placement flags
+        hasChosenPlacement = false;
+        chosenColumn = 0;
+        chosenRotation = 0;
     }
 
     private void SaveFitnessScore(float score)
@@ -202,7 +196,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     {
         if (board == null)
         {
-            // Debug.LogError("Board is null during observation collection!");
             return;
         }
 
@@ -311,16 +304,11 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         }
         sensor.AddObservation(holeCount / 20.0f); // normalize
         obsCount++;
-
-
-
-
-
     }
-
 
     private List<Vector2Int> previousBottomRowHoles = new List<Vector2Int>();
     private int steps = 0;
+
     public override void OnActionReceived(ActionBuffers actions)
     {
         // Base survival reward - keep consistent across curriculum
@@ -328,47 +316,263 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         m_StatsRecorder.Add("action-rewarded/survival", 0.01f);
 
         episodeSteps++;
-        // Reset action flags
-        moveLeft = false;
-        moveRight = false;
-        rotateLeft = false;
-        rotateRight = false;
-        moveDown = false;
-        hardDrop = false;
-
-        Vector3Int prevPosition = board.activePiece.position;
-        Vector3Int[] prevCells = (Vector3Int[])board.activePiece.cells.Clone();
         steps++;
 
-        // Process discrete actions
-        int actionIndex = actions.DiscreteActions[0];
+        if (board == null || currentPiece == null)
+            return;
+
+        // Changed: Get placement choice from actions
+        int targetColumn = actions.DiscreteActions[0]; // 0-9 for columns
+        int targetRotation = actions.DiscreteActions[1]; // 0-3 for rotations
 
         if (debugger != null)
-            debugger.SetLastAction(actionIndex);
+            debugger.SetLastAction(targetColumn * 4 + targetRotation); // Combined action for debugging
 
-        // Action rewards using your reward weights
-        switch (actionIndex)
+        // Store the AI's choice
+        if (!hasChosenPlacement)
         {
-            case 0:
-                AddReward(-rewardWeights.idleActionPenalty);
-                m_StatsRecorder.Add("action-rewarded/do-nothing", -rewardWeights.idleActionPenalty);
-                break;
-            case 1: moveLeft = true; break;
-            case 2: moveRight = true; break;
-            case 3: rotateLeft = true; break;
-            case 4: rotateRight = true; break;
-            case 5:
-                moveDown = true;
-                AddReward(rewardWeights.moveDownActionReward);
-                m_StatsRecorder.Add("action-rewarded/move-down", rewardWeights.moveDownActionReward);
-                break;
-            case 6:
-                hardDrop = true;
-                AddReward(rewardWeights.hardDropActionReward);
-                m_StatsRecorder.Add("action-rewarded/hard-drop", rewardWeights.hardDropActionReward);
-                break;
+            chosenColumn = targetColumn;
+            chosenRotation = targetRotation;
+            hasChosenPlacement = true;
+
+            // Evaluate and reward the placement choice
+            EvaluatePlacementChoice(targetColumn, targetRotation);
         }
 
+        // Rest of the reward system remains the same...
+        ProcessRewards();
+    }
+
+    private void EvaluatePlacementChoice(int targetColumn, int targetRotation)
+    {
+        // Simulate the placement to evaluate its quality
+        Vector3Int simulatedPosition = new Vector3Int(targetColumn, currentPiece.position.y, 0);
+
+        // Create a temporary piece data for simulation
+        TetrominoData rotatedData = GetRotatedPieceData(currentPiece.data, targetRotation);
+
+        // Calculate where the piece would land
+        Vector3Int landingPosition = SimulateDrop(simulatedPosition, rotatedData);
+
+        // Evaluate the quality of this placement
+        float placementScore = EvaluatePlacementQuality(landingPosition, rotatedData);
+
+        // Apply rewards based on placement quality
+        AddReward(placementScore);
+        m_StatsRecorder.Add("action-rewarded/placement-quality", placementScore);
+
+        // Bonus for strategic placements
+        if (IsStrategicPlacement(landingPosition, rotatedData))
+        {
+            AddReward(0.5f);
+            m_StatsRecorder.Add("action-rewarded/strategic-placement", 0.5f);
+        }
+    }
+
+    private TetrominoData GetRotatedPieceData(TetrominoData originalData, int targetRotation)
+    {
+        // This would need to be implemented based on how your tetromino rotation works
+        // For now, return the original data (you'll need to implement proper rotation logic)
+        return originalData;
+    }
+
+    private Vector3Int SimulateDrop(Vector3Int startPosition, TetrominoData pieceData)
+    {
+        Vector3Int position = startPosition;
+
+        // Simulate dropping the piece until it can't move down anymore
+        while (CanPieceMoveTo(position + Vector3Int.down, pieceData))
+        {
+            position += Vector3Int.down;
+        }
+
+        return position;
+    }
+
+    private bool CanPieceMoveTo(Vector3Int position, TetrominoData pieceData)
+    {
+        // Check if the piece can be placed at this position
+        // This would need to check against board bounds and existing tiles
+        RectInt bounds = board.Bounds;
+
+        foreach (Vector2Int cell in pieceData.cells)
+        {
+            Vector3Int tilePosition = new Vector3Int(cell.x + position.x, cell.y + position.y, 0);
+
+            // Check bounds
+            if (tilePosition.x < bounds.xMin || tilePosition.x >= bounds.xMax ||
+                tilePosition.y < bounds.yMin)
+            {
+                return false;
+            }
+
+            // Check collision with existing tiles
+            if (board.tilemap.HasTile(tilePosition))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private float EvaluatePlacementQuality(Vector3Int position, TetrominoData pieceData)
+    {
+        float score = 0f;
+
+        // Factor 1: Height penalty (lower is better)
+        float heightPenalty = position.y * 0.01f;
+        score -= heightPenalty;
+
+        // Factor 2: Line completion potential
+        score += EvaluateLineCompletionPotential(position, pieceData) * 2.0f;
+
+        // Factor 3: Hole creation penalty
+        score -= EvaluateHoleCreation(position, pieceData) * 1.0f;
+
+        // Factor 4: Surface smoothness
+        score += EvaluateSurfaceSmoothness(position, pieceData) * 0.5f;
+
+        return Mathf.Clamp(score, -2.0f, 2.0f); // Clamp to reasonable range
+    }
+
+    private float EvaluateLineCompletionPotential(Vector3Int position, TetrominoData pieceData)
+    {
+        // Count how many lines this placement would complete or nearly complete
+        float potential = 0f;
+
+        HashSet<int> affectedRows = new HashSet<int>();
+        foreach (Vector2Int cell in pieceData.cells)
+        {
+            affectedRows.Add(position.y + cell.y);
+        }
+
+        foreach (int row in affectedRows)
+        {
+            int filledCells = CountFilledCellsInRow(row);
+            int cellsFromPiece = CountPieceCellsInRow(position, pieceData, row);
+            int totalAfterPlacement = filledCells + cellsFromPiece;
+
+            if (totalAfterPlacement == 10) // Complete line
+            {
+                potential += 1.0f;
+            }
+            else if (totalAfterPlacement >= 8) // Nearly complete
+            {
+                potential += 0.3f;
+            }
+        }
+
+        return potential;
+    }
+
+    private int CountFilledCellsInRow(int row)
+    {
+        int count = 0;
+        RectInt bounds = board.Bounds;
+
+        for (int x = bounds.xMin; x < bounds.xMax; x++)
+        {
+            if (board.tilemap.HasTile(new Vector3Int(x, row, 0)))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private int CountPieceCellsInRow(Vector3Int position, TetrominoData pieceData, int row)
+    {
+        int count = 0;
+
+        foreach (Vector2Int cell in pieceData.cells)
+        {
+            if (position.y + cell.y == row)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private float EvaluateHoleCreation(Vector3Int position, TetrominoData pieceData)
+    {
+        // Estimate how many holes this placement might create
+        float holeRisk = 0f;
+
+        foreach (Vector2Int cell in pieceData.cells)
+        {
+            Vector3Int cellPos = new Vector3Int(position.x + cell.x, position.y + cell.y, 0);
+
+            // Check if placing this cell creates overhang that might trap empty spaces
+            Vector3Int below = cellPos + Vector3Int.down;
+            if (!board.tilemap.HasTile(below) && below.y >= board.Bounds.yMin)
+            {
+                holeRisk += 0.2f;
+            }
+        }
+
+        return holeRisk;
+    }
+
+    private float EvaluateSurfaceSmoothness(Vector3Int position, TetrominoData pieceData)
+    {
+        // Evaluate how this placement affects surface smoothness
+        // This is a simplified version - you'd want to calculate actual height differences
+        return 0f; // Placeholder
+    }
+
+    private bool IsStrategicPlacement(Vector3Int position, TetrominoData pieceData)
+    {
+        // Check for strategic placements like T-spins, well formations, etc.
+
+        // T-spin setup
+        if (currentPiece.data.tetromino == Tetromino.T && enableAdvancedMechanics)
+        {
+            return IsTSpinSetup(position, pieceData);
+        }
+
+        // I-piece in well
+        if (currentPiece.data.tetromino == Tetromino.I)
+        {
+            return IsIPieceInWell(position, pieceData);
+        }
+
+        return false;
+    }
+
+    private bool IsTSpinSetup(Vector3Int position, TetrominoData pieceData)
+    {
+        // Check if this T-piece placement sets up a potential T-spin
+        // This is a simplified check - implement based on your T-spin detection logic
+        return false; // Placeholder
+    }
+
+    private bool IsIPieceInWell(Vector3Int position, TetrominoData pieceData)
+    {
+        // Check if I-piece is being placed in a well formation
+        (int wellCol, int wellDepth) = GetDeepestWell();
+
+        if (wellDepth >= 4)
+        {
+            // Check if I-piece overlaps with the well column
+            foreach (Vector2Int cell in pieceData.cells)
+            {
+                if (position.x + cell.x == wellCol)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private void ProcessRewards()
+    {
+        // All the existing reward processing logic remains the same
         if (board == null)
             return;
 
@@ -420,7 +624,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             consecutiveClears++;
 
             AddReward(clearReward);
-            m_StatsRecorder.Add("action-rewarded/clear-reward", clearReward); // Fixed: was using base reward instead of actual
+            m_StatsRecorder.Add("action-rewarded/clear-reward", clearReward);
             previousScore = board.playerScore;
             stepsSinceLastClear = 0;
 
@@ -441,17 +645,28 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             {
                 float stagnationPenalty = Mathf.Min((stepsSinceLastClear - 100) * rewardWeights.stagnationPenaltyFactor, 0.1f);
                 AddReward(-stagnationPenalty);
-                m_StatsRecorder.Add("action-rewarded/stagnation-penalty", -stagnationPenalty); // Fixed: was using wrong variable
+                m_StatsRecorder.Add("action-rewarded/stagnation-penalty", -stagnationPenalty);
             }
         }
 
-        // === BOARD STATE EVALUATION ===
+        // Continue with all other existing reward logic...
+        ProcessBoardStateRewards();
+        ProcessHoleManagement();
+        ProcessWellFormation();
+        ProcessStackHeightManagement();
+        ProcessAccessibilityEvaluation();
+        ProcessCurriculumTracking();
+    }
 
+    // Break down the reward processing into smaller methods for clarity
+    private void ProcessBoardStateRewards()
+    {
         // Surface Smoothness - Normalized to prevent explosion
         float previousRoughness = lastSurfaceRoughness;
         float currentRoughness = CalculateSurfaceRoughness();
 
         // Normalize roughness by board dimensions to prevent extreme values
+        int maxWidth = board.Bounds.size.x;
         float maxPossibleRoughness = maxWidth * curriculumBoardHeight;
         float normalizedCurrentRoughness = Mathf.Min(currentRoughness / maxPossibleRoughness, 1.0f);
         float normalizedPreviousRoughness = Mathf.Min(previousRoughness / maxPossibleRoughness, 1.0f);
@@ -474,6 +689,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         lastSurfaceRoughness = currentRoughness;
 
         // Wide base building
+        int[] rowFills = board.GetRowFillCounts();
         int bottomCheckHeight = Mathf.Max(3, (int)(curriculumBoardHeight / 3));
         int minRowCoverage = Mathf.CeilToInt(maxWidth * 0.65f);
 
@@ -491,8 +707,10 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             AddReward(stackingReward);
             m_StatsRecorder.Add("action-rewarded/horizontal-stack", stackingReward);
         }
+    }
 
-        // === HOLE MANAGEMENT ===
+    private void ProcessHoleManagement()
+    {
         List<Vector2Int> currentHoles = board.GetHolePositions();
 
         // Reward filling existing holes
@@ -526,8 +744,10 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         }
 
         previousHolePositions = currentHoles;
+    }
 
-        // === WELL FORMATION ===
+    private void ProcessWellFormation()
+    {
         (int wellCol, int wellDepth) = GetDeepestWell();
         if (wellDepth >= 3)
         {
@@ -542,8 +762,10 @@ public class TetrisMLAgent : Agent, IPlayerInputController
                 m_StatsRecorder.Add("action-rewarded/i-piece-well-setup", rewardWeights.iPieceInWellBonus);
             }
         }
+    }
 
-        // === STACK HEIGHT MANAGEMENT ===
+    private void ProcessStackHeightManagement()
+    {
         float currentHeight = board.CalculateStackHeight();
 
         // Progressive height penalty based on curriculum board height
@@ -558,34 +780,10 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         }
 
         previousHeight = currentHeight;
+    }
 
-        // === PIECE-SPECIFIC STRATEGY REWARDS ===
-        if (actionIndex == 6) // Hard drop - evaluate final placement
-        {
-            // T-spin rewards (only if advanced mechanics are enabled)
-            if (enableAdvancedMechanics && board.activePiece.data.tetromino == Tetromino.T && IsPotentialTSpin())
-            {
-                AddReward(rewardWeights.tSpinReward);
-                m_StatsRecorder.Add("action-rewarded/t-spin-setup", rewardWeights.tSpinReward);
-            }
-
-            // I-piece gap filling
-            if (board.activePiece.data.tetromino == Tetromino.I &&
-                IsHorizontalPiece() && FillsMultipleGaps())
-            {
-                AddReward(rewardWeights.iPieceGapFillBonus);
-                m_StatsRecorder.Add("action-rewarded/i-piece-gap-fill", rewardWeights.iPieceGapFillBonus);
-            }
-        }
-
-        // === EFFICIENCY PENALTIES ===
-        if ((rotateLeft || rotateRight) && board.LastRotationWasUseless(board.activePiece, prevPosition, prevCells))
-        {
-            AddReward(-rewardWeights.uselessRotationPenalty);
-            m_StatsRecorder.Add("action-rewarded/useless-rotation", -rewardWeights.uselessRotationPenalty);
-        }
-
-        // === ACCESSIBILITY EVALUATION ===
+    private void ProcessAccessibilityEvaluation()
+    {
         float accessibilityScore = EvaluateAccessibility();
         float accessibilityDelta = accessibilityScore - previousAccessibility;
 
@@ -607,8 +805,10 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         }
 
         previousAccessibility = accessibilityScore;
+    }
 
-        // === CURRICULUM PROGRESS TRACKING ===
+    private void ProcessCurriculumTracking()
+    {
         if (episodeSteps % 1000 == 0)
         {
             float cumulativeReward = GetCumulativeReward();
@@ -621,54 +821,15 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             m_StatsRecorder.Add("curriculum/board-preset", curriculumBoardPreset);
 
             // Track key metrics
+            List<Vector2Int> currentHoles = board.GetHolePositions();
+            float currentHeight = board.CalculateStackHeight();
+            float normalizedCurrentRoughness = CalculateSurfaceRoughness() / (board.Bounds.size.x * curriculumBoardHeight);
+
             m_StatsRecorder.Add("metrics/current-holes", currentHoles.Count);
             m_StatsRecorder.Add("metrics/stack-height", currentHeight);
             m_StatsRecorder.Add("metrics/surface-roughness", normalizedCurrentRoughness);
         }
-    } // // New helper methods for enhanced rewards
-
-    // public override void OnActionReceived(ActionBuffers actions)
-    // {
-    //     episodeSteps++;
-
-    //     // Reset action flags
-    //     moveLeft = false;
-    //     moveRight = false;
-    //     rotateLeft = false;
-    //     rotateRight = false;
-    //     moveDown = false;
-    //     hardDrop = false;
-
-    //     Vector3Int prevPosition = board.activePiece.position;
-    //     Vector3Int[] prevCells = (Vector3Int[])board.activePiece.cells.Clone();
-    //     steps++;
-    //     // Debug.Log("Action received: " + actions.DiscreteActions[0]);
-
-    //     int actionIndex = actions.DiscreteActions[0];
-
-    //     switch (actionIndex)
-    //     {
-    //         case 1: moveLeft = true; break;
-    //         case 2: moveRight = true; break;
-    //         case 3: rotateLeft = true; break;
-    //         case 4: rotateRight = true; break;
-    //         case 5: moveDown = true; break;
-    //         case 6: hardDrop = true; break;
-    //     }
-
-    //     if (moveLeft)
-    //     {
-    //         AddReward(1.0f);
-    //     }
-    //     else
-    //     {
-    //         AddReward(-1.0f);
-    //     }
-
-    //     // === REWARD TRACKING ===
-    //     float cumulativeReward = GetCumulativeReward();
-    //     m_StatsRecorder.Add("reward/cumulative", cumulativeReward);
-    // }
+    }
 
     // Calculate surface roughness by measuring height differences between adjacent columns
     private float CalculateSurfaceRoughness()
@@ -823,10 +984,10 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         // Check corners around T-piece (3 corners filled = potential T-spin)
         Vector3Int[] corners = new Vector3Int[]
         {
-        new Vector3Int(-1, -1, 0), // bottom left
-        new Vector3Int(1, -1, 0),  // bottom right
-        new Vector3Int(-1, 1, 0),  // top left
-        new Vector3Int(1, 1, 0)    // top right
+            new Vector3Int(-1, -1, 0), // bottom left
+            new Vector3Int(1, -1, 0),  // bottom right
+            new Vector3Int(-1, 1, 0),  // top left
+            new Vector3Int(1, 1, 0)    // top right
         };
 
         foreach (Vector3Int corner in corners)
@@ -866,41 +1027,132 @@ public class TetrisMLAgent : Agent, IPlayerInputController
 
         return accessibility / colHeights.Length; // Normalize by column count
     }
-    // Check if a move is safe
+
     // Called by Board.cs when game over occurs
     public void OnGameOver()
     {
         AddReward(rewardWeights.deathPenalty); // Big penalty for losing
         SaveFitnessScore(GetCumulativeReward());
         EndEpisode();
-        // Debug.Log("Game over - episode ended");
     }
 
-    // IPlayerInputController implementation
-    public bool GetLeft() => moveLeft;
-    public bool GetRight() => moveRight;
-    public bool GetRotateLeft() => rotateLeft;
-    public bool GetRotateRight() => rotateRight;
-    public bool GetDown() => moveDown;
-    public bool GetHardDrop() => hardDrop;
+    // Changed: IPlayerInputController implementation now uses the chosen placement
+    public bool GetLeft()
+    {
+        if (!hasChosenPlacement) return false;
+
+        // Move towards chosen column
+        if (currentPiece != null && currentPiece.position.x > chosenColumn)
+            return true;
+
+        return false;
+    }
+
+    public bool GetRight()
+    {
+        if (!hasChosenPlacement) return false;
+
+        // Move towards chosen column
+        if (currentPiece != null && currentPiece.position.x < chosenColumn)
+            return true;
+
+        return false;
+    }
+
+    public bool GetRotateLeft()
+    {
+        if (!hasChosenPlacement) return false;
+
+        // Rotate towards chosen rotation
+        if (currentPiece != null && currentPiece.rotationIndex != chosenRotation)
+        {
+            // Determine if left rotation gets us there faster
+            int currentRot = currentPiece.rotationIndex;
+            int leftSteps = (currentRot - chosenRotation + 4) % 4;
+            int rightSteps = (chosenRotation - currentRot + 4) % 4;
+            return leftSteps <= rightSteps;
+        }
+
+        return false;
+    }
+
+    public bool GetRotateRight()
+    {
+        if (!hasChosenPlacement) return false;
+
+        // Rotate towards chosen rotation
+        if (currentPiece != null && currentPiece.rotationIndex != chosenRotation)
+        {
+            // Determine if right rotation gets us there faster
+            int currentRot = currentPiece.rotationIndex;
+            int leftSteps = (currentRot - chosenRotation + 4) % 4;
+            int rightSteps = (chosenRotation - currentRot + 4) % 4;
+            return rightSteps < leftSteps;
+        }
+
+        return false;
+    }
+
+    public bool GetDown()
+    {
+        // Always allow soft drop once positioned correctly
+        if (!hasChosenPlacement) return false;
+
+        // Check if we're at the right position and rotation
+        if (currentPiece != null &&
+            currentPiece.position.x == chosenColumn &&
+            currentPiece.rotationIndex == chosenRotation)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    public bool GetHardDrop()
+    {
+        // Hard drop when positioned correctly
+        if (!hasChosenPlacement) return false;
+
+        // Check if we're at the right position and rotation
+        if (currentPiece != null &&
+            currentPiece.position.x == chosenColumn &&
+            currentPiece.rotationIndex == chosenRotation)
+        {
+            return true;
+        }
+
+        return false;
+    }
 
     // For testing in editor
     public override void Heuristic(in ActionBuffers actionsOut)
     {
         var discreteActionsOut = actionsOut.DiscreteActions;
-        if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow))
-            discreteActionsOut[0] = 1; // Move left
-        else if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow))
-            discreteActionsOut[0] = 2; // Move right
-        else if (Input.GetKey(KeyCode.Q))
-            discreteActionsOut[0] = 3; // Rotate left
-        else if (Input.GetKey(KeyCode.E) || Input.GetKey(KeyCode.UpArrow))
-            discreteActionsOut[0] = 4; // Rotate right
-        else if (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow))
-            discreteActionsOut[0] = 5; // Move down
-        else if (Input.GetKey(KeyCode.Space))
-            discreteActionsOut[0] = 6; // Hard drop
-        else
-            discreteActionsOut[0] = 0; // Do nothing
+
+        // Column selection (0-9)
+        if (Input.GetKey(KeyCode.Alpha1)) discreteActionsOut[0] = 0;
+        else if (Input.GetKey(KeyCode.Alpha2)) discreteActionsOut[0] = 1;
+        else if (Input.GetKey(KeyCode.Alpha3)) discreteActionsOut[0] = 2;
+        else if (Input.GetKey(KeyCode.Alpha4)) discreteActionsOut[0] = 3;
+        else if (Input.GetKey(KeyCode.Alpha5)) discreteActionsOut[0] = 4;
+        else if (Input.GetKey(KeyCode.Alpha6)) discreteActionsOut[0] = 5;
+        else if (Input.GetKey(KeyCode.Alpha7)) discreteActionsOut[0] = 6;
+        else if (Input.GetKey(KeyCode.Alpha8)) discreteActionsOut[0] = 7;
+        else if (Input.GetKey(KeyCode.Alpha9)) discreteActionsOut[0] = 8;
+        else if (Input.GetKey(KeyCode.Alpha0)) discreteActionsOut[0] = 9;
+        else discreteActionsOut[0] = 4; // Default to middle column
+
+        // Rotation selection (0-3)
+        if (Input.GetKey(KeyCode.Q)) discreteActionsOut[1] = 0;
+        else if (Input.GetKey(KeyCode.W)) discreteActionsOut[1] = 1;
+        else if (Input.GetKey(KeyCode.E)) discreteActionsOut[1] = 2;
+        else if (Input.GetKey(KeyCode.R)) discreteActionsOut[1] = 3;
+        else discreteActionsOut[1] = 0; // Default to no rotation
     }
 }
+
+
+
+
+

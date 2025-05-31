@@ -3,13 +3,13 @@ behaviors:
   TetrisAgent:
     trainer_type: ppo
     hyperparameters:
-      batch_size: 256
-      buffer_size: 100000
-      learning_rate: 0.0003
-      beta: 0.005
-      epsilon: 0.2
-      lambd: 0.98
-      num_epoch: 3
+      batch_size: 347
+      buffer_size: 27814
+      learning_rate: 3.1567360682923474e-05
+      beta: 0.007564234116635453
+      epsilon: 0.15676244393181094
+      lambd: 0.9559281042681499
+      num_epoch: 8
       shared_critic: false
       learning_rate_schedule: linear
       beta_schedule: linear
@@ -50,7 +50,7 @@ behaviors:
     init_path: null
     keep_checkpoints: 5
     checkpoint_interval: 500000
-    max_steps: 10000000
+    max_steps: 500000
     time_horizon: 512
     summary_freq: 10000
     threaded: true
@@ -80,537 +80,534 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3588
+          seed: 4691
           value: 1
       name: single_piece
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 100000
+        min_lesson_length: 100
         signal_smoothing: true
-        threshold: 8.0
+        threshold: 0.0
         require_reset: false
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3589
+          seed: 4692
           value: 2
       name: basic_shapes
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 150000
+        min_lesson_length: 150
         signal_smoothing: true
-        threshold: 12.0
+        threshold: 0.0
         require_reset: false
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3590
+          seed: 4693
           value: 3
       name: simple_shapes
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 200000
+        min_lesson_length: 200
         signal_smoothing: true
-        threshold: 18.0
+        threshold: 0.0
         require_reset: false
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3591
+          seed: 4694
           value: 5
       name: most_shapes
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 250000
+        min_lesson_length: 250
         signal_smoothing: true
-        threshold: 25.0
+        threshold: 0.0
         require_reset: false
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3592
+          seed: 4695
           value: 7
       name: all_shapes
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 300000
+        min_lesson_length: 300
         signal_smoothing: true
-        threshold: 35.0
+        threshold: 0.0
         require_reset: false
   board_height:
     curriculum:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3593
+          seed: 4696
           value: 8
       name: single_piece
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 100000
+        min_lesson_length: 100
         signal_smoothing: true
-        threshold: 8.0
+        threshold: 0.0
         require_reset: false
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3594
+          seed: 4697
           value: 10
       name: basic_shapes
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 150000
+        min_lesson_length: 150
         signal_smoothing: true
-        threshold: 12.0
+        threshold: 0.0
         require_reset: false
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3595
+          seed: 4698
           value: 14
       name: simple_shapes
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 200000
+        min_lesson_length: 200
         signal_smoothing: true
-        threshold: 18.0
+        threshold: 0.0
         require_reset: false
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3596
+          seed: 4699
           value: 18
       name: most_shapes
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 250000
+        min_lesson_length: 250
         signal_smoothing: true
-        threshold: 25.0
+        threshold: 0.0
         require_reset: false
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3597
+          seed: 4700
           value: 20
       name: all_shapes
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 300000
+        min_lesson_length: 300
         signal_smoothing: true
-        threshold: 35.0
+        threshold: 0.0
         require_reset: false
   hole_penalty_weight:
     curriculum:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3598
+          seed: 4701
           value: 0.02
       name: single_piece
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 100000
+        min_lesson_length: 100
         signal_smoothing: true
-        threshold: 8.0
+        threshold: 0.0
         require_reset: false
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3599
+          seed: 4702
           value: 0.05
       name: basic_shapes
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 150000
+        min_lesson_length: 150
         signal_smoothing: true
-        threshold: 12.0
+        threshold: 0.0
         require_reset: false
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3600
+          seed: 4703
           value: 0.1
       name: simple_shapes
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 200000
+        min_lesson_length: 200
         signal_smoothing: true
-        threshold: 18.0
+        threshold: 0.0
         require_reset: false
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3601
+          seed: 4704
           value: 0.2
       name: most_shapes
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 250000
+        min_lesson_length: 250
         signal_smoothing: true
-        threshold: 25.0
+        threshold: 0.0
         require_reset: false
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3602
+          seed: 4705
           value: 0.3
       name: all_shapes
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 300000
+        min_lesson_length: 300
         signal_smoothing: true
-        threshold: 35.0
+        threshold: 0.0
         require_reset: false
   board_preset:
     curriculum:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3603
+          seed: 4706
           value: 1
       name: single_piece
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 100000
+        min_lesson_length: 100
         signal_smoothing: true
-        threshold: 8.0
+        threshold: 0.0
         require_reset: false
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3604
+          seed: 4707
           value: 2
       name: basic_shapes
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 150000
+        min_lesson_length: 150
         signal_smoothing: true
-        threshold: 12.0
+        threshold: 0.0
         require_reset: false
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3605
+          seed: 4708
           value: 3
       name: simple_shapes
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 200000
+        min_lesson_length: 200
         signal_smoothing: true
-        threshold: 18.0
+        threshold: 0.0
         require_reset: false
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3606
+          seed: 4709
           value: 4
       name: most_shapes
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 250000
+        min_lesson_length: 250
         signal_smoothing: true
-        threshold: 25.0
+        threshold: 0.0
         require_reset: false
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3607
+          seed: 4710
           value: 5
       name: all_shapes
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 300000
+        min_lesson_length: 300
         signal_smoothing: true
-        threshold: 35.0
+        threshold: 0.0
         require_reset: false
   clearReward:
     curriculum:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3608
-          value: 3.0
-      name: single_piece
-      completion_criteria:
-        behavior: TetrisAgent
-        measure: reward
-        min_lesson_length: 100000
-        signal_smoothing: true
-        threshold: 8.0
-        require_reset: false
-    - value:
-        sampler_type: constant
-        sampler_parameters:
-          seed: 3609
-          value: 4.0
-      name: basic_shapes
-      completion_criteria:
-        behavior: TetrisAgent
-        measure: reward
-        min_lesson_length: 150000
-        signal_smoothing: true
-        threshold: 12.0
-        require_reset: false
-    - value:
-        sampler_type: constant
-        sampler_parameters:
-          seed: 3610
+          seed: 4711
           value: 5.0
-      name: simple_shapes
-      completion_criteria:
-        behavior: TetrisAgent
-        measure: reward
-        min_lesson_length: 200000
-        signal_smoothing: true
-        threshold: 18.0
-        require_reset: false
-    - value:
-        sampler_type: constant
-        sampler_parameters:
-          seed: 3611
-          value: 6.0
-      name: most_shapes
-      completion_criteria:
-        behavior: TetrisAgent
-        measure: reward
-        min_lesson_length: 250000
-        signal_smoothing: true
-        threshold: 25.0
-        require_reset: false
-    - value:
-        sampler_type: constant
-        sampler_parameters:
-          seed: 3612
-          value: 7.0
-      name: all_shapes
-      completion_criteria:
-        behavior: TetrisAgent
-        measure: reward
-        min_lesson_length: 300000
-        signal_smoothing: true
-        threshold: 35.0
-        require_reset: false
+      name: clearReward
+      completion_criteria: null
   enable_t_spins:
     curriculum:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3613
+          seed: 4712
           value: 0.0
       name: single_piece
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 100000
+        min_lesson_length: 100
         signal_smoothing: true
-        threshold: 8.0
+        threshold: 0.0
         require_reset: false
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3614
+          seed: 4713
           value: 0.0
       name: basic_shapes
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 150000
+        min_lesson_length: 150
         signal_smoothing: true
-        threshold: 12.0
+        threshold: 0.0
         require_reset: false
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3615
+          seed: 4714
           value: 1.0
       name: simple_shapes
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 200000
+        min_lesson_length: 200
         signal_smoothing: true
-        threshold: 18.0
+        threshold: 0.0
         require_reset: false
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3616
+          seed: 4715
           value: 1.0
       name: most_shapes
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 250000
+        min_lesson_length: 250
         signal_smoothing: true
-        threshold: 25.0
+        threshold: 0.0
         require_reset: false
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3617
+          seed: 4716
           value: 1.0
       name: all_shapes
       completion_criteria:
         behavior: TetrisAgent
         measure: reward
-        min_lesson_length: 300000
+        min_lesson_length: 300
         signal_smoothing: true
-        threshold: 35.0
+        threshold: 0.0
         require_reset: false
   perfectClearBonus:
     curriculum:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3618
-          value: 20.0
-      name: single_piece
-      completion_criteria:
-        behavior: TetrisAgent
-        measure: reward
-        min_lesson_length: 100000
-        signal_smoothing: true
-        threshold: 8.0
-        require_reset: false
-    - value:
-        sampler_type: constant
-        sampler_parameters:
-          seed: 3619
-          value: 30.0
-      name: basic_shapes
-      completion_criteria:
-        behavior: TetrisAgent
-        measure: reward
-        min_lesson_length: 150000
-        signal_smoothing: true
-        threshold: 12.0
-        require_reset: false
-    - value:
-        sampler_type: constant
-        sampler_parameters:
-          seed: 3620
-          value: 40.0
-      name: simple_shapes
-      completion_criteria:
-        behavior: TetrisAgent
-        measure: reward
-        min_lesson_length: 200000
-        signal_smoothing: true
-        threshold: 18.0
-        require_reset: false
-    - value:
-        sampler_type: constant
-        sampler_parameters:
-          seed: 3621
+          seed: 4717
           value: 50.0
-      name: most_shapes
-      completion_criteria:
-        behavior: TetrisAgent
-        measure: reward
-        min_lesson_length: 250000
-        signal_smoothing: true
-        threshold: 25.0
-        require_reset: false
-    - value:
-        sampler_type: constant
-        sampler_parameters:
-          seed: 3622
-          value: 60.0
-      name: all_shapes
-      completion_criteria:
-        behavior: TetrisAgent
-        measure: reward
-        min_lesson_length: 300000
-        signal_smoothing: true
-        threshold: 35.0
-        require_reset: false
+      name: perfectClearBonus
+      completion_criteria: null
   stagnationPenaltyFactor:
     curriculum:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3623
-          value: 0.0005
-      name: single_piece
-      completion_criteria:
-        behavior: TetrisAgent
-        measure: reward
-        min_lesson_length: 100000
-        signal_smoothing: true
-        threshold: 8.0
-        require_reset: false
-    - value:
-        sampler_type: constant
-        sampler_parameters:
-          seed: 3624
-          value: 0.0007
-      name: basic_shapes
-      completion_criteria:
-        behavior: TetrisAgent
-        measure: reward
-        min_lesson_length: 150000
-        signal_smoothing: true
-        threshold: 12.0
-        require_reset: false
-    - value:
-        sampler_type: constant
-        sampler_parameters:
-          seed: 3625
+          seed: 4718
           value: 0.001
-      name: simple_shapes
-      completion_criteria:
-        behavior: TetrisAgent
-        measure: reward
-        min_lesson_length: 200000
-        signal_smoothing: true
-        threshold: 18.0
-        require_reset: false
+      name: stagnationPenaltyFactor
+      completion_criteria: null
+  comboMultiplier:
+    curriculum:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3626
-          value: 0.0012
-      name: most_shapes
-      completion_criteria:
-        behavior: TetrisAgent
-        measure: reward
-        min_lesson_length: 250000
-        signal_smoothing: true
-        threshold: 25.0
-        require_reset: false
+          seed: 4719
+          value: 0.5
+      name: comboMultiplier
+      completion_criteria: null
+  tetrisClearRewardMultiplier:
+    curriculum:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 3627
-          value: 0.0015
-      name: all_shapes
-      completion_criteria:
-        behavior: TetrisAgent
-        measure: reward
-        min_lesson_length: 300000
-        signal_smoothing: true
-        threshold: 35.0
-        require_reset: false
+          seed: 4720
+          value: 15.0
+      name: tetrisClearRewardMultiplier
+      completion_criteria: null
+  tripleLineClearRewardMultiplier:
+    curriculum:
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 4721
+          value: 7.0
+      name: tripleLineClearRewardMultiplier
+      completion_criteria: null
+  doubleLineClearRewardMultiplier:
+    curriculum:
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 4722
+          value: 3.0
+      name: doubleLineClearRewardMultiplier
+      completion_criteria: null
+  tSpinReward:
+    curriculum:
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 4723
+          value: 1.0
+      name: tSpinReward
+      completion_criteria: null
+  iPieceGapFillBonus:
+    curriculum:
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 4724
+          value: 0.8
+      name: iPieceGapFillBonus
+      completion_criteria: null
+  deathPenalty:
+    curriculum:
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 4725
+          value: 2.0
+      name: deathPenalty
+      completion_criteria: null
+  stackHeightPenalty:
+    curriculum:
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 4726
+          value: 0.02
+      name: stackHeightPenalty
+      completion_criteria: null
+  holeCreationPenalty:
+    curriculum:
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 4727
+          value: 0.99979
+      name: holeCreationPenalty
+      completion_criteria: null
+  uselessRotationPenalty:
+    curriculum:
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 4728
+          value: 0.01
+      name: uselessRotationPenalty
+      completion_criteria: null
+  idleActionPenalty:
+    curriculum:
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 4729
+          value: 0.001
+      name: idleActionPenalty
+      completion_criteria: null
+  roughnessRewardMultiplier:
+    curriculum:
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 4730
+          value: 0.3
+      name: roughnessRewardMultiplier
+      completion_criteria: null
+  roughnessPenaltyMultiplier:
+    curriculum:
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 4731
+          value: 0.01
+      name: roughnessPenaltyMultiplier
+      completion_criteria: null
+  holeFillReward:
+    curriculum:
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 4732
+          value: 1.0
+      name: holeFillReward
+      completion_criteria: null
+  wellRewardMultiplier:
+    curriculum:
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 4733
+          value: 0.2
+      name: wellRewardMultiplier
+      completion_criteria: null
+  iPieceInWellBonus:
+    curriculum:
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 4734
+          value: 0.5
+      name: iPieceInWellBonus
+      completion_criteria: null
+  maxWellRewardCap:
+    curriculum:
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 4735
+          value: 1.0
+      name: maxWellRewardCap
+      completion_criteria: null
+  accessibilityRewardMultiplier:
+    curriculum:
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 4736
+          value: 0.2
+      name: accessibilityRewardMultiplier
+      completion_criteria: null
+  accessibilityPenaltyMultiplier:
+    curriculum:
+    - value:
+        sampler_type: constant
+        sampler_parameters:
+          seed: 4737
+          value: 0.05
+      name: accessibilityPenaltyMultiplier
+      completion_criteria: null
 checkpoint_settings:
   run_id: tetris_curriculum_v1
   initialize_from: null

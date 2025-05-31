@@ -151,6 +151,7 @@ MonoBehaviour:
   boardPrefab: {fileID: 738472372066281065, guid: 388ad63e3b69f44b696c0c10983fb80f, type: 3}
   currentMode: 0
   singlePlayerPosition: {x: 0, y: 0, z: 0}
+  nNModelAsset: {fileID: 5022602860645237092, guid: a0a88e387a16845ecb4fd290041505b1, type: 3}
 --- !u!4 &569716142
 Transform:
   m_ObjectHideFlags: 0
