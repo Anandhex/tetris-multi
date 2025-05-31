@@ -1,0 +1,47 @@
+{
+    "TetrisAgent": {
+        "checkpoints": [
+            {
+                "steps": 499901,
+                "file_path": "results\\your_training_run5\\TetrisAgent\\TetrisAgent-499901.onnx",
+                "reward": -121.6319649436257,
+                "creation_time": 1748543480.332636,
+                "auxillary_file_paths": [
+                    "results\\your_training_run5\\TetrisAgent\\TetrisAgent-499901.pt"
+                ]
+            },
+            {
+                "steps": 999901,
+                "file_path": "results\\your_training_run5\\TetrisAgent\\TetrisAgent-999901.onnx",
+                "reward": -85.59089439671214,
+                "creation_time": 1748550057.5951781,
+                "auxillary_file_paths": [
+                    "results\\your_training_run5\\TetrisAgent\\TetrisAgent-999901.pt"
+                ]
+            },
+            {
+                "steps": 1300657,
+                "file_path": "results\\your_training_run5\\TetrisAgent\\TetrisAgent-1300657.onnx",
+                "reward": -84.40777923663457,
+                "creation_time": 1748556502.714282,
+                "auxillary_file_paths": [
+                    "results\\your_training_run5\\TetrisAgent\\TetrisAgent-1300657.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 1300657,
+            "file_path": "results\\your_training_run5\\TetrisAgent.onnx",
+            "reward": -84.40777923663457,
+            "creation_time": 1748556502.714282,
+            "auxillary_file_paths": [
+                "results\\your_training_run5\\TetrisAgent\\TetrisAgent-1300657.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "1.1.0",
+        "torch_version": "2.7.0+cu118"
+    }
+}

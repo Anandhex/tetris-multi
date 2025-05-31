@@ -30,7 +30,7 @@ behaviors:
     keep_checkpoints: 5
     max_steps: 10000000
     time_horizon: 256          # Reduced from 512 for GPU memory
-    summary_freq: 10000
+    summary_freq: 1000
     threaded: true
 
 # Add global torch settings for GPU
