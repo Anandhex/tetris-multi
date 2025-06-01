@@ -393,7 +393,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             int currentRot = currentPiece.rotationIndex;
             int rotationDiff = (chosenRotation - currentRot + 4) % 4;
 
-            // Choose shortest rotation path
             if (rotationDiff == 1 || rotationDiff == 2)
             {
                 rotateRight = true;
@@ -402,60 +401,59 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             {
                 rotateLeft = true;
             }
-            return; // Don't move until rotation is correct
+            return;
         }
 
-        // Step 2: Calculate target position based on piece shape and chosen column
-        int targetX = CalculateTargetPosition(chosenColumn, chosenRotation);
-        bool atCorrectPosition = (currentPiece.position.x == targetX);
-
-        // Step 3: Move horizontally to correct position
+        // Step 2: Calculate the CORRECT target position for this piece shape
+        int targetPosition = CalculateTargetPosition(chosenColumn, chosenRotation);
+        bool atCorrectPosition = (currentPiece.position.x == targetPosition);
+        Debug.Log("Debug:" + currentPiece.position.x + ":" + targetPosition);
+        // Step 3: Move to correct position
         if (!atCorrectPosition)
         {
-            if (currentPiece.position.x < targetX)
+            if (currentPiece.position.x < targetPosition)
             {
                 moveRight = true;
             }
-            else if (currentPiece.position.x > targetX)
+            else if (currentPiece.position.x > targetPosition)
             {
                 moveLeft = true;
             }
-            return; // Don't drop until position is correct
+            return;
         }
 
-        // Step 4: Soft drop when in correct position and rotation
+        // Step 4: Drop when in correct position and rotation
         if (atCorrectPosition && atCorrectRotation)
         {
-            moveDown = true; // Use soft drop instead of hard drop
+            moveDown = true; // Use soft drop
 
-            // Check if piece has landed (can't move down anymore)
-            if (!CanPieceMoveTo(currentPiece.position + Vector3Int.down, GetRotatedCells(currentPiece.data, currentPiece.rotationIndex)))
+            // Check if piece has landed
+            Vector2Int[] cells = GetRotatedCells(currentPiece.data, currentPiece.rotationIndex);
+            if (!CanPieceMoveTo(currentPiece.position + Vector3Int.down, cells))
             {
                 isExecutingPlacement = false; // Placement complete
             }
         }
     }
-    private int CalculateTargetPosition(int targetColumn, int targetRotation)
+
+    private int CalculateTargetPosition(int desiredColumn, int rotation)
     {
-        // Get the piece shape for the target rotation
-        Vector2Int[] rotatedCells = GetRotatedCells(currentPiece.data, targetRotation);
+        Vector2Int[] rotatedCells = GetRotatedCells(currentPiece.data, rotation);
 
-        // Find the leftmost cell of the piece
+        // Find the leftmost cell of the rotated piece
         int minX = rotatedCells.Min(cell => cell.x);
-
-        // Calculate the target position so that the leftmost cell aligns with the target column
-        // But ensure the piece doesn't go out of bounds
-        int targetPos = targetColumn - minX;
-
-        // Clamp to valid board bounds
         int maxX = rotatedCells.Max(cell => cell.x);
-        int pieceWidth = maxX - minX;
 
-        targetPos = Mathf.Max(targetPos, -minX); // Don't go past left edge
-        targetPos = Mathf.Min(targetPos, 9 - maxX); // Don't go past right edge (assuming 10-wide board)
+        // Calculate target position so the piece covers the desired column
+        int targetPos = desiredColumn - minX;
+
+        // Ensure the piece stays within bounds
+        targetPos = Mathf.Max(targetPos, -minX);                    // Don't go past left edge
+        targetPos = Mathf.Min(targetPos, 9 - maxX);                 // Don't go past right edge
 
         return targetPos;
     }
+
 
     public override void OnActionReceived(ActionBuffers actions)
     {
@@ -493,7 +491,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             chosenRotation = targetRotation;
             hasChosenPlacement = true;
             isExecutingPlacement = true;
-
+            Debug.Log("actionsss:" + targetColumn + ":" + targetRotation);
             if (debugger != null)
                 debugger.SetLastActions(targetColumn, targetRotation);
 
@@ -560,12 +558,11 @@ public class TetrisMLAgent : Agent, IPlayerInputController
 
     private void EvaluatePlacementChoice(int targetColumn, int targetRotation)
     {
-        // Calculate the actual position the piece will move to
-        int actualTargetX = CalculateTargetPosition(targetColumn, targetRotation);
-        Vector3Int simulatedPosition = new Vector3Int(actualTargetX, currentPiece.position.y, 0);
-
-        // Calculate where the piece would land
+        int actualTargetPos = CalculateTargetPosition(targetColumn, targetRotation);
+        Vector3Int simulatedPosition = new Vector3Int(actualTargetPos, currentPiece.position.y, 0);
         Vector3Int landingPosition = SimulateDrop(simulatedPosition, targetRotation);
+
+
 
         // Evaluate the quality of this placement
         float placementScore = EvaluatePlacementQuality(landingPosition, targetRotation);

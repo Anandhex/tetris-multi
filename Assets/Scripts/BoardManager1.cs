@@ -9,7 +9,7 @@ public class BoardManager1 : MonoBehaviour
     public GameObject boardPrefab;
     public GameMode currentMode = GameMode.AI;
     public Vector3Int singlePlayerPosition = new Vector3Int(0, 0, 0);
-    public ModelAsset nNModelAsset;
+    // public ModelAsset nNModelAsset;
 
     private Board[] activeBoards;
 
@@ -49,6 +49,7 @@ public class BoardManager1 : MonoBehaviour
 
             // Add the ML Agent
             var agent = container.AddComponent<TetrisMLAgent>();
+
 
 
             // Connect the agent to the board
