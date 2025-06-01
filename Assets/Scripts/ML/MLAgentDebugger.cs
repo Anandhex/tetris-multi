@@ -15,7 +15,10 @@ public class MLAgentDebugger : MonoBehaviour
     private int stepCount = 0;
     private float lastRewardValue = 0f;
     private float currentRewardAccumulated = 0f;
-    private int[] actionCounts = new int[7]; // Count for each possible action
+
+    // Updated: Track actions for multi-discrete action space
+    private int[,] actionCounts = new int[2, 10]; // [branch, action] - branch 0: 10 columns, branch 1: 4 rotations (but sized to 10 for simplicity)
+    private int[] lastActions = new int[2]; // Store last action for each branch
 
     private void Start()
     {
@@ -46,15 +49,21 @@ public class MLAgentDebugger : MonoBehaviour
     {
         stepCount++;
 
-        // Get the action taken by the agent (you'll need to access this from the agent)
-        // This is a simplification - you'll need to adapt based on how you can access the action
+        // Record actions for multi-discrete action space
         if (mlAgent != null)
         {
-            // Example: if you can get the last action taken
-            int lastActionTaken = GetLastActionTaken();
-            if (lastActionTaken >= 0 && lastActionTaken < actionCounts.Length)
+            // Track column action (branch 0)
+            int columnAction = GetLastColumnAction();
+            if (columnAction >= 0 && columnAction < 10)
             {
-                actionCounts[lastActionTaken]++;
+                actionCounts[0, columnAction]++;
+            }
+
+            // Track rotation action (branch 1)
+            int rotationAction = GetLastRotationAction();
+            if (rotationAction >= 0 && rotationAction < 4)
+            {
+                actionCounts[1, rotationAction]++;
             }
 
             // Track reward changes
@@ -65,16 +74,21 @@ public class MLAgentDebugger : MonoBehaviour
         }
     }
 
-    private int lastAction = 0;
-
-    public void SetLastAction(int action)
+    // Updated: Store actions for both branches
+    public void SetLastActions(int columnAction, int rotationAction)
     {
-        lastAction = action;
+        lastActions[0] = columnAction;
+        lastActions[1] = rotationAction;
     }
 
-    private int GetLastActionTaken()
+    private int GetLastColumnAction()
     {
-        return lastAction;
+        return lastActions[0];
+    }
+
+    private int GetLastRotationAction()
+    {
+        return lastActions[1];
     }
 
     private IEnumerator DebugRoutine()
@@ -98,7 +112,15 @@ public class MLAgentDebugger : MonoBehaviour
             Debug.Log($"- Name: {behaviorParams.BehaviorName}");
             Debug.Log($"- Type: {behaviorParams.BehaviorType}");
             Debug.Log($"- Observation Size: {behaviorParams.BrainParameters.VectorObservationSize}");
-            Debug.Log($"- Action Space: Discrete({behaviorParams.BrainParameters.ActionSpec.NumDiscreteActions} branches)");
+
+            // Updated: Log multi-discrete action space
+            var actionSpec = behaviorParams.BrainParameters.ActionSpec;
+            Debug.Log($"- Action Space: Multi-Discrete with {actionSpec.NumDiscreteActions} branches");
+            for (int i = 0; i < actionSpec.BranchSizes.Length; i++)
+            {
+                string branchName = i == 0 ? "Column" : "Rotation";
+                Debug.Log($"  - Branch {i} ({branchName}): {actionSpec.BranchSizes[i]} actions");
+            }
 
             if (behaviorParams.Model != null)
             {
@@ -113,21 +135,32 @@ public class MLAgentDebugger : MonoBehaviour
 
     private void LogAgentStatus()
     {
-        string actionDistribution = "Action Distribution: [";
-        for (int i = 0; i < actionCounts.Length; i++)
+        // Updated: Display action distribution for multi-discrete actions
+        string columnDistribution = "Column Actions: [";
+        for (int i = 0; i < 10; i++)
         {
-            actionDistribution += $"{i}:{actionCounts[i]}";
-            if (i < actionCounts.Length - 1)
-                actionDistribution += ", ";
+            columnDistribution += $"{i}:{actionCounts[0, i]}";
+            if (i < 9)
+                columnDistribution += ", ";
         }
-        actionDistribution += "]";
+        columnDistribution += "]";
+
+        string rotationDistribution = "Rotation Actions: [";
+        for (int i = 0; i < 4; i++)
+        {
+            rotationDistribution += $"{i}:{actionCounts[1, i]}";
+            if (i < 3)
+                rotationDistribution += ", ";
+        }
+        rotationDistribution += "]";
 
         Debug.Log($"Agent Status Update:");
         Debug.Log($"- Steps: {stepCount}");
         Debug.Log($"- Episodes: {episodeCount}");
         Debug.Log($"- Current Cumulative Reward: {mlAgent.GetCumulativeReward()}");
         Debug.Log($"- Reward since last update: {currentRewardAccumulated}");
-        Debug.Log(actionDistribution);
+        Debug.Log(columnDistribution);
+        Debug.Log(rotationDistribution);
 
         // Reset the accumulated reward for the next interval
         currentRewardAccumulated = 0f;
@@ -139,10 +172,48 @@ public class MLAgentDebugger : MonoBehaviour
         episodeCount++;
         Debug.Log($"Episode {episodeCount} ended with reward: {mlAgent.GetCumulativeReward()}");
 
-        // Reset action counts
-        for (int i = 0; i < actionCounts.Length; i++)
+        // Reset action counts for both branches
+        for (int branch = 0; branch < 2; branch++)
         {
-            actionCounts[i] = 0;
+            for (int action = 0; action < (branch == 0 ? 10 : 4); action++)
+            {
+                actionCounts[branch, action] = 0;
+            }
+        }
+    }
+
+    // Helper method to get action distribution statistics
+    public void LogActionStatistics()
+    {
+        Debug.Log("=== Action Statistics ===");
+
+        // Column action statistics
+        int totalColumnActions = 0;
+        for (int i = 0; i < 10; i++)
+        {
+            totalColumnActions += actionCounts[0, i];
+        }
+
+        Debug.Log("Column Action Percentages:");
+        for (int i = 0; i < 10; i++)
+        {
+            float percentage = totalColumnActions > 0 ? (actionCounts[0, i] / (float)totalColumnActions) * 100f : 0f;
+            Debug.Log($"  Column {i}: {percentage:F1}% ({actionCounts[0, i]} times)");
+        }
+
+        // Rotation action statistics
+        int totalRotationActions = 0;
+        for (int i = 0; i < 4; i++)
+        {
+            totalRotationActions += actionCounts[1, i];
+        }
+
+        Debug.Log("Rotation Action Percentages:");
+        string[] rotationNames = { "0°", "90°", "180°", "270°" };
+        for (int i = 0; i < 4; i++)
+        {
+            float percentage = totalRotationActions > 0 ? (actionCounts[1, i] / (float)totalRotationActions) * 100f : 0f;
+            Debug.Log($"  {rotationNames[i]}: {percentage:F1}% ({actionCounts[1, i]} times)");
         }
     }
 }

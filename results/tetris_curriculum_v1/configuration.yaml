@@ -80,7 +80,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4691
+          seed: 7733
           value: 1
       name: single_piece
       completion_criteria:
@@ -93,7 +93,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4692
+          seed: 7734
           value: 2
       name: basic_shapes
       completion_criteria:
@@ -106,7 +106,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4693
+          seed: 7735
           value: 3
       name: simple_shapes
       completion_criteria:
@@ -119,7 +119,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4694
+          seed: 7736
           value: 5
       name: most_shapes
       completion_criteria:
@@ -132,7 +132,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4695
+          seed: 7737
           value: 7
       name: all_shapes
       completion_criteria:
@@ -147,7 +147,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4696
+          seed: 7738
           value: 8
       name: single_piece
       completion_criteria:
@@ -160,7 +160,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4697
+          seed: 7739
           value: 10
       name: basic_shapes
       completion_criteria:
@@ -173,7 +173,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4698
+          seed: 7740
           value: 14
       name: simple_shapes
       completion_criteria:
@@ -186,7 +186,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4699
+          seed: 7741
           value: 18
       name: most_shapes
       completion_criteria:
@@ -199,7 +199,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4700
+          seed: 7742
           value: 20
       name: all_shapes
       completion_criteria:
@@ -214,7 +214,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4701
+          seed: 7743
           value: 0.02
       name: single_piece
       completion_criteria:
@@ -227,7 +227,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4702
+          seed: 7744
           value: 0.05
       name: basic_shapes
       completion_criteria:
@@ -240,7 +240,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4703
+          seed: 7745
           value: 0.1
       name: simple_shapes
       completion_criteria:
@@ -253,7 +253,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4704
+          seed: 7746
           value: 0.2
       name: most_shapes
       completion_criteria:
@@ -266,7 +266,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4705
+          seed: 7747
           value: 0.3
       name: all_shapes
       completion_criteria:
@@ -281,7 +281,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4706
+          seed: 7748
           value: 1
       name: single_piece
       completion_criteria:
@@ -294,7 +294,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4707
+          seed: 7749
           value: 2
       name: basic_shapes
       completion_criteria:
@@ -307,7 +307,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4708
+          seed: 7750
           value: 3
       name: simple_shapes
       completion_criteria:
@@ -320,7 +320,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4709
+          seed: 7751
           value: 4
       name: most_shapes
       completion_criteria:
@@ -333,7 +333,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4710
+          seed: 7752
           value: 5
       name: all_shapes
       completion_criteria:
@@ -348,7 +348,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4711
+          seed: 7753
           value: 5.0
       name: clearReward
       completion_criteria: null
@@ -357,7 +357,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4712
+          seed: 7754
           value: 0.0
       name: single_piece
       completion_criteria:
@@ -370,7 +370,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4713
+          seed: 7755
           value: 0.0
       name: basic_shapes
       completion_criteria:
@@ -383,7 +383,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4714
+          seed: 7756
           value: 1.0
       name: simple_shapes
       completion_criteria:
@@ -396,7 +396,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4715
+          seed: 7757
           value: 1.0
       name: most_shapes
       completion_criteria:
@@ -409,7 +409,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4716
+          seed: 7758
           value: 1.0
       name: all_shapes
       completion_criteria:
@@ -424,7 +424,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4717
+          seed: 7759
           value: 50.0
       name: perfectClearBonus
       completion_criteria: null
@@ -433,7 +433,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4718
+          seed: 7760
           value: 0.001
       name: stagnationPenaltyFactor
       completion_criteria: null
@@ -442,7 +442,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4719
+          seed: 7761
           value: 0.5
       name: comboMultiplier
       completion_criteria: null
@@ -451,7 +451,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4720
+          seed: 7762
           value: 15.0
       name: tetrisClearRewardMultiplier
       completion_criteria: null
@@ -460,7 +460,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4721
+          seed: 7763
           value: 7.0
       name: tripleLineClearRewardMultiplier
       completion_criteria: null
@@ -469,7 +469,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4722
+          seed: 7764
           value: 3.0
       name: doubleLineClearRewardMultiplier
       completion_criteria: null
@@ -478,7 +478,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4723
+          seed: 7765
           value: 1.0
       name: tSpinReward
       completion_criteria: null
@@ -487,7 +487,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4724
+          seed: 7766
           value: 0.8
       name: iPieceGapFillBonus
       completion_criteria: null
@@ -496,7 +496,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4725
+          seed: 7767
           value: 2.0
       name: deathPenalty
       completion_criteria: null
@@ -505,7 +505,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4726
+          seed: 7768
           value: 0.02
       name: stackHeightPenalty
       completion_criteria: null
@@ -514,7 +514,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4727
+          seed: 7769
           value: 0.99979
       name: holeCreationPenalty
       completion_criteria: null
@@ -523,7 +523,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4728
+          seed: 7770
           value: 0.01
       name: uselessRotationPenalty
       completion_criteria: null
@@ -532,7 +532,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4729
+          seed: 7771
           value: 0.001
       name: idleActionPenalty
       completion_criteria: null
@@ -541,7 +541,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4730
+          seed: 7772
           value: 0.3
       name: roughnessRewardMultiplier
       completion_criteria: null
@@ -550,7 +550,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4731
+          seed: 7773
           value: 0.01
       name: roughnessPenaltyMultiplier
       completion_criteria: null
@@ -559,7 +559,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4732
+          seed: 7774
           value: 1.0
       name: holeFillReward
       completion_criteria: null
@@ -568,7 +568,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4733
+          seed: 7775
           value: 0.2
       name: wellRewardMultiplier
       completion_criteria: null
@@ -577,7 +577,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4734
+          seed: 7776
           value: 0.5
       name: iPieceInWellBonus
       completion_criteria: null
@@ -586,7 +586,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4735
+          seed: 7777
           value: 1.0
       name: maxWellRewardCap
       completion_criteria: null
@@ -595,7 +595,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4736
+          seed: 7778
           value: 0.2
       name: accessibilityRewardMultiplier
       completion_criteria: null
@@ -604,7 +604,7 @@ environment_parameters:
     - value:
         sampler_type: constant
         sampler_parameters:
-          seed: 4737
+          seed: 7779
           value: 0.05
       name: accessibilityPenaltyMultiplier
       completion_criteria: null

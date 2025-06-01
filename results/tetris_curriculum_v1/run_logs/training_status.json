@@ -1,21 +1,21 @@
 {
     "tetromino_types": {
-        "lesson_num": 2
+        "lesson_num": 0
     },
     "board_height": {
-        "lesson_num": 2
+        "lesson_num": 0
     },
     "hole_penalty_weight": {
-        "lesson_num": 2
+        "lesson_num": 0
     },
     "board_preset": {
-        "lesson_num": 2
+        "lesson_num": 0
     },
     "clearReward": {
         "lesson_num": 0
     },
     "enable_t_spins": {
-        "lesson_num": 2
+        "lesson_num": 0
     },
     "perfectClearBonus": {
         "lesson_num": 0
@@ -83,31 +83,22 @@
     "TetrisAgent": {
         "checkpoints": [
             {
-                "steps": 499951,
-                "file_path": "results/tetris_curriculum_v1/TetrisAgent/TetrisAgent-499951.onnx",
-                "reward": 2399.57199382782,
-                "creation_time": 1748714256.3692942,
+                "steps": 27824,
+                "file_path": "results/tetris_curriculum_v1/TetrisAgent/TetrisAgent-27824.onnx",
+                "reward": null,
+                "creation_time": 1748780039.292279,
                 "auxillary_file_paths": [
-                    "results/tetris_curriculum_v1/TetrisAgent/TetrisAgent-499951.pt"
-                ]
-            },
-            {
-                "steps": 500463,
-                "file_path": "results/tetris_curriculum_v1/TetrisAgent/TetrisAgent-500463.onnx",
-                "reward": 2399.57199382782,
-                "creation_time": 1748714256.481921,
-                "auxillary_file_paths": [
-                    "results/tetris_curriculum_v1/TetrisAgent/TetrisAgent-500463.pt"
+                    "results/tetris_curriculum_v1/TetrisAgent/TetrisAgent-27824.pt"
                 ]
             }
         ],
         "final_checkpoint": {
-            "steps": 500463,
+            "steps": 27824,
             "file_path": "results/tetris_curriculum_v1/TetrisAgent.onnx",
-            "reward": 2399.57199382782,
-            "creation_time": 1748714256.481921,
+            "reward": null,
+            "creation_time": 1748780039.292279,
             "auxillary_file_paths": [
-                "results/tetris_curriculum_v1/TetrisAgent/TetrisAgent-500463.pt"
+                "results/tetris_curriculum_v1/TetrisAgent/TetrisAgent-27824.pt"
             ]
         }
     },

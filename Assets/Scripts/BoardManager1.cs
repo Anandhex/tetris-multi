@@ -58,7 +58,7 @@ public class BoardManager1 : MonoBehaviour
             // Store reference to the board
             activeBoards = new[] { board };
 
-            agent.SetModel("TetrisAgent", nNModelAsset, InferenceDevice.Default);
+            // agent.SetModel("TetrisAgent", nNModelAsset, InferenceDevice.Default);
             // Debug.Log("AI Board setup complete");
         }
     }
