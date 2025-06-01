@@ -10,7 +10,7 @@ using System.Linq;
 public class TetrisMLAgent : Agent, IPlayerInputController
 {
     private Board board;
-    private Piece currentPiece;
+    public Piece currentPiece;
     private MLAgentDebugger debugger;
 
 
@@ -60,6 +60,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     public float curriculumHolePenaltyWeight = 0.5f;
     public bool enableAdvancedMechanics = false;
     private int episodeSteps = 0;
+    private bool placementExecuted = false;
 
 
     public override void Initialize()
@@ -127,58 +128,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     }
 
 
-    private void Awake()
-    {
-        debugger = GetComponent<MLAgentDebugger>();
-        if (debugger == null)
-        {
-            debugger = gameObject.AddComponent<MLAgentDebugger>();
-        }
 
-
-        // Find board in children
-        board = GetComponentInChildren<Board>();
-
-
-        var behavior = gameObject.GetComponent<BehaviorParameters>();
-        if (behavior == null)
-        {
-            behavior = gameObject.AddComponent<BehaviorParameters>();
-            behavior.BehaviorName = "TetrisAgent";
-            behavior.BrainParameters.VectorObservationSize = 228;
-            behavior.BrainParameters.NumStackedVectorObservations = 1;
-
-
-            // Two discrete actions - column (10 options) and rotation (4 options)
-            ActionSpec actionSpec = ActionSpec.MakeDiscrete(new int[] { 10, 4 });
-            behavior.BrainParameters.ActionSpec = actionSpec;
-        }
-        else
-        {
-            behavior.BehaviorName = "TetrisAgent";
-            behavior.BrainParameters.VectorObservationSize = 228;
-            behavior.BrainParameters.NumStackedVectorObservations = 1;
-
-
-            // Two discrete actions - column (10 options) and rotation (4 options)
-            ActionSpec actionSpec = ActionSpec.MakeDiscrete(new int[] { 10, 4 });
-            behavior.BrainParameters.ActionSpec = actionSpec;
-        }
-
-
-        // Add a decision requester component if it doesn't exist
-        var requestor = gameObject.GetComponent<DecisionRequester>();
-        if (requestor == null)
-        {
-            requestor = gameObject.AddComponent<DecisionRequester>();
-            requestor.DecisionPeriod = 1;
-        }
-
-
-        // Initialize column tracking arrays
-        columnUsageCount = new int[10];
-        columnRewards = new float[10];
-    }
 
 
     private void Start()
@@ -407,7 +357,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         // Step 2: Calculate the CORRECT target position for this piece shape
         int targetPosition = CalculateTargetPosition(chosenColumn, chosenRotation);
         bool atCorrectPosition = (currentPiece.position.x == targetPosition);
-        Debug.Log("Debug:" + currentPiece.position.x + ":" + targetPosition);
         // Step 3: Move to correct position
         if (!atCorrectPosition)
         {
@@ -455,60 +404,315 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     }
 
 
+    [Header("Execution Mode")]
+    public ExecutionMode executionMode = ExecutionMode.Training;
+
+    public enum ExecutionMode
+    {
+        Training,      // Very fast decisions
+        HumanLike,     // Realistic timing 
+        Competitive,   // Fast but fair
+        Demonstration  // Slow and clear
+    }
+
+    private DecisionRequester decisionRequester;
+
+    private void Awake()
+    {
+        debugger = GetComponent<MLAgentDebugger>();
+        if (debugger == null)
+        {
+            debugger = gameObject.AddComponent<MLAgentDebugger>();
+        }
+
+
+        // Find board in children
+        board = GetComponentInChildren<Board>();
+
+
+        var behavior = gameObject.GetComponent<BehaviorParameters>();
+        if (behavior == null)
+        {
+            behavior = gameObject.AddComponent<BehaviorParameters>();
+            behavior.BehaviorName = "TetrisAgent";
+            behavior.BrainParameters.VectorObservationSize = 228;
+            behavior.BrainParameters.NumStackedVectorObservations = 1;
+
+
+            // Two discrete actions - column (10 options) and rotation (4 options)
+            ActionSpec actionSpec = ActionSpec.MakeDiscrete(new int[] { 10, 4 });
+            behavior.BrainParameters.ActionSpec = actionSpec;
+        }
+        else
+        {
+            behavior.BehaviorName = "TetrisAgent";
+            behavior.BrainParameters.VectorObservationSize = 228;
+            behavior.BrainParameters.NumStackedVectorObservations = 1;
+
+
+            // Two discrete actions - column (10 options) and rotation (4 options)
+            ActionSpec actionSpec = ActionSpec.MakeDiscrete(new int[] { 10, 4 });
+            behavior.BrainParameters.ActionSpec = actionSpec;
+        }
+
+
+        // Add a decision requester component if it doesn't exist
+        var requestor = gameObject.GetComponent<DecisionRequester>();
+        if (requestor == null)
+        {
+            requestor = gameObject.AddComponent<DecisionRequester>();
+            requestor.DecisionPeriod = 1;
+        }
+
+
+        // Initialize column tracking arrays
+        columnUsageCount = new int[10];
+        columnRewards = new float[10];
+        // Get or add DecisionRequester
+        decisionRequester = GetComponent<DecisionRequester>();
+        if (decisionRequester == null)
+        {
+            decisionRequester = gameObject.AddComponent<DecisionRequester>();
+        }
+
+        // Set initial decision period based on mode
+        SetExecutionMode(executionMode);
+    }
+
+    public void SetExecutionMode(ExecutionMode mode)
+    {
+        executionMode = mode;
+
+        if (decisionRequester == null)
+            decisionRequester = GetComponent<DecisionRequester>();
+
+        switch (mode)
+        {
+            case ExecutionMode.Training:
+                decisionRequester.DecisionPeriod = 1;  // Every frame - fastest
+                break;
+
+            case ExecutionMode.HumanLike:
+                decisionRequester.DecisionPeriod = 15; // ~0.25 seconds at 60fps
+                break;
+
+            case ExecutionMode.Competitive:
+                decisionRequester.DecisionPeriod = 5;  // ~0.08 seconds at 60fps
+                break;
+
+            case ExecutionMode.Demonstration:
+                decisionRequester.DecisionPeriod = 30; // ~0.5 seconds at 60fps
+                break;
+        }
+    }
+
+    public void SetDifficultyLevel(float difficultyMultiplier)
+    {
+        // Adjust decision period based on difficulty
+        // Lower multiplier = easier/slower, higher = harder/faster
+        int basePeriod = executionMode switch
+        {
+            ExecutionMode.Training => 1,
+            ExecutionMode.HumanLike => 15,
+            ExecutionMode.Competitive => 5,
+            ExecutionMode.Demonstration => 30,
+            _ => 15
+        };
+
+        int adjustedPeriod = Mathf.RoundToInt(basePeriod / difficultyMultiplier);
+        decisionRequester.DecisionPeriod = Mathf.Max(1, adjustedPeriod);
+    }
+
+    // Keep the simple placement logic without complex timing
     public override void OnActionReceived(ActionBuffers actions)
     {
-        // Base survival reward
-        AddReward(0.01f);
-        m_StatsRecorder.Add("action-rewarded/survival", 0.01f);
-
-        episodeSteps++;
-
         if (board == null || currentPiece == null)
             return;
 
         // Get placement choice from actions (only when new piece spawns)
         if (!hasChosenPlacement)
         {
-            int targetColumn = actions.DiscreteActions[0]; // 0-9 for columns
-            int targetRotation = actions.DiscreteActions[1]; // 0-3 for rotations
-
-            // Validate and clamp the chosen position
-            targetColumn = Mathf.Clamp(targetColumn, 0, 9);
-            targetRotation = Mathf.Clamp(targetRotation, 0, 3);
-
-            // Additional validation for piece placement
-            if (!IsValidPlacement(targetColumn, targetRotation, currentPiece.data))
-            {
-                // Find the closest valid placement
-                targetColumn = FindClosestValidColumn(targetColumn, targetRotation);
-
-                // Small penalty for invalid placement choice
-                AddReward(-0.1f);
-                m_StatsRecorder.Add("action-rewarded/invalid-placement", -0.1f);
-            }
+            int targetColumn = Mathf.Clamp(actions.DiscreteActions[0], 0, 9);
+            int targetRotation = Mathf.Clamp(actions.DiscreteActions[1], 0, 3);
 
             chosenColumn = targetColumn;
             chosenRotation = targetRotation;
             hasChosenPlacement = true;
-            isExecutingPlacement = true;
-            Debug.Log("actionsss:" + targetColumn + ":" + targetRotation);
-            if (debugger != null)
-                debugger.SetLastActions(targetColumn, targetRotation);
 
-            // Evaluate and reward the placement choice
-            EvaluatePlacementChoice(targetColumn, targetRotation);
+            debugger.SetLastActions(targetColumn, targetRotation);
 
-            // Track column usage for exploration
-            columnUsageCount[targetColumn]++;
-            totalPiecesPlaced++;
+            // For training mode, execute immediately
+            if (executionMode == ExecutionMode.Training)
+            {
+                ExecutePlacementImmediately();
+            }
+            else
+            {
+                // For other modes, execute step by step
+                ExecuteStepByStepMovement();
+            }
+        }
+        else if (executionMode != ExecutionMode.Training)
+        {
+            // Continue step-by-step execution for non-training modes
+            ExecuteStepByStepMovement();
         }
 
-        // Execute the placement using helper function
-        UpdatePlacementExecution();
-
-        // Process all other rewards
         ProcessRewards();
     }
+
+    private void ExecutePlacementImmediately()
+    {
+        // Instant placement for training
+        ResetMovementFlags();
+
+        if (TeleportPieceToTarget(chosenColumn, chosenRotation))
+        {
+            hardDrop = true;
+        }
+    }
+
+    private bool TeleportPieceToTarget(int targetColumn, int targetRotation)
+    {
+        if (currentPiece == null) return false;
+
+        // Clear the piece from its current position
+        board.Clear(currentPiece);
+
+        // Store original state
+        Vector3Int originalPosition = currentPiece.position;
+        int originalRotation = currentPiece.rotationIndex;
+
+        // Apply rotation first
+        while (currentPiece.rotationIndex != targetRotation)
+        {
+            int currentRot = currentPiece.rotationIndex;
+            int rotationDiff = (targetRotation - currentRot + 4) % 4;
+
+            if (rotationDiff == 1 || rotationDiff == 2)
+            {
+                ApplyDirectRotation(1);
+                currentPiece.rotationIndex = (currentPiece.rotationIndex + 1) % 4;
+            }
+            else if (rotationDiff == 3)
+            {
+                ApplyDirectRotation(-1);
+                currentPiece.rotationIndex = (currentPiece.rotationIndex + 3) % 4;
+            }
+            else
+            {
+                break; // Already at correct rotation
+            }
+        }
+
+        // Get board bounds and convert target column
+        RectInt bounds = board.Bounds;
+        int boardTargetX = bounds.xMin + Mathf.Clamp(targetColumn, 0, bounds.width - 1);
+
+        // Try to place at target X position, starting from a safe Y position
+        Vector3Int testPosition = new Vector3Int(boardTargetX, bounds.yMax - 5, 0);
+
+        // Find a valid position by moving the piece to target X and dropping it down
+        testPosition.x = boardTargetX;
+
+        // First, make sure we're at a valid height where the piece can exist
+        while (testPosition.y > bounds.yMin && !board.IsValidPosition(currentPiece, testPosition))
+        {
+            testPosition.y--;
+        }
+
+        // If we found a valid position, use it
+        if (board.IsValidPosition(currentPiece, testPosition))
+        {
+            currentPiece.position = testPosition;
+            board.Set(currentPiece);
+            return true;
+        }
+        else
+        {
+            // Restore original state if teleport failed
+            currentPiece.position = originalPosition;
+            currentPiece.rotationIndex = originalRotation;
+            board.Set(currentPiece);
+            return false;
+        }
+    }
+    private void ApplyDirectRotation(int direction)
+    {
+        float[] matrix = Data.RotationMatrix;
+        for (int i = 0; i < currentPiece.cells.Length; i++)
+        {
+            Vector3 cell = currentPiece.cells[i];
+            int x, y;
+            switch (currentPiece.data.tetromino)
+            {
+                case Tetromino.I:
+                case Tetromino.O:
+                    cell.x -= 0.5f;
+                    cell.y -= 0.5f;
+                    x = Mathf.CeilToInt((cell.x * matrix[0] * direction) + (cell.y * matrix[1] * direction));
+                    y = Mathf.CeilToInt((cell.x * matrix[2] * direction) + (cell.y * matrix[3] * direction));
+                    break;
+                default:
+                    x = Mathf.RoundToInt((cell.x * matrix[0] * direction) + (cell.y * matrix[1] * direction));
+                    y = Mathf.RoundToInt((cell.x * matrix[2] * direction) + (cell.y * matrix[3] * direction));
+                    break;
+            }
+            currentPiece.cells[i] = new Vector3Int(x, y, 0);
+        }
+    }
+
+
+
+    private void ResetMovementFlags()
+    {
+        moveLeft = false;
+        moveRight = false;
+        rotateLeft = false;
+        rotateRight = false;
+        moveDown = false;
+        hardDrop = false;
+    }
+
+    private void ExecuteStepByStepMovement()
+    {
+        // Step-by-step movement for realistic timing
+        ResetMovementFlags();
+
+        bool atCorrectRotation = (currentPiece.rotationIndex == chosenRotation);
+        bool atCorrectPosition = (currentPiece.position.x == chosenColumn);
+
+        if (!atCorrectRotation)
+        {
+            int currentRot = currentPiece.rotationIndex;
+            int rotationDiff = (chosenRotation - currentRot + 4) % 4;
+
+            if (rotationDiff == 1 || rotationDiff == 2)
+            {
+                rotateRight = true;
+            }
+            else if (rotationDiff == 3)
+            {
+                rotateLeft = true;
+            }
+        }
+        else if (!atCorrectPosition)
+        {
+            if (currentPiece.position.x < chosenColumn)
+            {
+                moveRight = true;
+            }
+            else if (currentPiece.position.x > chosenColumn)
+            {
+                moveLeft = true;
+            }
+        }
+        else
+        {
+            hardDrop = true;
+        }
+    }
+
 
     private int FindClosestValidColumn(int preferredColumn, int rotation)
     {

@@ -5,11 +5,12 @@ public class Piece : MonoBehaviour
     public Board board { get; private set; }
     public TetrominoData data { get; private set; }
     public Vector3Int[] cells { get; private set; }
-    public Vector3Int position { get; private set; }
-    public int rotationIndex { get; private set; }
+    public Vector3Int position;
+    public int rotationIndex;
     private IPlayerInputController inputController;
 
-
+    private int lastMovementFrame = -1;
+    private int movementDelayFrames = 2; // Allow 2 frames for movement to process
     public float stepDelay = 1f;
     public float moveDelay = 0.1f;
     public float lockDelay = 0.5f;
