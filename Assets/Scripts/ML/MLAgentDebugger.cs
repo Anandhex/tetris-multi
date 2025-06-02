@@ -2,12 +2,14 @@ using UnityEngine;
 using Unity.MLAgents;
 using Unity.MLAgents.Policies;
 using System.Collections;
+using System.Collections.Generic;
 
 [RequireComponent(typeof(TetrisMLAgent))]
 public class MLAgentDebugger : MonoBehaviour
 {
     [SerializeField] private bool enableDebugging = true;
     [SerializeField] private float debugUpdateInterval = 1.0f;
+    [SerializeField] private bool logPlacementDetails = true;
 
     private TetrisMLAgent mlAgent;
     private BehaviorParameters behaviorParams;
@@ -16,9 +18,20 @@ public class MLAgentDebugger : MonoBehaviour
     private float lastRewardValue = 0f;
     private float currentRewardAccumulated = 0f;
 
-    // Updated: Track actions for multi-discrete action space
-    private int[,] actionCounts = new int[2, 10]; // [branch, action] - branch 0: 10 columns, branch 1: 4 rotations (but sized to 10 for simplicity)
-    private int[] lastActions = new int[2]; // Store last action for each branch
+    // Updated: Track placement actions (single discrete action space)
+    private Dictionary<int, int> placementCounts = new Dictionary<int, int>();
+    private int lastPlacementAction = -1;
+
+    // Track placement quality metrics
+    private List<float> recentLineClears = new List<float>();
+    private List<float> recentHeights = new List<float>();
+    private List<float> recentHoles = new List<float>();
+    private int maxRecentMetrics = 100; // Keep last 100 placements
+
+    // Track curriculum progress
+    private float lastBoardHeight = 0f;
+    private int lastTetrominoTypes = 0;
+    private int lastBoardPreset = 0;
 
     private void Start()
     {
@@ -49,21 +62,17 @@ public class MLAgentDebugger : MonoBehaviour
     {
         stepCount++;
 
-        // Record actions for multi-discrete action space
         if (mlAgent != null)
         {
-            // Track column action (branch 0)
-            int columnAction = GetLastColumnAction();
-            if (columnAction >= 0 && columnAction < 10)
+            // Track placement action
+            int placementAction = GetLastPlacementAction();
+            if (placementAction >= 0)
             {
-                actionCounts[0, columnAction]++;
-            }
-
-            // Track rotation action (branch 1)
-            int rotationAction = GetLastRotationAction();
-            if (rotationAction >= 0 && rotationAction < 4)
-            {
-                actionCounts[1, rotationAction]++;
+                if (!placementCounts.ContainsKey(placementAction))
+                {
+                    placementCounts[placementAction] = 0;
+                }
+                placementCounts[placementAction]++;
             }
 
             // Track reward changes
@@ -71,24 +80,58 @@ public class MLAgentDebugger : MonoBehaviour
             float rewardDelta = currentReward - lastRewardValue;
             currentRewardAccumulated += rewardDelta;
             lastRewardValue = currentReward;
+
+            // Track curriculum changes
+            CheckCurriculumChanges();
         }
     }
 
-    // Updated: Store actions for both branches
-    public void SetLastActions(int columnAction, int rotationAction)
+    private void CheckCurriculumChanges()
     {
-        lastActions[0] = columnAction;
-        lastActions[1] = rotationAction;
+        if (mlAgent.curriculumBoardHeight != lastBoardHeight)
+        {
+            Debug.Log($"[Curriculum] Board height changed: {lastBoardHeight} -> {mlAgent.curriculumBoardHeight}");
+            lastBoardHeight = mlAgent.curriculumBoardHeight;
+        }
+
+        if (mlAgent.allowedTetrominoTypes != lastTetrominoTypes)
+        {
+            Debug.Log($"[Curriculum] Tetromino types changed: {lastTetrominoTypes} -> {mlAgent.allowedTetrominoTypes}");
+            lastTetrominoTypes = mlAgent.allowedTetrominoTypes;
+        }
+
+        if (mlAgent.curriculumBoardPreset != lastBoardPreset)
+        {
+            Debug.Log($"[Curriculum] Board preset changed: {lastBoardPreset} -> {mlAgent.curriculumBoardPreset}");
+            lastBoardPreset = mlAgent.curriculumBoardPreset;
+        }
     }
 
-    private int GetLastColumnAction()
+    // Updated: Store single placement action
+    public void SetLastPlacementAction(int placementIndex)
     {
-        return lastActions[0];
+        lastPlacementAction = placementIndex;
     }
 
-    private int GetLastRotationAction()
+    // Record placement quality metrics
+    public void RecordPlacementMetrics(float linesCleared, float maxHeight, float holes)
     {
-        return lastActions[1];
+        recentLineClears.Add(linesCleared);
+        recentHeights.Add(maxHeight);
+        recentHoles.Add(holes);
+
+        // Keep only recent metrics
+        if (recentLineClears.Count > maxRecentMetrics)
+        {
+            recentLineClears.RemoveAt(0);
+            recentHeights.RemoveAt(0);
+            recentHoles.RemoveAt(0);
+        }
+    }
+
+    private int GetLastPlacementAction()
+    {
+        return lastPlacementAction;
     }
 
     private IEnumerator DebugRoutine()
@@ -100,6 +143,10 @@ public class MLAgentDebugger : MonoBehaviour
             if (mlAgent != null)
             {
                 LogAgentStatus();
+                if (logPlacementDetails)
+                {
+                    LogPlacementQuality();
+                }
             }
         }
     }
@@ -113,13 +160,13 @@ public class MLAgentDebugger : MonoBehaviour
             Debug.Log($"- Type: {behaviorParams.BehaviorType}");
             Debug.Log($"- Observation Size: {behaviorParams.BrainParameters.VectorObservationSize}");
 
-            // Updated: Log multi-discrete action space
+            // Updated: Log single discrete action space for placements
             var actionSpec = behaviorParams.BrainParameters.ActionSpec;
-            Debug.Log($"- Action Space: Multi-Discrete with {actionSpec.NumDiscreteActions} branches");
-            for (int i = 0; i < actionSpec.BranchSizes.Length; i++)
+            Debug.Log($"- Action Space: Single Discrete with {actionSpec.NumDiscreteActions} total actions");
+
+            if (actionSpec.BranchSizes.Length > 0)
             {
-                string branchName = i == 0 ? "Column" : "Rotation";
-                Debug.Log($"  - Branch {i} ({branchName}): {actionSpec.BranchSizes[i]} actions");
+                Debug.Log($"  - Placement Selection: {actionSpec.BranchSizes[0]} possible placements");
             }
 
             if (behaviorParams.Model != null)
@@ -130,90 +177,165 @@ public class MLAgentDebugger : MonoBehaviour
             {
                 Debug.Log("- No model assigned");
             }
+
+            // Log curriculum settings
+            Debug.Log($"- Initial Curriculum Settings:");
+            Debug.Log($"  - Board Height: {mlAgent.curriculumBoardHeight}");
+            Debug.Log($"  - Tetromino Types: {mlAgent.allowedTetrominoTypes}");
+            Debug.Log($"  - Board Preset: {mlAgent.curriculumBoardPreset}");
         }
     }
 
     private void LogAgentStatus()
     {
-        // Updated: Display action distribution for multi-discrete actions
-        string columnDistribution = "Column Actions: [";
-        for (int i = 0; i < 10; i++)
-        {
-            columnDistribution += $"{i}:{actionCounts[0, i]}";
-            if (i < 9)
-                columnDistribution += ", ";
-        }
-        columnDistribution += "]";
+        // Display placement distribution
+        string placementDistribution = "Placement Actions: [";
+        int totalPlacements = 0;
 
-        string rotationDistribution = "Rotation Actions: [";
-        for (int i = 0; i < 4; i++)
+        foreach (var kvp in placementCounts)
         {
-            rotationDistribution += $"{i}:{actionCounts[1, i]}";
-            if (i < 3)
-                rotationDistribution += ", ";
+            totalPlacements += kvp.Value;
         }
-        rotationDistribution += "]";
+
+        int displayCount = 0;
+        foreach (var kvp in placementCounts)
+        {
+            if (displayCount < 10) // Show top 10 most used placements
+            {
+                float percentage = totalPlacements > 0 ? (kvp.Value / (float)totalPlacements) * 100f : 0f;
+                placementDistribution += $"{kvp.Key}:{percentage:F1}%";
+                if (displayCount < 9 && displayCount < placementCounts.Count - 1)
+                    placementDistribution += ", ";
+            }
+            displayCount++;
+        }
+        placementDistribution += "]";
 
         Debug.Log($"Agent Status Update:");
         Debug.Log($"- Steps: {stepCount}");
         Debug.Log($"- Episodes: {episodeCount}");
-        Debug.Log($"- Current Cumulative Reward: {mlAgent.GetCumulativeReward()}");
-        Debug.Log($"- Reward since last update: {currentRewardAccumulated}");
-        Debug.Log(columnDistribution);
-        Debug.Log(rotationDistribution);
+        Debug.Log($"- Current Cumulative Reward: {mlAgent.GetCumulativeReward():F2}");
+        Debug.Log($"- Reward since last update: {currentRewardAccumulated:F2}");
+        Debug.Log($"- Total unique placements used: {placementCounts.Count}");
+        Debug.Log(placementDistribution);
+
+        // Current curriculum status
+        Debug.Log($"- Curriculum Status: Height={mlAgent.curriculumBoardHeight}, Types={mlAgent.allowedTetrominoTypes}, Preset={mlAgent.curriculumBoardPreset}");
 
         // Reset the accumulated reward for the next interval
         currentRewardAccumulated = 0f;
+    }
+
+    private void LogPlacementQuality()
+    {
+        if (recentLineClears.Count > 0)
+        {
+            float avgLineClears = CalculateAverage(recentLineClears);
+            float avgHeight = CalculateAverage(recentHeights);
+            float avgHoles = CalculateAverage(recentHoles);
+
+            Debug.Log($"Placement Quality (last {recentLineClears.Count} placements):");
+            Debug.Log($"- Avg Lines Cleared: {avgLineClears:F2}");
+            Debug.Log($"- Avg Max Height: {avgHeight:F2}");
+            Debug.Log($"- Avg Holes Created: {avgHoles:F2}");
+
+            // Calculate efficiency metrics
+            float tetrisRate = CalculateTetrisRate();
+            if (tetrisRate > 0)
+            {
+                Debug.Log($"- Tetris Rate: {tetrisRate:F1}%");
+            }
+        }
+    }
+
+    private float CalculateAverage(List<float> values)
+    {
+        float sum = 0f;
+        foreach (float value in values)
+        {
+            sum += value;
+        }
+        return values.Count > 0 ? sum / values.Count : 0f;
+    }
+
+    private float CalculateTetrisRate()
+    {
+        int tetrisCount = 0;
+        foreach (float lineClears in recentLineClears)
+        {
+            if (lineClears >= 4f)
+            {
+                tetrisCount++;
+            }
+        }
+        return recentLineClears.Count > 0 ? (tetrisCount / (float)recentLineClears.Count) * 100f : 0f;
     }
 
     // Call this when an episode ends
     public void OnEpisodeEnd()
     {
         episodeCount++;
-        Debug.Log($"Episode {episodeCount} ended with reward: {mlAgent.GetCumulativeReward()}");
+        Debug.Log($"Episode {episodeCount} ended with reward: {mlAgent.GetCumulativeReward():F2}");
 
-        // Reset action counts for both branches
-        for (int branch = 0; branch < 2; branch++)
-        {
-            for (int action = 0; action < (branch == 0 ? 10 : 4); action++)
-            {
-                actionCounts[branch, action] = 0;
-            }
-        }
+        // Log final placement statistics for this episode
+        LogActionStatistics();
+
+        // Reset placement counts
+        placementCounts.Clear();
+
+        // Clear recent metrics for new episode
+        recentLineClears.Clear();
+        recentHeights.Clear();
+        recentHoles.Clear();
     }
 
-    // Helper method to get action distribution statistics
+    // Helper method to get placement distribution statistics
     public void LogActionStatistics()
     {
-        Debug.Log("=== Action Statistics ===");
-
-        // Column action statistics
-        int totalColumnActions = 0;
-        for (int i = 0; i < 10; i++)
+        if (placementCounts.Count == 0)
         {
-            totalColumnActions += actionCounts[0, i];
+            Debug.Log("=== No placement actions recorded this episode ===");
+            return;
         }
 
-        Debug.Log("Column Action Percentages:");
-        for (int i = 0; i < 10; i++)
+        Debug.Log("=== Placement Action Statistics ===");
+
+        int totalActions = 0;
+        foreach (var kvp in placementCounts)
         {
-            float percentage = totalColumnActions > 0 ? (actionCounts[0, i] / (float)totalColumnActions) * 100f : 0f;
-            Debug.Log($"  Column {i}: {percentage:F1}% ({actionCounts[0, i]} times)");
+            totalActions += kvp.Value;
         }
 
-        // Rotation action statistics
-        int totalRotationActions = 0;
-        for (int i = 0; i < 4; i++)
+        // Sort by usage count
+        var sortedPlacements = new List<KeyValuePair<int, int>>(placementCounts);
+        sortedPlacements.Sort((x, y) => y.Value.CompareTo(x.Value));
+
+        Debug.Log("Most Used Placements:");
+        for (int i = 0; i < Mathf.Min(10, sortedPlacements.Count); i++)
         {
-            totalRotationActions += actionCounts[1, i];
+            var placement = sortedPlacements[i];
+            float percentage = totalActions > 0 ? (placement.Value / (float)totalActions) * 100f : 0f;
+            Debug.Log($"  Placement {placement.Key}: {percentage:F1}% ({placement.Value} times)");
         }
 
-        Debug.Log("Rotation Action Percentages:");
-        string[] rotationNames = { "0°", "90°", "180°", "270°" };
-        for (int i = 0; i < 4; i++)
+        // Diversity metric
+        float diversity = placementCounts.Count / (float)totalActions;
+        Debug.Log($"Placement Diversity: {diversity:F3} (unique placements per action)");
+    }
+
+    // Method for ML Agent to call when making a placement
+    public void OnPlacementMade(int placementIndex, PlacementInfo placementInfo)
+    {
+        SetLastPlacementAction(placementIndex);
+        RecordPlacementMetrics(
+            placementInfo.linesCleared,
+            placementInfo.maxHeight,
+            placementInfo.holes
+        );
+
+        if (logPlacementDetails)
         {
-            float percentage = totalRotationActions > 0 ? (actionCounts[1, i] / (float)totalRotationActions) * 100f : 0f;
-            Debug.Log($"  {rotationNames[i]}: {percentage:F1}% ({actionCounts[1, i]} times)");
+            Debug.Log($"Placement {placementIndex}: Lines={placementInfo.linesCleared}, Height={placementInfo.maxHeight:F1}, Holes={placementInfo.holes}");
         }
     }
 }
