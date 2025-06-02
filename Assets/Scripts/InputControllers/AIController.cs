@@ -35,6 +35,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     private bool rotateLeft;
     private bool rotateRight;
     private bool hardDrop;
+    private int lastPlacementIndex;
 
     public override void Initialize()
     {
@@ -91,6 +92,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
 
         rewardWeights.holeCreationPenalty *= curriculumHolePenaltyWeight;
         episodeSteps = 0;
+        m_StatsRecorder.Add("Episode/Started", 1f);
 
     }
 
@@ -155,7 +157,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     {
         if (currentPiece == null || board == null)
             return;
-
+        episodeSteps++;
         // Check if we've already processed this piece
         if (processedPieces.Contains(currentPiece))
         {
@@ -172,12 +174,16 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         if (allPlacements.Count == 0)
         {
             AddReward(rewardWeights.deathPenalty);
-            EndEpisode();
+            OnGameOver();
             return;
         }
 
         int selectedPlacement = actions.DiscreteActions[0];
         selectedPlacement = Mathf.Clamp(selectedPlacement, 0, allPlacements.Count - 1);
+        if (debugger != null)
+        {
+            debugger.SetLastPlacementAction(selectedPlacement);
+        }
 
         ExecutePlacement(allPlacements[selectedPlacement]);
         CalculatePlacementReward(allPlacements[selectedPlacement]);
@@ -246,13 +252,30 @@ public class TetrisMLAgent : Agent, IPlayerInputController
 
         // Small step penalty to encourage faster play
         AddReward(-0.001f);
+
+        RecordStats(placement);
+
+        // Notify debugger
+        if (debugger != null)
+        {
+            // debugger.OnPlacementMade(lastPlacementIndex, placement);
+        }
+
     }
 
 
     public void OnGameOver()
     {
-        AddReward(rewardWeights.deathPenalty);
+        m_StatsRecorder.Add("Episode/Length", episodeSteps);
+        m_StatsRecorder.Add("Episode/Final Reward", GetCumulativeReward());
+        // ADD THIS LINE:
+        if (debugger != null)
+        {
+            debugger.OnEpisodeEnd();
+        }
+
         EndEpisode();
+
     }
 
 
@@ -264,6 +287,23 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     public bool GetDown() => moveDown;
     public bool GetHardDrop() => hardDrop;
 
+
+
+    private void RecordStats(PlacementInfo placement)
+    {
+        // Record key metrics to TensorBoard
+        m_StatsRecorder.Add("Tetris/Lines Cleared", placement.linesCleared);
+        m_StatsRecorder.Add("Tetris/Board Height", placement.maxHeight);
+        m_StatsRecorder.Add("Tetris/Holes Created", placement.holes);
+        m_StatsRecorder.Add("Tetris/Aggregate Height", placement.aggregateHeight);
+        m_StatsRecorder.Add("Tetris/Bumpiness", placement.bumpiness);
+        m_StatsRecorder.Add("Tetris/Episode Steps", episodeSteps);
+
+        // Record curriculum parameters
+        m_StatsRecorder.Add("Curriculum/Board Height", curriculumBoardHeight);
+        m_StatsRecorder.Add("Curriculum/Tetromino Types", allowedTetrominoTypes);
+        m_StatsRecorder.Add("Curriculum/Board Preset", curriculumBoardPreset);
+    }
 
     public override void CollectObservations(VectorSensor sensor)
     {

@@ -33,22 +33,60 @@ public class MLAgentDebugger : MonoBehaviour
     private int lastTetrominoTypes = 0;
     private int lastBoardPreset = 0;
 
+
     private void Start()
     {
         mlAgent = GetComponent<TetrisMLAgent>();
         behaviorParams = GetComponent<BehaviorParameters>();
 
-        if (enableDebugging)
+        if (enableDebugging && mlAgent != null)
         {
             StartCoroutine(DebugRoutine());
-
-            // Hook into agent events
-            Academy.Instance.AgentPreStep += RecordStep;
-
             Debug.Log($"ML Agent Debugger attached to {gameObject.name}");
             LogAgentConfiguration();
+
+            Academy.Instance.AgentPreStep += RecordStep;
+        }
+        else
+        {
+            Debug.LogError("MLAgentDebugger: Could not find TetrisMLAgent component!");
         }
     }
+
+    // Fix the stats recording method
+    private void Update()
+    {
+        if (mlAgent != null && enableDebugging)
+        {
+            // Track reward changes every frame
+            float currentReward = mlAgent.GetCumulativeReward();
+            if (currentReward != lastRewardValue)
+            {
+                float rewardDelta = currentReward - lastRewardValue;
+                currentRewardAccumulated += rewardDelta;
+                lastRewardValue = currentReward;
+            }
+        }
+    }
+
+    private IEnumerator DebugRoutine()
+    {
+        while (true)
+        {
+            yield return new WaitForSeconds(debugUpdateInterval);
+
+            if (mlAgent != null && enableDebugging)
+            {
+                LogAgentStatus();
+                if (logPlacementDetails)
+                {
+                    LogPlacementQuality();
+                }
+            }
+        }
+    }
+
+
 
     private void OnDestroy()
     {
@@ -134,22 +172,7 @@ public class MLAgentDebugger : MonoBehaviour
         return lastPlacementAction;
     }
 
-    private IEnumerator DebugRoutine()
-    {
-        while (true)
-        {
-            yield return new WaitForSeconds(debugUpdateInterval);
 
-            if (mlAgent != null)
-            {
-                LogAgentStatus();
-                if (logPlacementDetails)
-                {
-                    LogPlacementQuality();
-                }
-            }
-        }
-    }
 
     private void LogAgentConfiguration()
     {
@@ -337,5 +360,10 @@ public class MLAgentDebugger : MonoBehaviour
         {
             Debug.Log($"Placement {placementIndex}: Lines={placementInfo.linesCleared}, Height={placementInfo.maxHeight:F1}, Holes={placementInfo.holes}");
         }
+    }
+
+    internal void OnPlacementMade(object lastPlacementIndex, PlacementInfo placement)
+    {
+        throw new System.NotImplementedException();
     }
 }
