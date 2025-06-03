@@ -192,15 +192,16 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         int selectedAction = actions.DiscreteActions[0];
 
         // Find the placement that corresponds to this action
-       PlacementInfo selectedPlacement = null;
-foreach (var placement in allPlacements)
-{
-    if (placement.actionIndex == selectedAction)
-    {
-        selectedPlacement = placement;
-        break;
-    }
-}
+        PlacementInfo selectedPlacement = null;
+        foreach (var placement in allPlacements)
+        {
+            int actionIndex = placement.targetRotation * 10 + placement.targetColumn;
+            if (actionIndex == selectedAction)
+            {
+                selectedPlacement = placement;
+                break;
+            }
+        }
 
         // If somehow an invalid action was selected, fall back to the first valid placement
         if (selectedPlacement == null)
@@ -432,62 +433,40 @@ foreach (var placement in allPlacements)
     private List<PlacementInfo> GenerateAllPossiblePlacements(Piece piece, int[,] currentBoard)
     {
         List<PlacementInfo> placements = new List<PlacementInfo>();
+        List<int[,]> rotations = GetPieceRotations(piece);
 
-        if (piece?.data == null) return placements;
-
-        // Get valid rotations for this piece type
-        int maxRotations = GetMaxRotationsForPiece(piece.data.tetromino);
-
-        // Generate placements systematically to match 40-action encoding
-        // Action encoding: rotation * 10 + column (0-39)
+        // Generate placements in a systematic way that matches action encoding
         for (int rotation = 0; rotation < 4; rotation++)
         {
-            // Skip invalid rotations for this piece type
-            if (rotation >= maxRotations) continue;
+            if (rotation >= rotations.Count) continue;
 
-            // Get the piece shape for this rotation
-            Vector3Int[] rotatedCells = GetRotatedPieceCells(piece.data, rotation);
-            if (rotatedCells == null || rotatedCells.Length == 0) continue;
+            int[,] pieceShape = rotations[rotation];
+            int pieceWidth = pieceShape.GetLength(1);
+            int boardWidth = currentBoard.GetLength(1);
 
-            // Calculate piece bounds after rotation
-            var bounds = GetPieceBounds(rotatedCells);
-            int pieceWidth = bounds.width;
-            int pieceMinX = bounds.minX;
-
-            // Try each column position (0-9 for standard Tetris board)
-            for (int targetCol = 0; targetCol < 10; targetCol++)
+            // Try each column position (0-9 for standard Tetris)
+            for (int col = 0; col < 10; col++)
             {
-                // Check if piece fits horizontally at this column
-                int leftmostPos = targetCol + pieceMinX;
-                int rightmostPos = targetCol + bounds.maxX;
-
-                if (leftmostPos >= 0 && rightmostPos < 10)
+                // Check if piece fits in this column
+                if (col + pieceWidth <= boardWidth)
                 {
-                    // Find where piece would land if dropped at this position
-                    int landingRow = FindLandingRow(rotatedCells, currentBoard, targetCol);
-
-                    if (landingRow >= 0) // Valid placement found
+                    if (CanPlacePieceAt(pieceShape, currentBoard, col, out int landingRow))
                     {
-                        // Create board simulation
+                        // Create simulation
                         int[,] simulatedBoard = CopyBoard(currentBoard);
-                        PlacePieceOnSimulatedBoard(rotatedCells, simulatedBoard, targetCol, landingRow);
+                        PlacePieceOnBoard(pieceShape, simulatedBoard, col, landingRow);
                         int linesCleared = ClearLinesAndCount(simulatedBoard);
-
-                        // Calculate action index
-                        int actionIndex = rotation * 10 + targetCol;
 
                         PlacementInfo placement = new PlacementInfo
                         {
-                            actionIndex = actionIndex,
-                            targetColumn = targetCol,
-                            targetRotation = rotation,
-                            landingRow = landingRow,
                             linesCleared = linesCleared,
                             aggregateHeight = CalculateAggregateHeight(simulatedBoard),
                             maxHeight = CalculateMaxHeight(simulatedBoard),
                             holes = CalculateHoles(simulatedBoard),
                             bumpiness = CalculateBumpiness(simulatedBoard),
-                            wellDepth = CalculateWellDepth(simulatedBoard)
+                            wellDepth = CalculateWellDepth(simulatedBoard),
+                            targetColumn = col,
+                            targetRotation = rotation
                         };
 
                         placements.Add(placement);
@@ -498,46 +477,6 @@ foreach (var placement in allPlacements)
 
         return placements;
     }
-    private int GetMaxRotationsForPiece(Tetromino tetromino)
-    {
-        switch (tetromino)
-        {
-            case Tetromino.O: return 1; // Square has only 1 unique rotation
-            case Tetromino.I: return 2; // Line has 2 unique rotations
-            case Tetromino.S:
-            case Tetromino.Z: return 2; // S and Z have 2 unique rotations
-            case Tetromino.T:
-            case Tetromino.L:
-            case Tetromino.J: return 4; // T, L, J have 4 unique rotations
-            default: return 4;
-        }
-    }
-private Vector3Int[] GetRotatedPieceCells(TetrominoData data, int rotations)
-{
-    if (data.cells == null || data.cells.Length == 0) return null;
-    
-    Vector3Int[] rotatedCells = new Vector3Int[data.cells.Length];
-    
-    // Copy original cells to Vector3Int array
-    for (int i = 0; i < data.cells.Length; i++)
-    {
-        rotatedCells[i] = new Vector3Int((int)data.cells[i].x, (int)data.cells[i].y, 0);
-    }
-    
-    // Apply rotations (90-degree clockwise each time)
-    for (int r = 0; r < rotations; r++)
-    {
-        for (int i = 0; i < rotatedCells.Length; i++)
-        {
-            Vector3Int cell = rotatedCells[i];
-            // Standard Tetris rotation: (x, y) -> (-y, x)
-            rotatedCells[i] = new Vector3Int(-cell.y, cell.x, 0);
-        }
-    }
-    
-    return rotatedCells;
-}
-
     private List<int[,]> GetPieceRotations(Piece piece)
     {
         List<int[,]> rotations = new List<int[,]>();
@@ -581,85 +520,6 @@ private Vector3Int[] GetRotatedPieceCells(TetrominoData data, int rotations)
 
         return rotations;
     }
-    private (int minX, int maxX, int minY, int maxY, int width, int height) GetPieceBounds(Vector3Int[] cells)
-{
-    if (cells.Length == 0) return (0, 0, 0, 0, 1, 1);
-    
-    int minX = cells[0].x, maxX = cells[0].x;
-    int minY = cells[0].y, maxY = cells[0].y;
-    
-    foreach (var cell in cells)
-    {
-        minX = Mathf.Min(minX, cell.x);
-        maxX = Mathf.Max(maxX, cell.x);
-        minY = Mathf.Min(minY, cell.y);
-        maxY = Mathf.Max(maxY, cell.y);
-    }
-    
-    return (minX, maxX, minY, maxY, maxX - minX + 1, maxY - minY + 1);
-}
-
-// Find the row where piece lands when dropped at target column
-private int FindLandingRow(Vector3Int[] pieceCells, int[,] board, int targetCol)
-{
-    int boardHeight = board.GetLength(0);
-    
-    // Start from top and move down until collision
-    for (int testRow = 0; testRow < boardHeight; testRow++)
-    {
-        if (CheckCollision(pieceCells, board, targetCol, testRow))
-        {
-            return testRow - 1; // Land one row above collision
-        }
-    }
-    
-    // If no collision, piece can land at bottom
-    return boardHeight - 1;
-}
-
-// Check if piece collides with board at given position
-private bool CheckCollision(Vector3Int[] pieceCells, int[,] board, int col, int row)
-{
-    int boardHeight = board.GetLength(0);
-    int boardWidth = board.GetLength(1);
-    
-    foreach (var cell in pieceCells)
-    {
-        int boardX = col + cell.x;
-        int boardY = row + cell.y;
-        
-        // Check bounds
-        if (boardX < 0 || boardX >= boardWidth || boardY < 0 || boardY >= boardHeight)
-        {
-            return true; // Out of bounds = collision
-        }
-        
-        // Check occupied cell
-        if (board[boardY, boardX] == 1)
-        {
-            return true; // Collision with existing block
-        }
-    }
-    
-    return false; // No collision
-}
-
-// Place piece on simulated board
-private void PlacePieceOnSimulatedBoard(Vector3Int[] pieceCells, int[,] board, int col, int row)
-{
-    foreach (var cell in pieceCells)
-    {
-        int boardX = col + cell.x;
-        int boardY = row + cell.y;
-        
-        // Bounds check (should not happen if placement is valid)
-        if (boardX >= 0 && boardX < board.GetLength(1) && 
-            boardY >= 0 && boardY < board.GetLength(0))
-        {
-            board[boardY, boardX] = 1;
-        }
-    }
-}
 
     // Convert piece cells to 2D array
     private int[,] ConvertCellsToArray(Vector3Int[] cells)
