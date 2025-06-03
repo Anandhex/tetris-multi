@@ -13,10 +13,9 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     public Piece currentPiece;
     private MLAgentDebugger debugger;
 
-    // Improved piece tracking
+    // Simplified piece tracking - NO CACHE
     private int lastProcessedPieceInstanceId = -1;
     private bool isExecutingPlacement = false;
-    private bool waitingForPieceToSettle = false;
     private StatsRecorder m_StatsRecorder;
     private RewardWeights rewardWeights = new RewardWeights();
 
@@ -38,13 +37,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     private bool rotateLeft;
     private bool rotateRight;
     private bool hardDrop;
-
-    // Cache for valid placements
-    private List<PlacementInfo> cachedValidPlacements = new List<PlacementInfo>();
-    
-    // Decision timing
-    private float decisionCooldown = 0f;
-    private const float DECISION_COOLDOWN_TIME = 0.1f;
 
     public override void Initialize()
     {
@@ -81,11 +73,9 @@ public class TetrisMLAgent : Agent, IPlayerInputController
 
     public override void OnEpisodeBegin()
     {
+        // COMPLETE RESET - NO CACHE TO CLEAR
         lastProcessedPieceInstanceId = -1;
         isExecutingPlacement = false;
-        waitingForPieceToSettle = false;
-        cachedValidPlacements.Clear();
-        decisionCooldown = 0f;
         
         // Update curriculum parameters
         var envParams = Academy.Instance.EnvironmentParameters;
@@ -98,62 +88,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
 
         if (enableDebugLogs)
             Debug.Log($"[TetrisAgent] Episode Begin - Curriculum: {allowedTetrominoTypes} tetromino types");
-    }
-
-    private void Update()
-    {
-        // Update decision cooldown
-        if (decisionCooldown > 0f)
-        {
-            decisionCooldown -= Time.deltaTime;
-        }
-
-        // Check for new pieces every frame
-        CheckForNewPiece();
-    }
-
-    private void CheckForNewPiece()
-    {
-        if (currentPiece == null) return;
-        if (isExecutingPlacement) return;
-        if (decisionCooldown > 0f) return;
-
-        int currentPieceId = currentPiece.GetInstanceID();
-        
-        // Check if this is a genuinely new piece
-        if (currentPieceId != lastProcessedPieceInstanceId)
-        {
-            // Wait a frame to ensure piece is fully initialized
-            if (!waitingForPieceToSettle)
-            {
-                waitingForPieceToSettle = true;
-                StartCoroutine(WaitAndProcessNewPiece(currentPieceId));
-            }
-        }
-    }
-
-    private IEnumerator WaitAndProcessNewPiece(int pieceId)
-    {
-        // Wait a few frames for piece to be fully initialized
-        yield return new WaitForFixedUpdate();
-        yield return new WaitForFixedUpdate();
-        
-        // Verify piece is still valid and is the same piece
-        if (currentPiece != null && currentPiece.GetInstanceID() == pieceId && !isExecutingPlacement)
-        {
-            lastProcessedPieceInstanceId = pieceId;
-            waitingForPieceToSettle = false;
-            
-            if (enableDebugLogs)
-                Debug.Log($"[TetrisAgent] New piece detected: {currentPiece.data.tetromino} (ID: {pieceId})");
-            
-            RequestDecision();
-            decisionCooldown = DECISION_COOLDOWN_TIME;
-        }
-        else
-        {
-            waitingForPieceToSettle = false;
-        }
     }
 
     private void Awake()
@@ -200,9 +134,22 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             return;
         }
 
+        // Check if this is a new piece
+        int currentPieceId = currentPiece.GetInstanceID();
+        if (currentPieceId == lastProcessedPieceInstanceId)
+        {
+            if (enableDebugLogs)
+                Debug.Log($"[TetrisAgent] Ignoring already processed piece {currentPieceId}");
+            return;
+        }
+
+        lastProcessedPieceInstanceId = currentPieceId;
         isExecutingPlacement = true;
 
-        // Get valid placements
+        if (enableDebugLogs)
+            Debug.Log($"[TetrisAgent] Processing new piece: {currentPiece.data.tetromino} (ID: {currentPieceId})");
+
+        // Get valid placements - FRESH CALCULATION, NO CACHE
         int[,] currentBoard = GetBoardState();
         List<PlacementInfo> validPlacements = GenerateAllPossiblePlacements(currentPiece, currentBoard);
 
@@ -241,10 +188,9 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             return;
         }
 
-        // Generate valid placements
+        // Generate valid placements - FRESH CALCULATION, NO CACHE
         int[,] currentBoard = GetBoardState();
         List<PlacementInfo> validPlacements = GenerateAllPossiblePlacements(currentPiece, currentBoard);
-        cachedValidPlacements = validPlacements; // Cache for observations
 
         // Enable valid actions, disable invalid ones
         for (int i = 0; i < 34; i++)
@@ -254,6 +200,68 @@ public class TetrisMLAgent : Agent, IPlayerInputController
 
         if (enableDebugLogs)
             Debug.Log($"[TetrisAgent] Action mask: {validPlacements.Count}/34 valid placements for {currentPiece.data.tetromino}");
+    }
+
+    public override void CollectObservations(VectorSensor sensor)
+    {
+        if (currentPiece == null)
+        {
+            // Add zeros if no current piece
+            for (int i = 0; i < 218; i++)
+            {
+                sensor.AddObservation(0f);
+            }
+            return;
+        }
+
+        // FRESH CALCULATION EVERY TIME - NO CACHE
+        int[,] currentBoard = GetBoardState();
+        List<PlacementInfo> validPlacements = GenerateAllPossiblePlacements(currentPiece, currentBoard);
+
+        // 1. All possible placements (34 placements × 6 features = 204 observations)
+        for (int i = 0; i < 34; i++)
+        {
+            if (i < validPlacements.Count)
+            {
+                PlacementInfo placement = validPlacements[i];
+                sensor.AddObservation(placement.linesCleared / 4f);
+                sensor.AddObservation(placement.aggregateHeight / 200f);
+                sensor.AddObservation(placement.maxHeight / 20f);
+                sensor.AddObservation(placement.holes / 40f);
+                sensor.AddObservation(placement.bumpiness / 100f);
+                sensor.AddObservation(placement.wellDepth / 50f);
+            }
+            else
+            {
+                // Pad with zeros
+                for (int j = 0; j < 6; j++)
+                {
+                    sensor.AddObservation(0f);
+                }
+            }
+        }
+
+        // 2. Current piece one-hot (7 observations)
+        for (int i = 0; i < 7; i++)
+        {
+            sensor.AddObservation(((int)currentPiece.data.tetromino == i) ? 1f : 0f);
+        }
+
+        // 3. Next piece one-hot (7 observations)
+        if (board != null && board.nextPieceData.tetromino != Tetromino.I) // Check if next piece is valid
+        {
+            for (int i = 0; i < 7; i++)
+            {
+                sensor.AddObservation(((int)board.nextPieceData.tetromino == i) ? 1f : 0f);
+            }
+        }
+        else
+        {
+            for (int i = 0; i < 7; i++)
+            {
+                sensor.AddObservation(0f);
+            }
+        }
     }
 
     private IEnumerator ExecutePlacementCoroutine(PlacementInfo placement)
@@ -379,72 +387,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             Debug.Log($"[TetrisAgent] Reward: {reward:F3} (Lines: {placement.linesCleared}, Holes: {placement.holes}, Height: {placement.maxHeight})");
     }
 
-    public override void CollectObservations(VectorSensor sensor)
-    {
-        if (currentPiece == null)
-        {
-            // Add zeros if no current piece
-            for (int i = 0; i < 218; i++)
-            {
-                sensor.AddObservation(0f);
-            }
-            return;
-        }
-
-        // Use cached placements from action masking to ensure consistency
-        List<PlacementInfo> validPlacements = cachedValidPlacements;
-        if (validPlacements.Count == 0)
-        {
-            int[,] currentBoard = GetBoardState();
-            validPlacements = GenerateAllPossiblePlacements(currentPiece, currentBoard);
-        }
-
-        // 1. All possible placements (34 placements × 6 features = 204 observations)
-        for (int i = 0; i < 34; i++)
-        {
-            if (i < validPlacements.Count)
-            {
-                PlacementInfo placement = validPlacements[i];
-                sensor.AddObservation(placement.linesCleared / 4f);
-                sensor.AddObservation(placement.aggregateHeight / 200f);
-                sensor.AddObservation(placement.maxHeight / 20f);
-                sensor.AddObservation(placement.holes / 40f);
-                sensor.AddObservation(placement.bumpiness / 100f);
-                sensor.AddObservation(placement.wellDepth / 50f);
-            }
-            else
-            {
-                // Pad with zeros
-                for (int j = 0; j < 6; j++)
-                {
-                    sensor.AddObservation(0f);
-                }
-            }
-        }
-
-        // 2. Current piece one-hot (7 observations)
-        for (int i = 0; i < 7; i++)
-        {
-            sensor.AddObservation(((int)currentPiece.data.tetromino == i) ? 1f : 0f);
-        }
-
-        // 3. Next piece one-hot (7 observations)
-        if (board != null && board.nextPieceData.tetromino != Tetromino.I) // Check if next piece is valid
-        {
-            for (int i = 0; i < 7; i++)
-            {
-                sensor.AddObservation(((int)board.nextPieceData.tetromino == i) ? 1f : 0f);
-            }
-        }
-        else
-        {
-            for (int i = 0; i < 7; i++)
-            {
-                sensor.AddObservation(0f);
-            }
-        }
-    }
-
     public void SetCurrentPiece(Piece piece)
     {
         if (piece == null) 
@@ -459,7 +401,14 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         if (enableDebugLogs)
             Debug.Log($"[TetrisAgent] SetCurrentPiece called: {piece.data.tetromino} (ID: {piece.GetInstanceID()})");
         
-        // The Update() method will handle the decision request for new pieces
+        // Request decision immediately for new pieces
+        int currentPieceId = piece.GetInstanceID();
+        if (currentPieceId != lastProcessedPieceInstanceId && !isExecutingPlacement)
+        {
+            if (enableDebugLogs)
+                Debug.Log($"[TetrisAgent] Requesting decision for new piece {currentPieceId}");
+            RequestDecision();
+        }
     }
 
     public void OnGameOver()
@@ -519,9 +468,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         discreteActionsOut[0] = bestIndex;
     }
 
-    // [Include all your existing helper methods here - GetBoardState, GenerateAllPossiblePlacements, etc.]
-    // I'm keeping them the same as in the previous version to save space, but include them all
-
+    // All the helper methods remain the same...
     private int[,] GetBoardState()
     {
         var bounds = board.Bounds;
@@ -539,13 +486,11 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         return boardArray;
     }
 
-    // Generate all possible placements for the current piece
     private List<PlacementInfo> GenerateAllPossiblePlacements(Piece piece, int[,] currentBoard)
     {
         List<PlacementInfo> placements = new List<PlacementInfo>();
         List<int[,]> rotations = GetPieceRotations(piece);
 
-        // Generate placements systematically
         for (int rotation = 0; rotation < 4; rotation++)
         {
             if (rotation >= rotations.Count) continue;
@@ -554,12 +499,10 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             int pieceWidth = pieceShape.GetLength(1);
             int boardWidth = currentBoard.GetLength(1);
 
-            // Try each column position (0-9 for standard Tetris)
             for (int col = 0; col <= boardWidth - pieceWidth; col++)
             {
                 if (CanPlacePieceAt(pieceShape, currentBoard, col, out int landingRow))
                 {
-                    // Create simulation
                     int[,] simulatedBoard = CopyBoard(currentBoard);
                     PlacePieceOnBoard(pieceShape, simulatedBoard, col, landingRow);
                     int linesCleared = ClearLinesAndCount(simulatedBoard);
@@ -584,10 +527,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         return placements;
     }
 
-    // [Include all other helper methods from the previous version...]
-    // GetPieceRotations, ConvertCellsToArray, CanPlacePieceAt, etc.
-    // (I'm truncating to keep the response manageable, but include all of them)
-
+    // [Include all other helper methods - keeping them the same as before]
     private List<int[,]> GetPieceRotations(Piece piece)
     {
         List<int[,]> rotations = new List<int[,]>();
@@ -599,31 +539,26 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             return rotations;
         }
 
-        // Convert piece cells to different rotations
         for (int rotation = 0; rotation < 4; rotation++)
         {
             Vector3Int[] rotatedCells = new Vector3Int[data.cells.Length];
 
-            // Copy original cells
             for (int i = 0; i < data.cells.Length; i++)
             {
                 rotatedCells[i] = (Vector3Int)data.cells[i];
             }
 
-            // Apply rotation transformations
             for (int r = 0; r < rotation; r++)
             {
                 for (int i = 0; i < rotatedCells.Length; i++)
                 {
                     Vector3Int cell = rotatedCells[i];
-                    // 90-degree clockwise rotation matrix
                     int newX = -cell.y;
                     int newY = cell.x;
                     rotatedCells[i] = new Vector3Int(newX, newY, 0);
                 }
             }
 
-            // Convert to 2D array representation
             int[,] shapeArray = ConvertCellsToArray(rotatedCells);
             rotations.Add(shapeArray);
         }
@@ -631,12 +566,10 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         return rotations;
     }
 
-    // Convert piece cells to 2D array
     private int[,] ConvertCellsToArray(Vector3Int[] cells)
     {
         if (cells.Length == 0) return new int[1, 1];
 
-        // Find bounds
         int minX = cells[0].x, maxX = cells[0].x;
         int minY = cells[0].y, maxY = cells[0].y;
 
@@ -660,14 +593,12 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         return array;
     }
 
-    // Check if piece can be placed at specific column
     private bool CanPlacePieceAt(int[,] pieceShape, int[,] board, int col, out int landingRow)
     {
         int boardHeight = board.GetLength(0);
         int pieceHeight = pieceShape.GetLength(0);
         landingRow = -1;
 
-        // Drop piece from top until collision
         for (int row = 0; row <= boardHeight - pieceHeight; row++)
         {
             if (HasCollision(pieceShape, board, row, col))
@@ -681,7 +612,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         return landingRow >= 0;
     }
 
-    // Check collision between piece and board
     private bool HasCollision(int[,] piece, int[,] board, int row, int col)
     {
         int pieceHeight = piece.GetLength(0);
@@ -708,7 +638,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         return false;
     }
 
-    // Place piece on board
     private void PlacePieceOnBoard(int[,] piece, int[,] board, int col, int row)
     {
         int pieceHeight = piece.GetLength(0);
@@ -726,7 +655,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         }
     }
 
-    // Clear lines and return count
     private int ClearLinesAndCount(int[,] board)
     {
         int linesCleared = 0;
@@ -748,7 +676,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             if (fullLine)
             {
                 linesCleared++;
-                // Shift rows down
                 for (int moveRow = row; moveRow > 0; moveRow--)
                 {
                     for (int col = 0; col < width; col++)
@@ -756,19 +683,17 @@ public class TetrisMLAgent : Agent, IPlayerInputController
                         board[moveRow, col] = board[moveRow - 1, col];
                     }
                 }
-                // Clear top row
                 for (int col = 0; col < width; col++)
                 {
                     board[0, col] = 0;
                 }
-                row++; // Check same row again after shift
+                row++;
             }
         }
 
         return linesCleared;
     }
 
-    // Calculate aggregate height (sum of all column heights)
     private int CalculateAggregateHeight(int[,] board)
     {
         int height = board.GetLength(0);
@@ -790,7 +715,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         return totalHeight;
     }
 
-    // Calculate maximum height
     private int CalculateMaxHeight(int[,] board)
     {
         int height = board.GetLength(0);
@@ -812,7 +736,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         return maxHeight;
     }
 
-    // Calculate number of holes
     private int CalculateHoles(int[,] board)
     {
         int height = board.GetLength(0);
@@ -838,14 +761,12 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         return holes;
     }
 
-    // Calculate bumpiness (sum of height differences between adjacent columns)
     private int CalculateBumpiness(int[,] board)
     {
         int height = board.GetLength(0);
         int width = board.GetLength(1);
         int[] columnHeights = new int[width];
 
-        // Get height of each column
         for (int col = 0; col < width; col++)
         {
             for (int row = 0; row < height; row++)
@@ -858,7 +779,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             }
         }
 
-        // Calculate bumpiness
         int bumpiness = 0;
         for (int col = 0; col < width - 1; col++)
         {
@@ -868,7 +788,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         return bumpiness;
     }
 
-    // Calculate well depth (depth of single-width wells)
     private int CalculateWellDepth(int[,] board)
     {
         int height = board.GetLength(0);
@@ -882,7 +801,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
 
             if (leftWall && rightWall)
             {
-                // This is a potential well, calculate its depth
                 int wellDepth = 0;
                 for (int row = height - 1; row >= 0; row--)
                 {
@@ -902,7 +820,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         return totalWellDepth;
     }
 
-    // Helper function to check if column has any blocks
     private bool HasBlockInColumn(int[,] board, int col)
     {
         int height = board.GetLength(0);
@@ -913,7 +830,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         return false;
     }
 
-    // Copy board for simulation
     private int[,] CopyBoard(int[,] original)
     {
         int height = original.GetLength(0);
@@ -931,3 +847,4 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         return copy;
     }
 }
+
