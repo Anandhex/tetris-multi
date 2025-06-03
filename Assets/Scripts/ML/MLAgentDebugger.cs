@@ -42,14 +42,14 @@ public class MLAgentDebugger : MonoBehaviour
         if (enableDebugging && mlAgent != null)
         {
             StartCoroutine(DebugRoutine());
-            Debug.Log($"ML Agent Debugger attached to {gameObject.name}");
+            // Debug.Log($"ML Agent Debugger attached to {gameObject.name}");
             LogAgentConfiguration();
 
             Academy.Instance.AgentPreStep += RecordStep;
         }
         else
         {
-            Debug.LogError("MLAgentDebugger: Could not find TetrisMLAgent component!");
+            // Debug.LogError("MLAgentDebugger: Could not find TetrisMLAgent component!");
         }
     }
 
@@ -128,19 +128,19 @@ public class MLAgentDebugger : MonoBehaviour
     {
         if (mlAgent.curriculumBoardHeight != lastBoardHeight)
         {
-            Debug.Log($"[Curriculum] Board height changed: {lastBoardHeight} -> {mlAgent.curriculumBoardHeight}");
+            // Debug.Log($"[Curriculum] Board height changed: {lastBoardHeight} -> {mlAgent.curriculumBoardHeight}");
             lastBoardHeight = mlAgent.curriculumBoardHeight;
         }
 
         if (mlAgent.allowedTetrominoTypes != lastTetrominoTypes)
         {
-            Debug.Log($"[Curriculum] Tetromino types changed: {lastTetrominoTypes} -> {mlAgent.allowedTetrominoTypes}");
+            // Debug.Log($"[Curriculum] Tetromino types changed: {lastTetrominoTypes} -> {mlAgent.allowedTetrominoTypes}");
             lastTetrominoTypes = mlAgent.allowedTetrominoTypes;
         }
 
         if (mlAgent.curriculumBoardPreset != lastBoardPreset)
         {
-            Debug.Log($"[Curriculum] Board preset changed: {lastBoardPreset} -> {mlAgent.curriculumBoardPreset}");
+            // Debug.Log($"[Curriculum] Board preset changed: {lastBoardPreset} -> {mlAgent.curriculumBoardPreset}");
             lastBoardPreset = mlAgent.curriculumBoardPreset;
         }
     }
@@ -178,34 +178,34 @@ public class MLAgentDebugger : MonoBehaviour
     {
         if (behaviorParams != null)
         {
-            Debug.Log($"Agent Configuration:");
-            Debug.Log($"- Name: {behaviorParams.BehaviorName}");
-            Debug.Log($"- Type: {behaviorParams.BehaviorType}");
-            Debug.Log($"- Observation Size: {behaviorParams.BrainParameters.VectorObservationSize}");
+            // Debug.Log($"Agent Configuration:");
+            // Debug.Log($"- Name: {behaviorParams.BehaviorName}");
+            // Debug.Log($"- Type: {behaviorParams.BehaviorType}");
+            // Debug.Log($"- Observation Size: {behaviorParams.BrainParameters.VectorObservationSize}");
 
             // Updated: Log single discrete action space for placements
             var actionSpec = behaviorParams.BrainParameters.ActionSpec;
-            Debug.Log($"- Action Space: Single Discrete with {actionSpec.NumDiscreteActions} total actions");
+            // Debug.Log($"- Action Space: Single Discrete with {actionSpec.NumDiscreteActions} total actions");
 
             if (actionSpec.BranchSizes.Length > 0)
             {
-                Debug.Log($"  - Placement Selection: {actionSpec.BranchSizes[0]} possible placements");
+                // Debug.Log($"  - Placement Selection: {actionSpec.BranchSizes[0]} possible placements");
             }
 
             if (behaviorParams.Model != null)
             {
-                Debug.Log($"- Model: {behaviorParams.Model.name}");
+                // Debug.Log($"- Model: {behaviorParams.Model.name}");
             }
             else
             {
-                Debug.Log("- No model assigned");
+                // Debug.Log("- No model assigned");
             }
 
             // Log curriculum settings
-            Debug.Log($"- Initial Curriculum Settings:");
-            Debug.Log($"  - Board Height: {mlAgent.curriculumBoardHeight}");
-            Debug.Log($"  - Tetromino Types: {mlAgent.allowedTetrominoTypes}");
-            Debug.Log($"  - Board Preset: {mlAgent.curriculumBoardPreset}");
+            // Debug.Log($"- Initial Curriculum Settings:");
+            // Debug.Log($"  - Board Height: {mlAgent.curriculumBoardHeight}");
+            // Debug.Log($"  - Tetromino Types: {mlAgent.allowedTetrominoTypes}");
+            // Debug.Log($"  - Board Preset: {mlAgent.curriculumBoardPreset}");
         }
     }
 
@@ -234,16 +234,16 @@ public class MLAgentDebugger : MonoBehaviour
         }
         placementDistribution += "]";
 
-        Debug.Log($"Agent Status Update:");
-        Debug.Log($"- Steps: {stepCount}");
-        Debug.Log($"- Episodes: {episodeCount}");
-        Debug.Log($"- Current Cumulative Reward: {mlAgent.GetCumulativeReward():F2}");
-        Debug.Log($"- Reward since last update: {currentRewardAccumulated:F2}");
-        Debug.Log($"- Total unique placements used: {placementCounts.Count}");
-        Debug.Log(placementDistribution);
+        // Debug.Log($"Agent Status Update:");
+        // Debug.Log($"- Steps: {stepCount}");
+        // Debug.Log($"- Episodes: {episodeCount}");
+        // Debug.Log($"- Current Cumulative Reward: {mlAgent.GetCumulativeReward():F2}");
+        // Debug.Log($"- Reward since last update: {currentRewardAccumulated:F2}");
+        // Debug.Log($"- Total unique placements used: {placementCounts.Count}");
+        // Debug.Log(placementDistribution);
 
-        // Current curriculum status
-        Debug.Log($"- Curriculum Status: Height={mlAgent.curriculumBoardHeight}, Types={mlAgent.allowedTetrominoTypes}, Preset={mlAgent.curriculumBoardPreset}");
+        // // Current curriculum status
+        // Debug.Log($"- Curriculum Status: Height={mlAgent.curriculumBoardHeight}, Types={mlAgent.allowedTetrominoTypes}, Preset={mlAgent.curriculumBoardPreset}");
 
         // Reset the accumulated reward for the next interval
         currentRewardAccumulated = 0f;
@@ -257,16 +257,16 @@ public class MLAgentDebugger : MonoBehaviour
             float avgHeight = CalculateAverage(recentHeights);
             float avgHoles = CalculateAverage(recentHoles);
 
-            Debug.Log($"Placement Quality (last {recentLineClears.Count} placements):");
-            Debug.Log($"- Avg Lines Cleared: {avgLineClears:F2}");
-            Debug.Log($"- Avg Max Height: {avgHeight:F2}");
-            Debug.Log($"- Avg Holes Created: {avgHoles:F2}");
+            // Debug.Log($"Placement Quality (last {recentLineClears.Count} placements):");
+            // Debug.Log($"- Avg Lines Cleared: {avgLineClears:F2}");
+            // Debug.Log($"- Avg Max Height: {avgHeight:F2}");
+            // Debug.Log($"- Avg Holes Created: {avgHoles:F2}");
 
             // Calculate efficiency metrics
             float tetrisRate = CalculateTetrisRate();
             if (tetrisRate > 0)
             {
-                Debug.Log($"- Tetris Rate: {tetrisRate:F1}%");
+                // Debug.Log($"- Tetris Rate: {tetrisRate:F1}%");
             }
         }
     }
@@ -298,7 +298,7 @@ public class MLAgentDebugger : MonoBehaviour
     public void OnEpisodeEnd()
     {
         episodeCount++;
-        Debug.Log($"Episode {episodeCount} ended with reward: {mlAgent.GetCumulativeReward():F2}");
+        // Debug.Log($"Episode {episodeCount} ended with reward: {mlAgent.GetCumulativeReward():F2}");
 
         // Log final placement statistics for this episode
         LogActionStatistics();
@@ -317,11 +317,11 @@ public class MLAgentDebugger : MonoBehaviour
     {
         if (placementCounts.Count == 0)
         {
-            Debug.Log("=== No placement actions recorded this episode ===");
+            // Debug.Log("=== No placement actions recorded this episode ===");
             return;
         }
 
-        Debug.Log("=== Placement Action Statistics ===");
+        // Debug.Log("=== Placement Action Statistics ===");
 
         int totalActions = 0;
         foreach (var kvp in placementCounts)
@@ -333,17 +333,17 @@ public class MLAgentDebugger : MonoBehaviour
         var sortedPlacements = new List<KeyValuePair<int, int>>(placementCounts);
         sortedPlacements.Sort((x, y) => y.Value.CompareTo(x.Value));
 
-        Debug.Log("Most Used Placements:");
+        // Debug.Log("Most Used Placements:");
         for (int i = 0; i < Mathf.Min(10, sortedPlacements.Count); i++)
         {
             var placement = sortedPlacements[i];
             float percentage = totalActions > 0 ? (placement.Value / (float)totalActions) * 100f : 0f;
-            Debug.Log($"  Placement {placement.Key}: {percentage:F1}% ({placement.Value} times)");
+            // Debug.Log($"  Placement {placement.Key}: {percentage:F1}% ({placement.Value} times)");
         }
 
         // Diversity metric
         float diversity = placementCounts.Count / (float)totalActions;
-        Debug.Log($"Placement Diversity: {diversity:F3} (unique placements per action)");
+        // Debug.Log($"Placement Diversity: {diversity:F3} (unique placements per action)");
     }
 
     // Method for ML Agent to call when making a placement
@@ -358,7 +358,7 @@ public class MLAgentDebugger : MonoBehaviour
 
         if (logPlacementDetails)
         {
-            Debug.Log($"Placement {placementIndex}: Lines={placementInfo.linesCleared}, Height={placementInfo.maxHeight:F1}, Holes={placementInfo.holes}");
+            // Debug.Log($"Placement {placementIndex}: Lines={placementInfo.linesCleared}, Height={placementInfo.maxHeight:F1}, Holes={placementInfo.holes}");
         }
     }
 

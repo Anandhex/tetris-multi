@@ -163,34 +163,7 @@ environment_parameters:
           threshold: 800.0
 
   # Fixed reward parameters (removed from curriculum)
-  comboMultiplier: 0.8
-  tetrisClearRewardMultiplier: 20.0
-  tripleLineClearRewardMultiplier: 10.0
-  doubleLineClearRewardMultiplier: 5.0
+
   perfectClearBonus: 100.0
-  tSpinReward: 2.0
-  iPieceGapFillBonus: 1.5
   deathPenalty: 5.0
-
-  # Reduced penalties for better learning
-  stagnationPenaltyFactor: 0.0001
-  stackHeightPenalty: 0.01
-  holeCreationPenalty: 0.5 # Much lower than your 0.99979
-  uselessRotationPenalty: 0.005
-  idleActionPenalty: 0.0005
-
-  # Balanced rewards
-  roughnessRewardMultiplier: 0.5
-  roughnessPenaltyMultiplier: 0.005
-  holeFillReward: 2.0
-  wellRewardMultiplier: 0.3
-  iPieceInWellBonus: 1.0
-  maxWellRewardCap: 2.0
-  accessibilityRewardMultiplier: 0.3
-  accessibilityPenaltyMultiplier: 0.02
-
-  # New parameters for better learning
-  moveDownActionReward: 0.01
-  hardDropActionReward: 0.05
-  partialRowFillRewardMultiplier: 0.02
-  horizontalStackingRewardMultiplier: 1.0
+  clearReward: 5.0
