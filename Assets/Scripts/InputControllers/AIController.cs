@@ -29,7 +29,8 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     public float curriculumHolePenaltyWeight = 0.5f;
     public bool enableAdvancedMechanics = false;
     private int episodeSteps = 0;
-    private ActionSequence? queuedActionSequence = null;
+    private ActionSequence queuedActionSequence;
+private bool hasQueuedAction = false;
     private bool isExecutingSequence = false;
 
     // Store valid placements for action mapping
@@ -77,18 +78,19 @@ public class TetrisMLAgent : Agent, IPlayerInputController
 
     public override void OnEpisodeBegin()
     {
-        Debug.Log("TetrisMLAgent: Starting new episode.");
-
-        // Clear previous state
-        processedPieceIds.Clear();
-        currentPieceId = -1;
-        waitingForDecision = false;
-        executingPlacement = false;
-        cachedValidPlacements.Clear();
-        isExecutingSequence = false;
-        currentStep = ExecutionStep.None;
-        queuedActionSequence = null;
-        frameCounter = 0;
+       Debug.Log("TetrisMLAgent: Starting new episode.");
+    
+    // Clear previous state
+    processedPieceIds.Clear();
+    currentPieceId = -1;
+    waitingForDecision = false;
+    executingPlacement = false;
+    cachedValidPlacements.Clear();
+    isExecutingSequence = false;
+    currentStep = ExecutionStep.None;
+    queuedActionSequence = default(ActionSequence); // or set to default
+    hasQueuedAction = false; // if using the alternative approach
+    frameCounter = 0;
 
         // Get curriculum parameters
         var envParams = Academy.Instance.EnvironmentParameters;
@@ -447,102 +449,118 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         discreteActionsOut[0] = clampedIndex;
     }
 
-    public void QueueActions(ActionSequence sequence)
+    
+
+   public void QueueActions(ActionSequence sequence)
+{
+    queuedActionSequence = sequence;
+    hasQueuedAction = true;
+    isExecutingSequence = true;
+    waitingForDecision = true;
+
+    rotationsRemaining = (sequence.targetRotation - currentPiece.rotationIndex + 4) % 4;
+    currentStep = ExecutionStep.Rotate;
+    frameCounter = 0;
+
+    Debug.Log($"QueueActions: Sequence queued. Rotation: {rotationsRemaining}, Target Column: {sequence.targetColumn}");
+}
+
+public void ClearQueue()
+{
+    queuedActionSequence = default(ActionSequence);
+    hasQueuedAction = false;
+    isExecutingSequence = false;
+    currentStep = ExecutionStep.None;
+    Debug.Log("ClearQueue: Action queue cleared.");
+}
+
+public bool HasQueuedActions()
+{
+    return hasQueuedAction;
+}
+
+private void Update()
+{
+    if (!isExecutingSequence || currentStep == ExecutionStep.None || !hasQueuedAction)
+        return;
+
+    // Safety check
+    if (currentPiece == null || board == null)
     {
-        queuedActionSequence = sequence;
-        isExecutingSequence = true;
-        waitingForDecision = true;
-
-        rotationsRemaining = (sequence.targetRotation - currentPiece.rotationIndex + 4) % 4;
-        currentStep = ExecutionStep.Rotate;
-        frameCounter = 0;
-
-        Debug.Log($"QueueActions: Sequence queued. Rotation: {rotationsRemaining}, Target Column: {sequence.targetColumn}");
+        Debug.LogWarning("Update: Missing piece or board, clearing queue");
+        ClearQueue();
+        return;
     }
 
-    private void Update()
+    // Optional: Add small frame delay for visual clarity
+    frameCounter++;
+    if (frameCounter < executionFrameDelay)
+        return;
+    frameCounter = 0;
+
+    // Now you can access sequence directly
+    switch (currentStep)
     {
-        if (!isExecutingSequence || currentStep == ExecutionStep.None || queuedActionSequence == null)
-            return;
+        case ExecutionStep.Rotate:
+            if (rotationsRemaining > 0)
+            {
+                ExecuteRotation(1);
+                rotationsRemaining--;
+                Debug.Log($"Update: Rotated. Remaining: {rotationsRemaining}");
+            }
+            else
+            {
+                Debug.Log("Update: Rotation complete. Proceeding to movement.");
+                currentStep = ExecutionStep.Move;
+            }
+            break;
 
-        // Safety check
-        if (currentPiece == null || board == null)
-        {
-            Debug.LogWarning("Update: Missing piece or board, clearing queue");
-            ClearQueue();
-            return;
-        }
+        case ExecutionStep.Move:
+            int currentCol = currentPiece.position.x - board.Bounds.xMin;
+            int targetCol = queuedActionSequence.targetColumn;
 
-        // Optional: Add small frame delay for visual clarity
-        frameCounter++;
-        if (frameCounter < executionFrameDelay)
-            return;
-        frameCounter = 0;
-
-        var sequence = queuedActionSequence!;
-        switch (currentStep)
-        {
-            case ExecutionStep.Rotate:
-                if (rotationsRemaining > 0)
+            if (currentCol == targetCol)
+            {
+                Debug.Log("Update: Column reached. Proceeding to drop.");
+                currentStep = ExecutionStep.Drop;
+            }
+            else
+            {
+                Vector2Int direction = currentCol < targetCol ? Vector2Int.right : Vector2Int.left;
+                if (!ExecuteMovement(direction))
                 {
-                    ExecuteRotation(1);
-                    rotationsRemaining--;
-                    Debug.Log($"Update: Rotated. Remaining: {rotationsRemaining}");
-                }
-                else
-                {
-                    Debug.Log("Update: Rotation complete. Proceeding to movement.");
-                    currentStep = ExecutionStep.Move;
-                }
-                break;
-
-            case ExecutionStep.Move:
-                int currentCol = currentPiece.position.x - board.Bounds.xMin;
-                int targetCol = sequence.targetColumn;
-
-                if (currentCol == targetCol)
-                {
-                    Debug.Log("Update: Column reached. Proceeding to drop.");
+                    Debug.LogWarning("Update: Movement blocked. Proceeding to drop.");
                     currentStep = ExecutionStep.Drop;
                 }
                 else
                 {
-                    Vector2Int direction = currentCol < targetCol ? Vector2Int.right : Vector2Int.left;
-                    if (!ExecuteMovement(direction))
-                    {
-                        Debug.LogWarning("Update: Movement blocked. Proceeding to drop.");
-                        currentStep = ExecutionStep.Drop;
-                    }
-                    else
-                    {
-                        Debug.Log($"Update: Moved to column {currentPiece.position.x - board.Bounds.xMin}.");
-                    }
+                    Debug.Log($"Update: Moved to column {currentPiece.position.x - board.Bounds.xMin}.");
                 }
-                break;
+            }
+            break;
+            
+        case ExecutionStep.Drop:
+            if (queuedActionSequence.useHardDrop)
+            {
+                Debug.Log("Update: Performing hard drop.");
+                ExecuteHardDrop();
+            }
+            else
+            {
+                Debug.Log("Update: Hard drop skipped.");
+            }
+            currentStep = ExecutionStep.Complete;
+            break;
 
-            case ExecutionStep.Drop:
-                if (sequence.useHardDrop)
-                {
-                    Debug.Log("Update: Performing hard drop.");
-                    ExecuteHardDrop();
-                }
-                else
-                {
-                    Debug.Log("Update: Hard drop skipped.");
-                }
-                currentStep = ExecutionStep.Complete;
-                break;
-
-            case ExecutionStep.Complete:
-                Debug.Log("Update: Sequence complete. Resetting.");
-                ClearQueue();
-                isExecutingSequence = false;
-                waitingForDecision = false;
-                currentStep = ExecutionStep.None;
-                break;
-        }
+        case ExecutionStep.Complete:
+            Debug.Log("Update: Sequence complete. Resetting.");
+            ClearQueue();
+            isExecutingSequence = false;
+            waitingForDecision = false;
+            currentStep = ExecutionStep.None;
+            break;
     }
-
+}
     private void ExecuteRotation(int direction)
     {
         Debug.Log($"ExecuteRotation: Attempting rotation in direction: {direction}. Original Index: {currentPiece.rotationIndex}");
@@ -601,19 +619,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         Debug.Log("ExecuteHardDrop: Piece locked, lines cleared, new piece spawned.");
     }
 
-    public bool HasQueuedActions()
-    {
-        bool hasValue = queuedActionSequence.HasValue;
-        return hasValue;
-    }
-
-    public void ClearQueue()
-    {
-        queuedActionSequence = null;
-        isExecutingSequence = false;
-        currentStep = ExecutionStep.None;
-        Debug.Log("ClearQueue: Action queue cleared.");
-    }
+   
 
     // IPlayerInputController implementation - all return false since ML Agent controls actions
     public bool GetLeft() => false;
