@@ -415,7 +415,7 @@ public class Board : MonoBehaviour
                 break;
         }
 
-        // Debug.Log($"[Board] Applied board_preset {preset} with height {boardHeight}");
+        Debug.Log($"[Board] Applied board_preset {preset} with height {boardHeight}");
     }
 
     private void SetTile(int x, int y)
