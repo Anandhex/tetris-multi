@@ -180,7 +180,7 @@ public class Piece : MonoBehaviour
         return valid;
     }
 
-    private void Rotate(int direction)
+    public void Rotate(int direction)
     {
         int originalRotation = rotationIndex;
 
