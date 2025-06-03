@@ -152,52 +152,52 @@ private bool hasQueuedAction = false;
         requestor.TakeActionsBetweenDecisions = false;
     }
 
-    public override void OnActionReceived(ActionBuffers actions)
+   public override void OnActionReceived(ActionBuffers actions)
+{
+    if (currentPiece == null || board == null || isExecutingSequence)
     {
-        if (currentPiece == null || board == null || isExecutingSequence)
-        {
-            return;
-        }
-
-        // Generate unique ID for this piece
-        int pieceId = GeneratePieceId(currentPiece);
-
-        // Check if we've already processed this specific piece
-        if (processedPieceIds.Contains(pieceId))
-        {
-            return;
-        }
-
-        // Mark this piece as processed
-        processedPieceIds.Add(pieceId);
-
-        // Use cached placements from CollectObservations
-        if (cachedValidPlacements.Count == 0)
-        {
-            AddReward(rewardWeights.deathPenalty);
-            EndEpisode();
-            return;
-        }
-
-        int selectedAction = actions.DiscreteActions[0];
-
-        // Direct action to placement mapping
-        int placementIndex = Mathf.Clamp(selectedAction, 0, cachedValidPlacements.Count - 1);
-        PlacementInfo selectedPlacement = cachedValidPlacements[placementIndex];
-
-        Debug.Log($"OnActionReceived: Selected Action: {selectedAction} mapped to Placement Index: {placementIndex}. Target Column: {selectedPlacement.targetColumn}, Rotation: {selectedPlacement.targetRotation}");
-
-        // Queue the action sequence
-        ActionSequence sequence = new ActionSequence(
-            selectedPlacement.targetColumn,
-            selectedPlacement.targetRotation,
-            true
-        );
-        Debug.Log($"OnActionReceived: Queuing action sequence: Target Column={sequence.targetColumn}, Target Rotation={sequence.targetRotation}, Hard Drop={sequence.useHardDrop}");
-        QueueActions(sequence);
-        CalculatePlacementReward(selectedPlacement);
+        return;
     }
 
+    // Generate unique ID for this piece
+    int pieceId = GeneratePieceId(currentPiece);
+
+    // Check if we've already processed this specific piece
+    if (processedPieceIds.Contains(pieceId))
+    {
+        return;
+    }
+
+    // Mark this piece as processed
+    processedPieceIds.Add(pieceId);
+
+    // Use cached placements from CollectObservations
+    if (cachedValidPlacements.Count == 0)
+    {
+        Debug.LogError("OnActionReceived: No cached placements available, ending episode");
+        AddReward(rewardWeights.deathPenalty);
+        EndEpisode();
+        return;
+    }
+
+    int selectedAction = actions.DiscreteActions[0];
+
+    // Clamp the action to valid range
+    int placementIndex = Mathf.Clamp(selectedAction, 0, cachedValidPlacements.Count - 1);
+    PlacementInfo selectedPlacement = cachedValidPlacements[placementIndex];
+
+    Debug.Log($"OnActionReceived: Selected Action: {selectedAction} mapped to Placement Index: {placementIndex}/{cachedValidPlacements.Count}. Target Column: {selectedPlacement.targetColumn}, Rotation: {selectedPlacement.targetRotation}");
+
+    // Queue the action sequence
+    ActionSequence sequence = new ActionSequence(
+        selectedPlacement.targetColumn,
+        selectedPlacement.targetRotation,
+        true
+    );
+    
+    QueueActions(sequence);
+    CalculatePlacementReward(selectedPlacement);
+}
     private int GeneratePieceId(Piece piece)
     {
         int id = piece.gameObject.GetInstanceID();
@@ -205,29 +205,44 @@ private bool hasQueuedAction = false;
     }
 
     // Simplified action masking using cached placements
-    public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
+   public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
+{
+    // Always ensure at least one action is available
+    if (currentPiece == null || board == null || cachedValidPlacements.Count == 0)
     {
-        if (currentPiece == null || board == null)
-        {
-            // If no piece, mask all actions
-            for (int i = 0; i < 34; i++)
-            {
-                actionMask.SetActionEnabled(0, i, false);
-            }
-            return;
-        }
-
-        // Use cached placements
-        int validPlacementCount = cachedValidPlacements.Count;
-
-        // Enable actions up to the number of valid placements
+        Debug.LogWarning("WriteDiscreteActionMask: No valid placements found, enabling action 0 as fallback");
+        
+        // Mask all actions except the first one as a fallback
         for (int i = 0; i < 34; i++)
         {
-            bool isEnabled = i < validPlacementCount;
-            actionMask.SetActionEnabled(0, i, isEnabled);
+            actionMask.SetActionEnabled(0, i, i == 0);
         }
+        return;
     }
 
+    int validPlacementCount = cachedValidPlacements.Count;
+    Debug.Log($"WriteDiscreteActionMask: {validPlacementCount} valid placements found");
+
+    // Ensure we have at least one valid action
+    if (validPlacementCount == 0)
+    {
+        Debug.LogWarning("WriteDiscreteActionMask: Zero valid placements, enabling action 0 as fallback");
+        for (int i = 0; i < 34; i++)
+        {
+            actionMask.SetActionEnabled(0, i, i == 0);
+        }
+        return;
+    }
+
+    // Enable actions up to the number of valid placements
+    for (int i = 0; i < 34; i++)
+    {
+        bool isEnabled = i < validPlacementCount;
+        actionMask.SetActionEnabled(0, i, isEnabled);
+    }
+
+    Debug.Log($"WriteDiscreteActionMask: Enabled {validPlacementCount} actions (0 to {validPlacementCount - 1})");
+}
     private void CalculatePlacementReward(PlacementInfo placement)
     {
         float reward = 0f;
@@ -263,73 +278,106 @@ private bool hasQueuedAction = false;
     }
 
     // Cache placements during observation collection
-    public override void CollectObservations(VectorSensor sensor)
+   public override void CollectObservations(VectorSensor sensor)
+{
+    if (currentPiece == null || board == null)
     {
-        if (currentPiece == null || board == null)
+        Debug.LogWarning("CollectObservations: No current piece or board, sending zero observations");
+        // Add zero observations if no piece
+        for (int i = 0; i < 218; i++)
         {
-            // Add zero observations if no piece
-            for (int i = 0; i < 218; i++)
-            {
-                sensor.AddObservation(0f);
-            }
-            return;
+            sensor.AddObservation(0f);
         }
-
-        // Convert current board state to 2D array for simulation
-        int[,] currentBoard = GetBoardState();
-
-        // Generate and cache all possible placements for current piece
-        cachedValidPlacements = GenerateAllPossiblePlacements(currentPiece, currentBoard);
-
-        // 1. ALL POSSIBLE PLACEMENTS (34 placements × 6 features = 204 observations)
-        for (int i = 0; i < 34; i++)
+        // Ensure we have at least one "fake" placement to avoid masking all actions
+        cachedValidPlacements.Clear();
+        cachedValidPlacements.Add(new PlacementInfo
         {
-            if (i < cachedValidPlacements.Count)
-            {
-                PlacementInfo placement = cachedValidPlacements[i];
-                sensor.AddObservation(placement.linesCleared / 4f);      // Normalized (0-1)
-                sensor.AddObservation(placement.aggregateHeight / 40f);  // Normalized
-                sensor.AddObservation(placement.maxHeight / 20f);        // Normalized
-                sensor.AddObservation(placement.holes / 20f);            // Normalized
-                sensor.AddObservation(placement.bumpiness / 30f);        // Normalized
-                sensor.AddObservation(placement.wellDepth / 15f);        // Normalized
-            }
-            else
-            {
-                // Pad with zeros for unused placement slots
-                for (int j = 0; j < 6; j++)
-                {
-                    sensor.AddObservation(0f);
-                }
-            }
-        }
+            linesCleared = 0,
+            aggregateHeight = 0,
+            maxHeight = 0,
+            holes = 0,
+            bumpiness = 0,
+            wellDepth = 0,
+            targetColumn = 0,
+            targetRotation = 0
+        });
+        return;
+    }
 
-        // 2. CURRENT PIECE ONE-HOT (7 observations)
-        for (int i = 0; i < 7; i++)
-        {
-            sensor.AddObservation(((int)currentPiece.data.tetromino == i) ? 1f : 0f);
-        }
+    // Convert current board state to 2D array for simulation
+    int[,] currentBoard = GetBoardState();
 
-        // 3. NEXT PIECE ONE-HOT (7 observations)
-        if (board.nextPieceData.tetromino != Tetromino.I) // Check if valid
+    // Generate and cache all possible placements for current piece
+    cachedValidPlacements = GenerateAllPossiblePlacements(currentPiece, currentBoard);
+
+    // Safety check: if no valid placements found, create a fallback placement
+    if (cachedValidPlacements.Count == 0)
+    {
+        Debug.LogWarning("CollectObservations: No valid placements generated, creating fallback placement");
+        
+        // Create a simple fallback placement (drop in current position)
+        cachedValidPlacements.Add(new PlacementInfo
         {
-            for (int i = 0; i < 7; i++)
-            {
-                sensor.AddObservation(((int)board.nextPieceData.tetromino == i) ? 1f : 0f);
-            }
+            linesCleared = 0,
+            aggregateHeight = CalculateAggregateHeight(currentBoard),
+            maxHeight = CalculateMaxHeight(currentBoard),
+            holes = CalculateHoles(currentBoard),
+            bumpiness = CalculateBumpiness(currentBoard),
+            wellDepth = CalculateWellDepth(currentBoard),
+            targetColumn = Mathf.Clamp(currentPiece.position.x - board.Bounds.xMin, 0, board.Bounds.width - 1),
+            targetRotation = currentPiece.rotationIndex
+        });
+    }
+
+    Debug.Log($"CollectObservations: Generated {cachedValidPlacements.Count} valid placements for piece {currentPiece.data.tetromino}");
+
+    // 1. ALL POSSIBLE PLACEMENTS (34 placements × 6 features = 204 observations)
+    for (int i = 0; i < 34; i++)
+    {
+        if (i < cachedValidPlacements.Count)
+        {
+            PlacementInfo placement = cachedValidPlacements[i];
+            sensor.AddObservation(placement.linesCleared / 4f);      // Normalized (0-1)
+            sensor.AddObservation(placement.aggregateHeight / 40f);  // Normalized
+            sensor.AddObservation(placement.maxHeight / 20f);        // Normalized
+            sensor.AddObservation(placement.holes / 20f);            // Normalized
+            sensor.AddObservation(placement.bumpiness / 30f);        // Normalized
+            sensor.AddObservation(placement.wellDepth / 15f);        // Normalized
         }
         else
         {
-            for (int i = 0; i < 7; i++)
+            // Pad with zeros for unused placement slots
+            for (int j = 0; j < 6; j++)
             {
                 sensor.AddObservation(0f);
             }
         }
-
-        // Total: 204 + 7 + 7 = 218 observations
     }
 
-    private int[,] GetBoardState()
+    // 2. CURRENT PIECE ONE-HOT (7 observations)
+    for (int i = 0; i < 7; i++)
+    {
+        sensor.AddObservation(((int)currentPiece.data.tetromino == i) ? 1f : 0f);
+    }
+
+    // 3. NEXT PIECE ONE-HOT (7 observations)
+    if (board.nextPieceData.tetromino != Tetromino.I) // Check if valid
+    {
+        for (int i = 0; i < 7; i++)
+        {
+            sensor.AddObservation(((int)board.nextPieceData.tetromino == i) ? 1f : 0f);
+        }
+    }
+    else
+    {
+        for (int i = 0; i < 7; i++)
+        {
+            sensor.AddObservation(0f);
+        }
+    }
+
+    // Total: 204 + 7 + 7 = 218 observations
+}    private int[,] GetBoardState()
     {
         var bounds = board.Bounds;
         int[,] boardArray = new int[bounds.height, bounds.width];
@@ -346,9 +394,12 @@ private bool hasQueuedAction = false;
     }
 
     // Generate all possible placements for the current piece
-    private List<PlacementInfo> GenerateAllPossiblePlacements(Piece piece, int[,] currentBoard)
+   private List<PlacementInfo> GenerateAllPossiblePlacements(Piece piece, int[,] currentBoard)
+{
+    List<PlacementInfo> placements = new List<PlacementInfo>();
+    
+    try
     {
-        List<PlacementInfo> placements = new List<PlacementInfo>();
         List<int[,]> rotations = GetPieceRotations(piece);
 
         // Generate placements systematically
@@ -357,6 +408,8 @@ private bool hasQueuedAction = false;
             if (rotation >= rotations.Count) continue;
 
             int[,] pieceShape = rotations[rotation];
+            if (pieceShape == null) continue;
+            
             int pieceWidth = pieceShape.GetLength(1);
             int boardWidth = currentBoard.GetLength(1);
 
@@ -387,38 +440,49 @@ private bool hasQueuedAction = false;
                 }
             }
         }
-        return placements;
+    }
+    catch (System.Exception e)
+    {
+        Debug.LogError($"Error generating placements: {e.Message}");
     }
 
+    Debug.Log($"GenerateAllPossiblePlacements: Generated {placements.Count} placements for {piece.data.tetromino}");
+    return placements;
+}
     // Improved piece detection
     public void SetCurrentPiece(Piece piece)
+{
+    if (piece == null)
     {
-        if (piece == null)
-        {
-            currentPiece = null;
-            return;
-        }
-
-        if (currentPiece != null && piece.gameObject.GetInstanceID() == currentPiece.gameObject.GetInstanceID())
-        {
-            return;
-        }
-
-        currentPiece = piece;
-        int pieceId = GeneratePieceId(piece);
-
-        Debug.Log($"SetCurrentPiece: New piece set - {piece.data.tetromino} (ID: {pieceId})");
-
-        // Only request decision for genuinely new pieces
-        if (!processedPieceIds.Contains(pieceId) && !waitingForDecision && !isExecutingSequence)
-        {
-            waitingForDecision = true;
-            cachedValidPlacements.Clear(); // Force recalculation
-            Debug.Log("SetCurrentPiece: Requesting decision for new piece");
-            RequestDecision();
-        }
+        Debug.Log("SetCurrentPiece: Piece set to null");
+        currentPiece = null;
+        return;
+    }
+    
+    if (currentPiece != null && piece.gameObject.GetInstanceID() == currentPiece.gameObject.GetInstanceID())
+    {
+        Debug.Log("SetCurrentPiece: Same piece, ignoring");
+        return;
     }
 
+    currentPiece = piece;
+    int pieceId = GeneratePieceId(piece);
+
+    Debug.Log($"SetCurrentPiece: New piece set - {piece.data.tetromino} (ID: {pieceId}) at position {piece.position}");
+
+    // Only request decision for genuinely new pieces
+    if (!processedPieceIds.Contains(pieceId) && !waitingForDecision && !isExecutingSequence)
+    {
+        waitingForDecision = true;
+        cachedValidPlacements.Clear(); // Force recalculation
+        Debug.Log("SetCurrentPiece: Requesting decision for new piece");
+        RequestDecision();
+    }
+    else
+    {
+        Debug.Log($"SetCurrentPiece: Not requesting decision - processed: {processedPieceIds.Contains(pieceId)}, waiting: {waitingForDecision}, executing: {isExecutingSequence}");
+    }
+}
     private int manualActionIndex = 0;
     public override void Heuristic(in ActionBuffers actionsOut)
     {
