@@ -578,6 +578,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   boardPrefab: {fileID: 738472372066281065, guid: 388ad63e3b69f44b696c0c10983fb80f, type: 3}
+  currentMode: 0
   singlePlayerPosition: {x: 0, y: 0, z: 0}
   player1Position: {x: -10, y: 0, z: 0}
   player2Position: {x: 10, y: 0, z: 0}

@@ -6,4 +6,8 @@ public interface IPlayerInputController
     bool GetRotateLeft();
     bool GetRotateRight();
     bool GetHardDrop();
+
+    void QueueActions(ActionSequence sequence);
+    bool HasQueuedActions();
+    void ClearQueue();
 }

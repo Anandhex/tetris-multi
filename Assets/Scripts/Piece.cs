@@ -9,9 +9,9 @@ public class Piece : MonoBehaviour
     public int rotationIndex;
     private IPlayerInputController inputController;
 
-    private int lastMovementFrame = -1;
-    private int movementDelayFrames = 2; // Allow 2 frames for movement to process
     public float stepDelay = 1f;
+    public bool isAgentControlled { get; set; } = false;
+
     public float moveDelay = 0.1f;
     public float lockDelay = 0.5f;
 
@@ -19,28 +19,18 @@ public class Piece : MonoBehaviour
     private float moveTime;
     private float lockTime;
 
-
-
     public void Initialize(Board board, Vector3Int position, TetrominoData data, IPlayerInputController controller)
     {
-
-        if (board == null)
+        if (board == null || controller == null)
         {
-            // Debug.LogError("Board is null in Piece.Initialize");
+            Debug.LogError("Piece.Initialize: Board or Controller is null!");
             return;
-        }
-
-        if (controller == null)
-        {
-            // Debug.LogError("InputController is null in Piece.Initialize");
-            return; // Don't continue with initialization if controller is null
         }
 
         this.data = data;
         this.board = board;
         this.position = position;
         this.inputController = controller;
-
 
         rotationIndex = 0;
         moveTime = Time.time + moveDelay;
@@ -57,72 +47,55 @@ public class Piece : MonoBehaviour
         {
             cells[i] = (Vector3Int)data.cells[i];
         }
+
+        Debug.Log($"Piece: Initialized {data.tetromino} at {position}, StepDelay: {stepDelay}");
     }
 
     private void UpdateStepDelay()
     {
-        stepDelay = board.CurrentDropRate;
+        stepDelay = board != null ? board.CurrentDropRate : 1f;
         stepTime = Time.time + stepDelay;
     }
-
 
     private void Update()
     {
         if (board == null || inputController == null)
-        {
-            // Debug.LogWarning("Piece not properly initialized, skipping update");
             return;
-        }
 
         board.Clear(this);
-
         lockTime += Time.deltaTime;
 
-        if (this.inputController.GetRotateLeft())
-        {
+        if (inputController.GetRotateLeft())
             Rotate(-1);
-        }
-        else if (this.inputController.GetRotateRight())
-        {
+        else if (inputController.GetRotateRight())
             Rotate(1);
-        }
 
-        if (this.inputController.GetHardDrop())
-        {
+        if (inputController.GetHardDrop())
             HardDrop();
-        }
 
         if (Time.time > moveTime)
-        {
             HandleMoveInputs();
-        }
 
         if (Time.time > stepTime)
-        {
             Step();
-        }
 
         board.Set(this);
     }
 
     private void HandleMoveInputs()
     {
-        if (this.inputController.GetDown())
+        if (inputController.GetDown())
         {
             if (Move(Vector2Int.down))
-            {
                 stepTime = Time.time + stepDelay;
-            }
         }
 
-        if (this.inputController.GetLeft())
-        {
+        if (inputController.GetLeft())
             Move(Vector2Int.left);
-        }
-        else if (this.inputController.GetRight())
-        {
+        else if (inputController.GetRight())
             Move(Vector2Int.right);
-        }
+
+        moveTime = Time.time + moveDelay;
     }
 
     private void Step()
@@ -130,27 +103,24 @@ public class Piece : MonoBehaviour
         UpdateStepDelay();
         stepTime = Time.time + stepDelay;
 
-        // Attempt to move the piece down
-        bool movedDown = Move(Vector2Int.down);
-
-        // If it couldn't move down, trigger lock after the lock delay
-        if (!movedDown && lockTime >= lockDelay)
+        if (!Move(Vector2Int.down))
         {
-            Lock();
+            if (lockTime >= lockDelay)
+            {
+                Debug.Log($"Piece: Locking due to no downward move after {lockTime:F2}s");
+                Lock();
+            }
         }
-        else if (movedDown)
+        else
         {
-            lockTime = 0f; // reset lock time when the piece moves down
+            lockTime = 0f;
         }
     }
 
     private void HardDrop()
     {
-        while (Move(Vector2Int.down))
-        {
-            continue;
-        }
-
+        Debug.Log("Piece: Performing HardDrop");
+        while (Move(Vector2Int.down)) { }
         Lock();
     }
 
@@ -159,14 +129,12 @@ public class Piece : MonoBehaviour
         board.Set(this);
         board.ClearLines();
         board.SpawnPiece();
+        Debug.Log("Piece: Locked and spawned new piece");
     }
 
     private bool Move(Vector2Int translation)
     {
-        Vector3Int newPosition = position;
-        newPosition.x += translation.x;
-        newPosition.y += translation.y;
-
+        Vector3Int newPosition = position + new Vector3Int(translation.x, translation.y, 0);
         bool valid = board.IsValidPosition(this, newPosition);
 
         if (valid)
@@ -174,16 +142,20 @@ public class Piece : MonoBehaviour
             position = newPosition;
             moveTime = Time.time + moveDelay;
             if (translation == Vector2Int.down)
-                lockTime = 0f; // reset
+                lockTime = 0f;
         }
+        // Optional: Keep for debugging collisions
+        // else
+        // {
+        //     Debug.LogWarning($"Piece: Invalid move to {newPosition}");
+        // }
 
         return valid;
     }
 
-    private void Rotate(int direction)
+    public void Rotate(int direction)
     {
         int originalRotation = rotationIndex;
-
         rotationIndex = Wrap(rotationIndex + direction, 0, 4);
         ApplyRotationMatrix(direction);
 
@@ -191,6 +163,10 @@ public class Piece : MonoBehaviour
         {
             rotationIndex = originalRotation;
             ApplyRotationMatrix(-direction);
+        }
+        else
+        {
+            Debug.Log($"Piece: Rotated to index {rotationIndex}");
         }
     }
 
@@ -201,7 +177,6 @@ public class Piece : MonoBehaviour
         for (int i = 0; i < cells.Length; i++)
         {
             Vector3 cell = cells[i];
-
             int x, y;
 
             switch (data.tetromino)
@@ -213,7 +188,6 @@ public class Piece : MonoBehaviour
                     x = Mathf.CeilToInt((cell.x * matrix[0] * direction) + (cell.y * matrix[1] * direction));
                     y = Mathf.CeilToInt((cell.x * matrix[2] * direction) + (cell.y * matrix[3] * direction));
                     break;
-
                 default:
                     x = Mathf.RoundToInt((cell.x * matrix[0] * direction) + (cell.y * matrix[1] * direction));
                     y = Mathf.RoundToInt((cell.x * matrix[2] * direction) + (cell.y * matrix[3] * direction));
@@ -231,11 +205,8 @@ public class Piece : MonoBehaviour
         for (int i = 0; i < data.wallKicks.GetLength(1); i++)
         {
             Vector2Int translation = data.wallKicks[wallKickIndex, i];
-
             if (Move(translation))
-            {
                 return true;
-            }
         }
 
         return false;
@@ -244,25 +215,15 @@ public class Piece : MonoBehaviour
     private int GetWallKickIndex(int rotationIndex, int rotationDirection)
     {
         int wallKickIndex = rotationIndex * 2;
-
         if (rotationDirection < 0)
-        {
             wallKickIndex--;
-        }
-
         return Wrap(wallKickIndex, 0, data.wallKicks.GetLength(0));
     }
 
     private int Wrap(int input, int min, int max)
     {
-        if (input < min)
-        {
-            return max - (min - input) % (max - min);
-        }
-        else
-        {
-            return min + (input - min) % (max - min);
-        }
+        return input < min
+            ? max - (min - input) % (max - min)
+            : min + (input - min) % (max - min);
     }
-
 }

@@ -14,7 +14,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     public Piece currentPiece;
     private MLAgentDebugger debugger;
 
-
     private HashSet<int> processedPieceIds = new HashSet<int>();
     private int currentPieceId = -1;
     private bool waitingForDecision = false;
@@ -31,19 +30,17 @@ public class TetrisMLAgent : Agent, IPlayerInputController
     public float curriculumHolePenaltyWeight = 0.5f;
     public bool enableAdvancedMechanics = false;
     private int episodeSteps = 0;
-    private bool moveLeft;
-    private bool moveRight;
-    private bool moveDown;
-    private bool rotateLeft;
-    private bool rotateRight;
-    private bool hardDrop;
+    private ActionSequence? queuedActionSequence = null;
+    private bool isExecutingSequence = false;
+
+    // Fix 1: Store valid placements for action mapping
+    private List<PlacementInfo> cachedValidPlacements = new List<PlacementInfo>();
 
     public override void Initialize()
     {
         var envParams = Academy.Instance.EnvironmentParameters;
         m_StatsRecorder = Academy.Instance.StatsRecorder;
         curriculumBoardPreset = (int)Academy.Instance.EnvironmentParameters.GetWithDefault("board_preset", 6);
-
 
         // Get curriculum parameters
         allowedTetrominoTypes = (int)envParams.GetWithDefault("tetromino_types", 7f);
@@ -52,16 +49,12 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         curriculumHolePenaltyWeight = envParams.GetWithDefault("hole_penalty_weight", 0.5f);
         enableAdvancedMechanics = envParams.GetWithDefault("enable_t_spins", 0f) > 0.5f;
 
-
         // Apply curriculum settings to reward weights
         rewardWeights.holeCreationPenalty *= curriculumHolePenaltyWeight;
         rewardWeights.clearReward = envParams.GetWithDefault("clearReward", 5.0f);
         rewardWeights.comboMultiplier = envParams.GetWithDefault("comboMultiplier", 0.5f);
         rewardWeights.perfectClearBonus = envParams.GetWithDefault("perfectClearBonus", 50.0f);
-
-
     }
-
 
     private void Start()
     {
@@ -69,21 +62,19 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         {
             board.inputController = this;
         }
+
     }
-
-
-
-    // Called by Board.cs to set the current piece reference
-
-
 
     public override void OnEpisodeBegin()
     {
+        Debug.Log("TetrisMLAgent: Starting new episode."); // Added log
         var envParams = Academy.Instance.EnvironmentParameters;
         processedPieceIds.Clear();
         currentPieceId = -1;
         waitingForDecision = false;
         executingPlacement = false;
+        cachedValidPlacements.Clear(); // Fix 2: Clear cached placements
+        Debug.Log("TetrisMLAgent: Cleared previous piece IDs and cached placements."); // Added log
 
         allowedTetrominoTypes = (int)envParams.GetWithDefault("tetromino_types", 7f);
         curriculumBoardHeight = envParams.GetWithDefault("board_height", 20f);
@@ -94,7 +85,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
 
         rewardWeights.holeCreationPenalty *= curriculumHolePenaltyWeight;
         episodeSteps = 0;
-
     }
 
     private void Awake()
@@ -104,7 +94,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         {
             debugger = gameObject.AddComponent<MLAgentDebugger>();
         }
-
 
         // Find board in children
         board = GetComponentInChildren<Board>();
@@ -118,8 +107,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             behavior.BrainParameters.VectorObservationSize = 218;
             behavior.BrainParameters.NumStackedVectorObservations = 1;
 
-
-            // Two discrete actions - column (10 options) and rotation (4 options)
+            // Fix 3: Use single discrete action for placement selection
             ActionSpec actionSpec = ActionSpec.MakeDiscrete(new int[] { 40 });
             behavior.BrainParameters.ActionSpec = actionSpec;
         }
@@ -129,12 +117,9 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             behavior.BrainParameters.VectorObservationSize = 218;
             behavior.BrainParameters.NumStackedVectorObservations = 1;
 
-
-            // Two discrete actions - column (10 options) and rotation (4 options)
             ActionSpec actionSpec = ActionSpec.MakeDiscrete(new int[] { 40 });
             behavior.BrainParameters.ActionSpec = actionSpec;
         }
-
 
         // Add a decision requester component if it doesn't exist
         var requestor = gameObject.GetComponent<DecisionRequester>();
@@ -143,23 +128,20 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             requestor = gameObject.AddComponent<DecisionRequester>();
         }
 
-        requestor.DecisionPeriod = 1; // Very large number so it doesn't auto-request
+
+        requestor.DecisionPeriod = 1;
         requestor.TakeActionsBetweenDecisions = false;
-
-
     }
 
-
-
-
-
-    // Keep the simple placement logic without complex timing
+    // Fix 4: Simplified action handling
     public override void OnActionReceived(ActionBuffers actions)
     {
-        if (currentPiece == null || board == null || executingPlacement)
+        if (currentPiece == null || board == null || isExecutingSequence)
+        {
             return;
+        }
 
-        // Generate unique ID for this piece based on its properties and spawn time
+        // Generate unique ID for this piece
         int pieceId = GeneratePieceId(currentPiece);
 
         // Check if we've already processed this specific piece
@@ -170,61 +152,161 @@ public class TetrisMLAgent : Agent, IPlayerInputController
 
         // Mark this piece as processed
         processedPieceIds.Add(pieceId);
-        currentPieceId = pieceId;
-        waitingForDecision = false;
-        executingPlacement = true;
 
-        Debug.Log($"Processing piece ID: {pieceId}, Type: {currentPiece.data.tetromino}");
 
-        // Generate valid placements
-        int[,] currentBoard = GetBoardState();
-        List<PlacementInfo> allPlacements = GenerateAllPossiblePlacements(currentPiece, currentBoard);
-
-        if (allPlacements.Count == 0)
+        // Use cached placements from CollectObservations
+        if (cachedValidPlacements.Count == 0)
         {
             AddReward(rewardWeights.deathPenalty);
-            m_StatsRecorder.Add("Tetris/EpisodeCount", 1);
-            m_StatsRecorder.Add("Tetris/CumulativeReward", GetCumulativeReward());
             EndEpisode();
             return;
         }
 
         int selectedAction = actions.DiscreteActions[0];
 
-        // Find the placement that corresponds to this action
-        PlacementInfo selectedPlacement = null;
-        foreach (var placement in allPlacements)
-        {
-            int actionIndex = placement.targetRotation * 10 + placement.targetColumn;
-            if (actionIndex == selectedAction)
-            {
-                selectedPlacement = placement;
-                break;
-            }
-        }
+        // Fix 5: Direct action to placement mapping
+        int placementIndex = Mathf.Clamp(selectedAction, 0, cachedValidPlacements.Count - 1);
+        PlacementInfo selectedPlacement = cachedValidPlacements[placementIndex];
 
-        // If somehow an invalid action was selected, fall back to the first valid placement
-        if (selectedPlacement == null)
-        {
-            selectedPlacement = allPlacements[0];
-            Debug.LogWarning($"Invalid action {selectedAction} selected, falling back to first valid placement");
-        }
+        Debug.Log($"OnActionReceived: Selected Action: {selectedAction} mapped to Placement Index: {placementIndex}. Target Column: {selectedPlacement.targetColumn}, Rotation: {selectedPlacement.targetRotation}"); // Added log
 
-        Debug.Log($"Selected Action: {selectedAction} → Column: {selectedPlacement.targetColumn}, Rotation: {selectedPlacement.targetRotation}");
-
-        ExecutePlacement(selectedPlacement);
+        // Queue the action sequence
+        ActionSequence sequence = new ActionSequence(
+            selectedPlacement.targetColumn,
+            selectedPlacement.targetRotation,
+            true
+        );
+        Debug.Log($"OnActionReceived: Queuing action sequence: Target Column={sequence.targetColumn}, Target Rotation={sequence.targetRotation}, Hard Drop={sequence.useHardDrop}"); // Added log
+        QueueActions(sequence);
         CalculatePlacementReward(selectedPlacement);
     }
 
     private int GeneratePieceId(Piece piece)
     {
-        // Combine piece type, spawn position, and current frame count for uniqueness
-        int hash = ((int)piece.data.tetromino * 1000) +
-                   (piece.position.x * 100) +
-                   (piece.position.y * 10) +
-                   (Time.frameCount % 1000);
-        return hash;
+        int id = piece.gameObject.GetInstanceID();
+        return id;
     }
+
+    private IEnumerator ExecuteQueuedActionSequence(ActionSequence sequence)
+    {
+        isExecutingSequence = true;
+        Debug.Log($"ExecuteQueuedActionSequence: Starting execution for Column {sequence.targetColumn}, Rotation {sequence.targetRotation}."); // Added log
+
+        // Wait a frame to ensure piece is ready
+        yield return new WaitForFixedUpdate();
+        Debug.Log("ExecuteQueuedActionSequence: Waited for FixedUpdate."); // Added log
+
+        // Execute rotation first
+        int rotationsNeeded = ((sequence.targetRotation - currentPiece.rotationIndex) + 4) % 4;
+        Debug.Log($"ExecuteQueuedActionSequence: Current Rotation Index: {currentPiece.rotationIndex}, Target Rotation: {sequence.targetRotation}, Rotations Needed: {rotationsNeeded}"); // Added log
+
+        for (int i = 0; i < rotationsNeeded; i++)
+        {
+            Debug.Log($"ExecuteQueuedActionSequence: Performing rotation {i + 1}/{rotationsNeeded}."); // Added log
+            ExecuteRotation(1);
+            yield return new WaitForFixedUpdate();
+        }
+        Debug.Log($"ExecuteQueuedActionSequence: Rotation complete. Current Rotation Index: {currentPiece.rotationIndex}"); // Added log
+
+        // Move to target column
+        int currentCol = currentPiece.position.x - board.Bounds.xMin;
+        int targetCol = sequence.targetColumn;
+
+        Debug.Log($"ExecuteQueuedActionSequence: Moving from column {currentCol} to {targetCol}. Current piece x: {currentPiece.position.x}"); // Added log
+
+        while (currentCol != targetCol)
+        {
+            Vector2Int moveDirection = currentCol < targetCol ? Vector2Int.right : Vector2Int.left;
+            Debug.Log($"ExecuteQueuedActionSequence: Attempting to move {moveDirection}. Current Column: {currentCol}, Target Column: {targetCol}"); // Added log
+
+            if (!ExecuteMovement(moveDirection))
+            {
+                Debug.LogWarning("ExecuteQueuedActionSequence: Movement blocked! Breaking column movement loop." + moveDirection); // Added log
+                break;
+            }
+
+            currentCol = currentPiece.position.x - board.Bounds.xMin;
+            Debug.Log($"ExecuteQueuedActionSequence: Moved to column {currentCol}."); // Added log
+            yield return new WaitForFixedUpdate();
+        }
+        Debug.Log("ExecuteQueuedActionSequence: Column movement complete or blocked."); // Added log
+
+        // Execute hard drop
+        if (sequence.useHardDrop)
+        {
+            Debug.Log("ExecuteQueuedActionSequence: Performing Hard Drop."); // Added log
+            ExecuteHardDrop();
+        }
+        else
+        {
+            Debug.Log("ExecuteQueuedActionSequence: Hard Drop not used for this sequence."); // Added log
+        }
+
+        // Clear the queue
+        ClearQueue();
+        waitingForDecision = false; // Fix 6: Reset waiting flag
+        Debug.Log("ExecuteQueuedActionSequence: Sequence execution finished. Queue cleared, waitingForDecision reset."); // Added log
+    }
+
+    private void ExecuteRotation(int direction)
+    {
+        Debug.Log($"ExecuteRotation: Attempting rotation in direction: {direction}. Original Index: {currentPiece.rotationIndex}"); // Added log
+        currentPiece.rotationIndex = ((currentPiece.rotationIndex + direction) + 4) % 4;
+        currentPiece.Rotate(direction);
+        Debug.Log($"ExecuteRotation: Rotation complete. New Index: {currentPiece.rotationIndex}"); // Added log
+    }
+
+    private bool ExecuteMovement(Vector2Int direction)
+    {
+        Vector3Int newPosition = currentPiece.position + (Vector3Int)direction;
+        Debug.Log($"ExecuteMovement: Trying to move piece {currentPiece.data.tetromino} from {currentPiece.position} to {newPosition}. Direction: {direction}"); // Added log
+
+        if (board.IsValidPosition(currentPiece, newPosition))
+        {
+            Debug.Log($"ExecuteMovement: Position {newPosition} is valid. Clearing and setting piece."); // Added log
+            board.Clear(currentPiece);
+            currentPiece.position = newPosition;
+            board.Set(currentPiece);
+            return true;
+        }
+        else
+        {
+            Debug.LogWarning($"ExecuteMovement: Position {newPosition} is INVALID for piece {currentPiece.data.tetromino}. Movement blocked."); // Added log
+            return false;
+        }
+    }
+
+    private void ExecuteHardDrop()
+    {
+        Debug.Log("ExecuteHardDrop: Initiating hard drop."); // Added log
+        board.Clear(currentPiece);
+        Debug.Log("ExecuteHardDrop: Piece cleared from current board position."); // Added log
+
+        // Drop until collision
+        int initialY = currentPiece.position.y;
+        while (true)
+        {
+            Vector3Int newPosition = currentPiece.position + Vector3Int.down;
+            if (board.IsValidPosition(currentPiece, newPosition))
+            {
+                currentPiece.position = newPosition;
+            }
+            else
+            {
+                Debug.Log($"ExecuteHardDrop: Piece stopped at Y: {currentPiece.position.y}. Collision detected below."); // Added log
+                break;
+            }
+        }
+        Debug.Log($"ExecuteHardDrop: Piece dropped from Y:{initialY} to Y:{currentPiece.position.y}"); // Added log
+
+        // Lock the piece
+        board.Set(currentPiece);
+        board.ClearLines();
+        board.SpawnPiece();
+        Debug.Log("ExecuteHardDrop: Piece locked, lines cleared, new piece spawned."); // Added log
+    }
+
+    // Fix 7: Simplified action masking using cached placements
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
     {
         if (currentPiece == null || board == null)
@@ -237,74 +319,15 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             return;
         }
 
-        // Generate all possible placements for current piece
-        int[,] currentBoard = GetBoardState();
-        List<PlacementInfo> validPlacements = GenerateAllPossiblePlacements(currentPiece, currentBoard);
+        // Use cached placements
+        int validPlacementCount = cachedValidPlacements.Count;
 
-        // Create a set of valid action indices for quick lookup
-        HashSet<int> validActionIndices = new HashSet<int>();
-
-        foreach (var placement in validPlacements)
-        {
-            // Convert placement back to action index
-            int actionIndex = placement.targetRotation * 10 + placement.targetColumn;
-            validActionIndices.Add(actionIndex);
-        }
-
-        // Mask actions: enable valid ones, disable invalid ones
+        // Enable actions up to the number of valid placements
         for (int i = 0; i < 40; i++)
         {
-            bool isValid = validActionIndices.Contains(i);
-            actionMask.SetActionEnabled(0, i, isValid);
+            bool isEnabled = i < validPlacementCount;
+            actionMask.SetActionEnabled(0, i, isEnabled);
         }
-    }
-    private void ExecutePlacement(PlacementInfo placement)
-    {
-        // Move piece to target position and rotation
-        // This would involve setting the piece's position and rotation
-        // then dropping it using hard drop
-
-        // For now, simulate the action by directly placing
-        StartCoroutine(ExecutePlacementCoroutine(placement));
-    }
-
-    private IEnumerator ExecutePlacementCoroutine(PlacementInfo placement)
-    {
-        while (currentPiece.rotationIndex != placement.targetRotation)
-        {
-            rotateRight = true;
-            yield return new WaitForFixedUpdate();
-            rotateRight = false;
-            yield return new WaitForFixedUpdate();
-        }
-
-        // Move piece to target column
-        int currentCol = currentPiece.position.x - board.Bounds.xMin;
-        while (currentCol != placement.targetColumn)
-        {
-            if (currentCol < placement.targetColumn)
-            {
-                moveRight = true;
-                yield return new WaitForFixedUpdate();
-                moveRight = false;
-            }
-            else
-            {
-                moveLeft = true;
-                yield return new WaitForFixedUpdate();
-                moveLeft = false;
-            }
-            yield return new WaitForFixedUpdate();
-            currentCol = currentPiece.position.x - board.Bounds.xMin;
-        }
-
-        // Hard drop
-        hardDrop = true;
-        yield return new WaitForFixedUpdate();
-        hardDrop = false;
-
-        // Mark placement as complete
-        executingPlacement = false;
     }
 
     private void CalculatePlacementReward(PlacementInfo placement)
@@ -330,46 +353,46 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         }
 
         reward += -0.001f; // step penalty
-
-        AddReward(reward);
         m_StatsRecorder.Add("Tetris/PlacementReward", reward);
+        AddReward(reward);
     }
-
-
 
     public void OnGameOver()
     {
+        Debug.Log("TetrisMLAgent: Game Over detected. Ending episode with death penalty."); // Added log
         AddReward(rewardWeights.deathPenalty);
         EndEpisode();
     }
 
-
-    // IPlayerInputController implementation - unchanged
-    public bool GetLeft() => moveLeft;
-    public bool GetRight() => moveRight;
-    public bool GetRotateLeft() => rotateLeft;
-    public bool GetRotateRight() => rotateRight;
-    public bool GetDown() => moveDown;
-    public bool GetHardDrop() => hardDrop;
-
-
-
+    // Fix 8: Cache placements during observation collection
     public override void CollectObservations(VectorSensor sensor)
     {
-
+        // Debug.Log("TetrisMLAgent: CollectObservations called."); // Can be very frequent, use with caution
+        if (currentPiece == null || board == null)
+        {
+            // Add zero observations if no piece
+            for (int i = 0; i < 218; i++)
+            {
+                sensor.AddObservation(0f);
+            }
+            // Debug.Log("CollectObservations: No current piece or board, sending zero observations."); // Added log
+            return;
+        }
 
         // Convert current board state to 2D array for simulation
         int[,] currentBoard = GetBoardState();
+        // Debug.Log("CollectObservations: Current board state retrieved."); // Added log
 
-        // Generate all possible placements for current piece
-        List<PlacementInfo> allPlacements = GenerateAllPossiblePlacements(currentPiece, currentBoard);
+        // Generate and cache all possible placements for current piece
+        cachedValidPlacements = GenerateAllPossiblePlacements(currentPiece, currentBoard);
+
 
         // 1. ALL POSSIBLE PLACEMENTS (34 placements × 6 features = 204 observations)
         for (int i = 0; i < 34; i++)
         {
-            if (i < allPlacements.Count)
+            if (i < cachedValidPlacements.Count)
             {
-                PlacementInfo placement = allPlacements[i];
+                PlacementInfo placement = cachedValidPlacements[i];
                 sensor.AddObservation(placement.linesCleared / 4f);      // Normalized (0-1)
                 sensor.AddObservation(placement.aggregateHeight / 40f);  // Normalized
                 sensor.AddObservation(placement.maxHeight / 20f);        // Normalized
@@ -425,7 +448,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
                 boardArray[bounds.height - 1 - y, x] = board.tilemap.HasTile(pos) ? 1 : 0;
             }
         }
-
         return boardArray;
     }
 
@@ -435,7 +457,7 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         List<PlacementInfo> placements = new List<PlacementInfo>();
         List<int[,]> rotations = GetPieceRotations(piece);
 
-        // Generate placements in a systematic way that matches action encoding
+        // Generate placements systematically
         for (int rotation = 0; rotation < 4; rotation++)
         {
             if (rotation >= rotations.Count) continue;
@@ -445,88 +467,76 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             int boardWidth = currentBoard.GetLength(1);
 
             // Try each column position (0-9 for standard Tetris)
-            for (int col = 0; col < 10; col++)
+            for (int col = 0; col <= boardWidth - pieceWidth; col++)
             {
-                // Check if piece fits in this column
-                if (col + pieceWidth <= boardWidth)
+                int landingRow;
+                if (CanPlacePieceAt(pieceShape, currentBoard, col, out landingRow))
                 {
-                    if (CanPlacePieceAt(pieceShape, currentBoard, col, out int landingRow))
+
+                    // Create simulation
+                    int[,] simulatedBoard = CopyBoard(currentBoard);
+                    PlacePieceOnBoard(pieceShape, simulatedBoard, col, landingRow);
+                    int linesCleared = ClearLinesAndCount(simulatedBoard);
+
+                    PlacementInfo placement = new PlacementInfo
                     {
-                        // Create simulation
-                        int[,] simulatedBoard = CopyBoard(currentBoard);
-                        PlacePieceOnBoard(pieceShape, simulatedBoard, col, landingRow);
-                        int linesCleared = ClearLinesAndCount(simulatedBoard);
+                        linesCleared = linesCleared,
+                        aggregateHeight = CalculateAggregateHeight(simulatedBoard),
+                        maxHeight = CalculateMaxHeight(simulatedBoard),
+                        holes = CalculateHoles(simulatedBoard),
+                        bumpiness = CalculateBumpiness(simulatedBoard),
+                        wellDepth = CalculateWellDepth(simulatedBoard),
+                        targetColumn = col,
+                        targetRotation = rotation
+                    };
 
-                        PlacementInfo placement = new PlacementInfo
-                        {
-                            linesCleared = linesCleared,
-                            aggregateHeight = CalculateAggregateHeight(simulatedBoard),
-                            maxHeight = CalculateMaxHeight(simulatedBoard),
-                            holes = CalculateHoles(simulatedBoard),
-                            bumpiness = CalculateBumpiness(simulatedBoard),
-                            wellDepth = CalculateWellDepth(simulatedBoard),
-                            targetColumn = col,
-                            targetRotation = rotation
-                        };
-
-                        placements.Add(placement);
-                    }
+                    placements.Add(placement);
                 }
+
             }
         }
-
         return placements;
     }
+
     private List<int[,]> GetPieceRotations(Piece piece)
     {
         List<int[,]> rotations = new List<int[,]>();
 
-
         TetrominoData data = piece.data;
         if (data.cells == null || data.cells.Length == 0)
         {
-            Debug.LogError("GetPieceRotations: piece.data.cells is null or not initialized. Did you forget to call Initialize()?");
             return rotations;
         }
 
-        // Convert piece cells to different rotations
         for (int rotation = 0; rotation < 4; rotation++)
         {
             Vector3Int[] rotatedCells = new Vector3Int[data.cells.Length];
-
-            // Copy original cells
             for (int i = 0; i < data.cells.Length; i++)
             {
                 rotatedCells[i] = (Vector3Int)data.cells[i];
             }
 
-            // Apply rotation transformations
             for (int r = 0; r < rotation; r++)
             {
                 for (int i = 0; i < rotatedCells.Length; i++)
                 {
                     Vector3Int cell = rotatedCells[i];
-                    // 90-degree clockwise rotation matrix
                     int newX = -cell.y;
                     int newY = cell.x;
                     rotatedCells[i] = new Vector3Int(newX, newY, 0);
                 }
             }
 
-            // Convert to 2D array representation
             int[,] shapeArray = ConvertCellsToArray(rotatedCells);
             rotations.Add(shapeArray);
         }
-
         return rotations;
     }
 
-    // Convert piece cells to 2D array
     private int[,] ConvertCellsToArray(Vector3Int[] cells)
     {
         if (cells.Length == 0) return new int[1, 1];
 
-        // Find bounds
         int minX = cells[0].x, maxX = cells[0].x;
         int minY = cells[0].y, maxY = cells[0].y;
 
@@ -546,36 +556,34 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         {
             array[cell.y - minY, cell.x - minX] = 1;
         }
-
         return array;
     }
 
-    // Check if piece can be placed at specific column
     private bool CanPlacePieceAt(int[,] pieceShape, int[,] board, int col, out int landingRow)
     {
         int boardHeight = board.GetLength(0);
         int pieceHeight = pieceShape.GetLength(0);
         landingRow = -1;
 
-        // Drop piece from top until collision
         for (int row = 0; row <= boardHeight - pieceHeight; row++)
         {
             if (HasCollision(pieceShape, board, row, col))
             {
                 landingRow = row - 1;
-                return landingRow >= 0;
+                return landingRow >= 0; // Return true only if landing row is valid (not above top)
             }
         }
 
-        landingRow = boardHeight - pieceHeight;
+        landingRow = boardHeight - pieceHeight; // If no collision, it lands at the very bottom
         return landingRow >= 0;
     }
 
-    // Check collision between piece and board
     private bool HasCollision(int[,] piece, int[,] board, int row, int col)
     {
         int pieceHeight = piece.GetLength(0);
         int pieceWidth = piece.GetLength(1);
+        int boardHeight = board.GetLength(0);
+        int boardWidth = board.GetLength(1);
 
         for (int r = 0; r < pieceHeight; r++)
         {
@@ -586,9 +594,14 @@ public class TetrisMLAgent : Agent, IPlayerInputController
                     int boardRow = row + r;
                     int boardCol = col + c;
 
-                    if (boardRow >= board.GetLength(0) ||
-                        boardCol >= board.GetLength(1) ||
-                        board[boardRow, boardCol] == 1)
+                    // Check bounds collision
+                    if (boardRow >= boardHeight || boardCol >= boardWidth || boardCol < 0) // Added boardCol < 0 check
+                    {
+                        return true;
+                    }
+
+                    // Check tile collision
+                    if (board[boardRow, boardCol] == 1)
                     {
                         return true;
                     }
@@ -598,7 +611,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         return false;
     }
 
-    // Place piece on board
     private void PlacePieceOnBoard(int[,] piece, int[,] board, int col, int row)
     {
         int pieceHeight = piece.GetLength(0);
@@ -616,7 +628,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         }
     }
 
-    // Clear lines and return count
     private int ClearLinesAndCount(int[,] board)
     {
         int linesCleared = 0;
@@ -654,11 +665,9 @@ public class TetrisMLAgent : Agent, IPlayerInputController
                 row++; // Check same row again after shift
             }
         }
-
         return linesCleared;
     }
 
-    // Calculate aggregate height (sum of all column heights)
     private int CalculateAggregateHeight(int[,] board)
     {
         int height = board.GetLength(0);
@@ -676,11 +685,9 @@ public class TetrisMLAgent : Agent, IPlayerInputController
                 }
             }
         }
-
         return totalHeight;
     }
 
-    // Calculate maximum height
     private int CalculateMaxHeight(int[,] board)
     {
         int height = board.GetLength(0);
@@ -698,11 +705,9 @@ public class TetrisMLAgent : Agent, IPlayerInputController
                 }
             }
         }
-
         return maxHeight;
     }
 
-    // Calculate number of holes
     private int CalculateHoles(int[,] board)
     {
         int height = board.GetLength(0);
@@ -724,18 +729,16 @@ public class TetrisMLAgent : Agent, IPlayerInputController
                 }
             }
         }
-
+        // Debug.Log($"CalculateHoles: Total holes: {holes}."); // Added log
         return holes;
     }
 
-    // Calculate bumpiness (sum of height differences between adjacent columns)
     private int CalculateBumpiness(int[,] board)
     {
         int height = board.GetLength(0);
         int width = board.GetLength(1);
         int[] columnHeights = new int[width];
 
-        // Get height of each column
         for (int col = 0; col < width; col++)
         {
             for (int row = 0; row < height; row++)
@@ -748,17 +751,14 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             }
         }
 
-        // Calculate bumpiness
         int bumpiness = 0;
         for (int col = 0; col < width - 1; col++)
         {
             bumpiness += Mathf.Abs(columnHeights[col] - columnHeights[col + 1]);
         }
-
         return bumpiness;
     }
 
-    // Calculate well depth (depth of single-width wells)
     private int CalculateWellDepth(int[,] board)
     {
         int height = board.GetLength(0);
@@ -772,7 +772,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
 
             if (leftWall && rightWall)
             {
-                // This is a potential well, calculate its depth
                 int wellDepth = 0;
                 for (int row = height - 1; row >= 0; row--)
                 {
@@ -788,14 +787,13 @@ public class TetrisMLAgent : Agent, IPlayerInputController
                 totalWellDepth += wellDepth;
             }
         }
-
         return totalWellDepth;
     }
 
-    // Helper function to check if column has any blocks
     private bool HasBlockInColumn(int[,] board, int col)
     {
         int height = board.GetLength(0);
+        if (col < 0 || col >= board.GetLength(1)) return false; // Added bounds check
         for (int row = 0; row < height; row++)
         {
             if (board[row, col] == 1) return true;
@@ -803,7 +801,6 @@ public class TetrisMLAgent : Agent, IPlayerInputController
         return false;
     }
 
-    // Copy board for simulation
     private int[,] CopyBoard(int[,] original)
     {
         int height = original.GetLength(0);
@@ -817,76 +814,172 @@ public class TetrisMLAgent : Agent, IPlayerInputController
                 copy[r, c] = original[r, c];
             }
         }
-
         return copy;
     }
 
-
+    // Fix 9: Improved piece detection
     public void SetCurrentPiece(Piece piece)
     {
-        if (piece == null) return;
+        if (piece == null)
+        {
+            return;
+        }
+        if (currentPiece != null && piece.gameObject.GetInstanceID() == currentPiece.gameObject.GetInstanceID())
+        {
+            return;
+        }
 
         currentPiece = piece;
         int pieceId = GeneratePieceId(piece);
 
-        // Clean up any null references in processed pieces
-        processedPieceIds.RemoveWhere(id => id < 0);
-
         // Only request decision for genuinely new pieces
-        if (!processedPieceIds.Contains(pieceId) && !waitingForDecision && !executingPlacement)
+        if (!processedPieceIds.Contains(pieceId) && !waitingForDecision && !isExecutingSequence)
         {
             waitingForDecision = true;
-            Debug.Log($"New piece detected - ID: {pieceId}, Type: {piece.data.tetromino}");
+
+            // Force immediate decision request
             RequestDecision();
+            RequestAction();
         }
 
     }
-
-
+    private int manualActionIndex = 0;
     public override void Heuristic(in ActionBuffers actionsOut)
     {
         var discreteActionsOut = actionsOut.DiscreteActions;
 
-        // Generate all possible placements for current piece
-        if (currentPiece == null || board == null)
+        if (currentPiece == null || board == null || cachedValidPlacements.Count == 0)
         {
             discreteActionsOut[0] = 0;
             return;
         }
 
-        int[,] currentBoard = GetBoardState();
-        List<PlacementInfo> allPlacements = GenerateAllPossiblePlacements(currentPiece, currentBoard);
-
-        if (allPlacements.Count == 0)
+        // Use keyboard input to change manualActionIndex
+        if (Input.GetKey(KeyCode.UpArrow))
         {
-            discreteActionsOut[0] = 0;
-            return;
+            manualActionIndex = (manualActionIndex + 1) % 40;
+            Debug.Log($"ManualActionIndex increased: {manualActionIndex}");
+        }
+        else if (Input.GetKey(KeyCode.DownArrow))
+        {
+            manualActionIndex = (manualActionIndex - 1 + 40) % 40;
+            Debug.Log($"ManualActionIndex decreased: {manualActionIndex}");
         }
 
-        int selectedPlacement = 7; // Default to first placement
+        // Clamp to available valid placements
+        int clampedIndex = Mathf.Clamp(manualActionIndex, 0, cachedValidPlacements.Count - 1);
 
-
-        // Allow player to cycle through placements with number keys
-        if (Input.GetKey(KeyCode.Alpha1) && allPlacements.Count > 0) selectedPlacement = 0;
-        else if (Input.GetKey(KeyCode.Alpha2) && allPlacements.Count > 1) selectedPlacement = 1;
-        else if (Input.GetKey(KeyCode.Alpha3) && allPlacements.Count > 2) selectedPlacement = 2;
-        else if (Input.GetKey(KeyCode.Alpha4) && allPlacements.Count > 3) selectedPlacement = 3;
-        else if (Input.GetKey(KeyCode.Alpha5) && allPlacements.Count > 4) selectedPlacement = 4;
-        else if (Input.GetKey(KeyCode.Alpha6) && allPlacements.Count > 5) selectedPlacement = 5;
-        else if (Input.GetKey(KeyCode.Alpha7) && allPlacements.Count > 6) selectedPlacement = 6;
-        else if (Input.GetKey(KeyCode.Alpha8) && allPlacements.Count > 7) selectedPlacement = 7;
-        else if (Input.GetKey(KeyCode.Alpha9) && allPlacements.Count > 8) selectedPlacement = 8;
-        else if (Input.GetKey(KeyCode.Alpha0) && allPlacements.Count > 9) selectedPlacement = 9;
-
-        // Use arrow keys to adjust selection
-        if (Input.GetKey(KeyCode.LeftArrow))
-            selectedPlacement = Mathf.Max(0, selectedPlacement - 1);
-        else if (Input.GetKey(KeyCode.RightArrow))
-            selectedPlacement = Mathf.Min(allPlacements.Count - 1, selectedPlacement + 1);
-
-        // Ensure selection is within bounds
-        selectedPlacement = Mathf.Clamp(selectedPlacement, 0, allPlacements.Count - 1);
-        discreteActionsOut[0] = selectedPlacement;
-
+        Debug.Log($"Heuristic: Using manualActionIndex={manualActionIndex}, mapped to valid index={clampedIndex} / {cachedValidPlacements.Count}");
+        discreteActionsOut[0] = clampedIndex;
     }
+    public void QueueActions(ActionSequence sequence)
+    {
+        queuedActionSequence = sequence;
+        isExecutingSequence = true;
+        waitingForDecision = true;
+
+        rotationsRemaining = (sequence.targetRotation - currentPiece.rotationIndex + 4) % 4;
+        currentStep = ExecutionStep.Rotate;
+
+        Debug.Log($"QueueActions: Sequence queued. Rotation: {rotationsRemaining}, Target Column: {sequence.targetColumn}");
+    }
+    private enum ExecutionStep
+    {
+        None,
+        Rotate,
+        Move,
+        Drop,
+        Complete
+    }
+    private ExecutionStep currentStep = ExecutionStep.None;
+    private int rotationsRemaining;
+
+
+    private float waitTimer;
+    private void Update()
+    {
+        if (!isExecutingSequence || currentStep == ExecutionStep.None || queuedActionSequence == null)
+            return;
+        var sequence = queuedActionSequence!;
+        switch (currentStep)
+        {
+            case ExecutionStep.Rotate:
+                if (rotationsRemaining > 0)
+                {
+                    ExecuteRotation(1);
+                    rotationsRemaining--;
+                    Debug.Log($"Update: Rotated. Remaining: {rotationsRemaining}");
+                }
+                else
+                {
+                    Debug.Log("Update: Rotation complete. Proceeding to movement.");
+                    currentStep = ExecutionStep.Move;
+                }
+                break;
+
+            case ExecutionStep.Move:
+                int currentCol = currentPiece.position.x - board.Bounds.xMin;
+                int targetCol = sequence.targetColumn;
+
+                if (currentCol == targetCol)
+                {
+                    Debug.Log("Update: Column reached. Proceeding to drop.");
+                    currentStep = ExecutionStep.Drop;
+                }
+                else
+                {
+                    Vector2Int direction = currentCol < targetCol ? Vector2Int.right : Vector2Int.left;
+                    if (!ExecuteMovement(direction))
+                    {
+                        Debug.LogWarning("Update: Movement blocked. Proceeding to drop.");
+                        currentStep = ExecutionStep.Drop;
+                    }
+                    else
+                    {
+                        Debug.Log($"Update: Moved to column {currentPiece.position.x - board.Bounds.xMin}.");
+                    }
+                }
+                break;
+            case ExecutionStep.Drop:
+                if (sequence.useHardDrop)
+                {
+                    Debug.Log("Update: Performing hard drop.");
+                    ExecuteHardDrop();
+                }
+                else
+                {
+                    Debug.Log("Update: Hard drop skipped.");
+                }
+
+                currentStep = ExecutionStep.Complete;
+                break;
+
+            case ExecutionStep.Complete:
+                Debug.Log("Update: Sequence complete. Resetting.");
+                ClearQueue();
+                isExecutingSequence = false;
+                waitingForDecision = false;
+                currentStep = ExecutionStep.None;
+                break;
+        }
+    }
+    public bool HasQueuedActions()
+    {
+        bool hasValue = queuedActionSequence.HasValue;
+        return hasValue;
+    }
+
+    public void ClearQueue()
+    {
+        queuedActionSequence = null;
+        isExecutingSequence = false;
+        Debug.Log("ClearQueue: Action queue cleared."); // Added log
+    }
+
+    public bool GetLeft() => false;
+    public bool GetRight() => false;
+    public bool GetRotateLeft() => false;
+    public bool GetRotateRight() => false;
+    public bool GetDown() => false;
+    public bool GetHardDrop() => false;
 }

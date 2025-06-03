@@ -53,7 +53,7 @@ public class BoardManager1 : MonoBehaviour
 
             // Connect the agent to the board
             board.inputController = agent;
-            agent.SetCurrentPiece(board.activePiece);
+            agent.currentPiece = board.activePiece;
 
             // Store reference to the board
             activeBoards = new[] { board };

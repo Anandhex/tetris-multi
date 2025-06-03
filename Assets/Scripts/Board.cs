@@ -415,7 +415,7 @@ public class Board : MonoBehaviour
                 break;
         }
 
-        // Debug.Log($"[Board] Applied board_preset {preset} with height {boardHeight}");
+        Debug.Log($"[Board] Applied board_preset {preset} with height {boardHeight}");
     }
 
     private void SetTile(int x, int y)
@@ -771,11 +771,13 @@ public class Board : MonoBehaviour
 
             if (!bounds.Contains((Vector2Int)tilePosition))
             {
+                Debug.LogWarning($"IsValidPosition: Out of bounds {tilePosition}");
                 return false;
             }
 
             if (this.tilemap.HasTile(tilePosition))
             {
+                Debug.LogWarning($"IsValidPosition: Tile already occupied at {tilePosition}");
                 return false;
             }
         }
