@@ -163,9 +163,22 @@ public class Board : MonoBehaviour
         Debug.Log($"[Board] Applying curriculum: preset={preset}, height={boardHeight}");
 
         ClearBoard(); // Always start clean
+        UpdateGridVisualization(); // Update grid visualization after clearing
+        ApplyBoardPreset(preset, boardHeight);
 
+
+             Debug.Log($"[Board] Applied board_preset {preset} with height {boardHeight}");
+    }
+
+    private void ApplyBoardPreset(int preset, int boardHeight)
+    {
         // Adjust bounds based on curriculum board height
-        int maxY = Bounds.yMin + boardHeight - 1;
+        RectInt bounds = this.Bounds; // This will use the updated height
+
+        // Your existing preset logic here...
+        // (Keep all your switch statement code)
+       // Adjust bounds based on curriculum board height
+        int maxY = bounds.yMin + boardHeight - 1;
 
         switch (preset)
         {
@@ -177,13 +190,13 @@ public class Board : MonoBehaviour
                 {
                     // For small boards (6-8 height), use bottom row
                     // For larger boards, place higher to avoid immediate danger
-                    int targetRow = boardHeight <= 8 ? Bounds.yMin : Bounds.yMin + 1;
+                    int targetRow = boardHeight <= 8 ? bounds.yMin : bounds.yMin + 1;
 
                     // Create I-piece gap (4 spaces) - NEVER fill completely
-                    int gapStart = Random.Range(Bounds.xMin, Bounds.xMax - 3);
+                    int gapStart = Random.Range(bounds.xMin, bounds.xMax - 3);
                     int gapEnd = gapStart + 4;
 
-                    for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                    for (int col = bounds.xMin; col < bounds.xMax; col++)
                     {
                         if (col < gapStart || col >= gapEnd)
                         {
@@ -192,7 +205,7 @@ public class Board : MonoBehaviour
                     }
 
                     // Ensure we never create a complete line
-                    if (gapEnd - gapStart >= Bounds.xMax - Bounds.xMin)
+                    if (gapEnd - gapStart >= bounds.xMax - bounds.xMin)
                     {
                         // If gap would be entire row, add one tile
                         SetTile(gapStart, targetRow);
@@ -205,27 +218,27 @@ public class Board : MonoBehaviour
                     int workingHeight = Mathf.Min(3, boardHeight - 1);
 
                     // Bottom row: I-piece opportunity (4 gaps)
-                    int iPieceGap = Random.Range(Bounds.xMin, Bounds.xMax - 3);
-                    for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                    int iPieceGap = Random.Range(bounds.xMin, bounds.xMax - 3);
+                    for (int col = bounds.xMin; col < bounds.xMax; col++)
                     {
                         if (col < iPieceGap || col >= iPieceGap + 4)
                         {
-                            SetTile(col, Bounds.yMin);
+                            SetTile(col, bounds.yMin);
                         }
                     }
 
                     if (workingHeight >= 2)
                     {
                         // Second row: O-piece opportunity (2 gaps) - different position
-                        int oPieceGap = iPieceGap >= Bounds.xMin + 2 ?
-                            Random.Range(Bounds.xMin, iPieceGap - 1) :
-                            Random.Range(iPieceGap + 4, Bounds.xMax - 1);
+                        int oPieceGap = iPieceGap >= bounds.xMin + 2 ?
+                            Random.Range(bounds.xMin, iPieceGap - 1) :
+                            Random.Range(iPieceGap + 4, bounds.xMax - 1);
 
-                        for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                        for (int col = bounds.xMin; col < bounds.xMax; col++)
                         {
                             if (col < oPieceGap || col >= oPieceGap + 2)
                             {
-                                SetTile(col, Bounds.yMin + 1);
+                                SetTile(col, bounds.yMin + 1);
                             }
                         }
                     }
@@ -243,25 +256,25 @@ public class Board : MonoBehaviour
                     {
                         case 0: // T-piece focused pattern
                             {
-                                int tCenter = Random.Range(Bounds.xMin + 1, Bounds.xMax - 1);
+                                int tCenter = Random.Range(bounds.xMin + 1, bounds.xMax - 1);
 
                                 // Bottom row: fill everything except center gap for T-piece stem
-                                for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                                for (int col = bounds.xMin; col < bounds.xMax; col++)
                                 {
                                     if (col != tCenter)
                                     {
-                                        SetTile(col, Bounds.yMin);
+                                        SetTile(col, bounds.yMin);
                                     }
                                 }
 
                                 if (workingHeight >= 2)
                                 {
                                     // Second row: leave 3-wide gap for T-piece arms
-                                    for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                                    for (int col = bounds.xMin; col < bounds.xMax; col++)
                                     {
                                         if (col < tCenter - 1 || col > tCenter + 1)
                                         {
-                                            SetTile(col, Bounds.yMin + 1);
+                                            SetTile(col, bounds.yMin + 1);
                                         }
                                     }
                                 }
@@ -271,32 +284,32 @@ public class Board : MonoBehaviour
                         case 1: // I-piece + O-piece pattern
                             {
                                 // Create both a 4-wide gap (I-piece) and 2x2 area (O-piece)
-                                int iPieceStart = Random.Range(Bounds.xMin, Bounds.xMax - 3);
+                                int iPieceStart = Random.Range(bounds.xMin, bounds.xMax - 3);
 
                                 // Bottom row: I-piece gap
-                                for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                                for (int col = bounds.xMin; col < bounds.xMax; col++)
                                 {
                                     if (col < iPieceStart || col >= iPieceStart + 4)
                                     {
-                                        SetTile(col, Bounds.yMin);
+                                        SetTile(col, bounds.yMin);
                                     }
                                 }
 
                                 if (workingHeight >= 3)
                                 {
                                     // Create O-piece opportunity in a different area
-                                    int oPieceStart = iPieceStart >= Bounds.xMin + 2 ?
-                                        Random.Range(Bounds.xMin, iPieceStart - 1) :
-                                        Random.Range(iPieceStart + 4, Bounds.xMax - 1);
+                                    int oPieceStart = iPieceStart >= bounds.xMin + 2 ?
+                                        Random.Range(bounds.xMin, iPieceStart - 1) :
+                                        Random.Range(iPieceStart + 4, bounds.xMax - 1);
 
                                     // Rows 1 and 2: create 2x2 gap for O-piece
                                     for (int row = 1; row <= 2; row++)
                                     {
-                                        for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                                        for (int col = bounds.xMin; col < bounds.xMax; col++)
                                         {
                                             if (col < oPieceStart || col >= oPieceStart + 2)
                                             {
-                                                SetTile(col, Bounds.yMin + row);
+                                                SetTile(col, bounds.yMin + row);
                                             }
                                         }
                                     }
@@ -307,24 +320,24 @@ public class Board : MonoBehaviour
                         case 2: // Mixed opportunities - all three pieces
                             {
                                 // Bottom: partial fill with I-piece gap
-                                int iPieceGap = Random.Range(Bounds.xMin, Bounds.xMax - 3);
-                                for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                                int iPieceGap = Random.Range(bounds.xMin, bounds.xMax - 3);
+                                for (int col = bounds.xMin; col < bounds.xMax; col++)
                                 {
                                     if (col < iPieceGap || col >= iPieceGap + 4)
                                     {
-                                        SetTile(col, Bounds.yMin);
+                                        SetTile(col, bounds.yMin);
                                     }
                                 }
 
                                 if (workingHeight >= 2)
                                 {
                                     // Middle: O-piece opportunity
-                                    int oPieceGap = Random.Range(Bounds.xMin, Bounds.xMax - 1);
-                                    for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                                    int oPieceGap = Random.Range(bounds.xMin, bounds.xMax - 1);
+                                    for (int col = bounds.xMin; col < bounds.xMax; col++)
                                     {
                                         if (col < oPieceGap || col >= oPieceGap + 2)
                                         {
-                                            SetTile(col, Bounds.yMin + 1);
+                                            SetTile(col, bounds.yMin + 1);
                                         }
                                     }
                                 }
@@ -332,22 +345,22 @@ public class Board : MonoBehaviour
                                 if (workingHeight >= 4)
                                 {
                                     // Top: T-piece opportunity
-                                    int tCenter = Random.Range(Bounds.xMin + 1, Bounds.xMax - 1);
+                                    int tCenter = Random.Range(bounds.xMin + 1, bounds.xMax - 1);
 
                                     // Create inverted T cavity
-                                    for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                                    for (int col = bounds.xMin; col < bounds.xMax; col++)
                                     {
                                         if (col != tCenter)
                                         {
-                                            SetTile(col, Bounds.yMin + 2);
+                                            SetTile(col, bounds.yMin + 2);
                                         }
                                     }
 
-                                    for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                                    for (int col = bounds.xMin; col < bounds.xMax; col++)
                                     {
                                         if (col < tCenter - 1 || col > tCenter + 1)
                                         {
-                                            SetTile(col, Bounds.yMin + 3);
+                                            SetTile(col, bounds.yMin + 3);
                                         }
                                     }
                                 }
@@ -366,16 +379,16 @@ public class Board : MonoBehaviour
                     // Create stepped structure with placement opportunities
                     for (int row = 0; row < workingHeight; row++)
                     {
-                        int currentRow = Bounds.yMin + row;
-                        int blocksToPlace = (Bounds.xMax - Bounds.xMin) - (row + 2); // Fewer blocks each row up
+                        int currentRow = bounds.yMin + row;
+                        int blocksToPlace = (bounds.xMax - bounds.xMin) - (row + 2); // Fewer blocks each row up
 
                         if (blocksToPlace > 0)
                         {
                             // Distribute blocks with strategic gaps
                             int gapSize = Random.Range(2, 4); // Gap for different pieces
-                            int gapStart = Random.Range(Bounds.xMin, Bounds.xMax - gapSize);
+                            int gapStart = Random.Range(bounds.xMin, bounds.xMax - gapSize);
 
-                            for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                            for (int col = bounds.xMin; col < bounds.xMax; col++)
                             {
                                 if (col < gapStart || col >= gapStart + gapSize)
                                 {
@@ -393,16 +406,16 @@ public class Board : MonoBehaviour
 
                     // Create complex but solvable structure
                     // Bottom foundation with wells
-                    for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                    for (int col = bounds.xMin; col < bounds.xMax; col++)
                     {
                         // Create wells every 5 columns for I-pieces
-                        bool isWell = (col - Bounds.xMin) % 5 == 2;
+                        bool isWell = (col - bounds.xMin) % 5 == 2;
                         if (!isWell)
                         {
                             // Fill bottom 3 rows of non-well columns
                             for (int wellRow = 0; wellRow < 3 && wellRow < workingHeight; wellRow++)
                             {
-                                SetTile(col, Bounds.yMin + wellRow);
+                                SetTile(col, bounds.yMin + wellRow);
                             }
                         }
                     }
@@ -410,15 +423,15 @@ public class Board : MonoBehaviour
                     // Mid-level irregular pattern
                     if (workingHeight >= 5)
                     {
-                        for (int col = Bounds.xMin; col < Bounds.xMax; col++)
+                        for (int col = bounds.xMin; col < bounds.xMax; col++)
                         {
-                            int pattern = (col - Bounds.xMin) % 4;
+                            int pattern = (col - bounds.xMin) % 4;
                             if (pattern == 0 || pattern == 3) // Irregular placement
                             {
-                                SetTile(col, Bounds.yMin + 3);
+                                SetTile(col, bounds.yMin + 3);
                                 if (pattern == 0 && workingHeight >= 6)
                                 {
-                                    SetTile(col, Bounds.yMin + 4);
+                                    SetTile(col, bounds.yMin + 4);
                                 }
                             }
                         }
@@ -431,12 +444,12 @@ public class Board : MonoBehaviour
                         int structures = Random.Range(2, 4);
                         for (int s = 0; s < structures; s++)
                         {
-                            int structStart = Random.Range(Bounds.xMin, Bounds.xMax - 2);
+                            int structStart = Random.Range(bounds.xMin, bounds.xMax - 2);
                             int structWidth = Random.Range(2, 4);
 
-                            for (int w = 0; w < structWidth && structStart + w < Bounds.xMax; w++)
+                            for (int w = 0; w < structWidth && structStart + w < bounds.xMax; w++)
                             {
-                                SetTile(structStart + w, Bounds.yMin + 5 + s);
+                                SetTile(structStart + w, bounds.yMin + 5 + s);
                             }
                         }
                     }
@@ -448,8 +461,8 @@ public class Board : MonoBehaviour
                 break;
         }
 
-        Debug.Log($"[Board] Applied board_preset {preset} with height {boardHeight}");
-    }
+
+}
 
     private void SetTile(int x, int y)
     {

@@ -379,46 +379,47 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     }
 
     void SendGameState()
+{
+    if (board == null || SocketManager.Instance == null)
+        return;
+
+    GameState state = new GameState();
+
+    // Get board state
+    state.board = GetBoardState();
+    state.currentPiece = GetCurrentPieceState();
+    state.nextPiece = GetNextPieceState();
+    state.piecePosition = currentPiece != null ? (Vector2Int)currentPiece.position : Vector2Int.zero;
+    state.score = board.playerScore;
+    state.gameOver = gameOver;
+    state.reward = lastReward;
+    state.episodeEnd = gameOver;
+
+    // Action space information
+    state.actionSpaceSize = 40;
+    state.actionSpaceType = "column_rotation";
+    state.isExecutingAction = isExecutingAction;
+    state.waitingForAction = !isExecutingAction && !waitingForNewPiece && currentPiece != null;
+    
+    // Curriculum information - FIXED PROPERTY NAMES
+    state.curriculumBoardHeight = curriculumBoardHeight;
+    state.curriculumBoardPreset = curriculumBoardPreset;
+    state.allowedTetrominoTypes = allowedTetrominoTypes;
+    
+    // Additional metrics
+    state.holesCount = board.CountHoles();
+    state.stackHeight = board.CalculateStackHeight();
+    state.perfectClear = board.IsPerfectClear();
+    state.linesCleared = 0; // This should be set when lines are actually cleared
+
+    SocketManager.Instance.SendGameState(state);
+
+    // Reset reward after sending
+    if (!gameOver)
     {
-        if (board == null || SocketManager.Instance == null)
-            return;
-
-        GameState state = new GameState();
-
-        // Get board state
-        state.board = GetBoardState();
-        state.currentPiece = GetCurrentPieceState();
-        state.nextPiece = GetNextPieceState();
-        state.piecePosition = currentPiece != null ? (Vector2Int)currentPiece.position : Vector2Int.zero;
-        state.score = board.playerScore;
-        state.gameOver = gameOver;
-        state.reward = lastReward;
-        state.episodeEnd = gameOver;
-
-        // Action space information - Now these properties exist in GameState
-        state.actionSpaceSize = 40;
-        state.actionSpaceType = "column_rotation";
-        state.isExecutingAction = isExecutingAction;
-        state.waitingForAction = !isExecutingAction && !waitingForNewPiece && currentPiece != null;
-        // Curriculum information
-        state.curriculumBoardHeight = curriculumBoardHeight;
-        state.curriculumBoardPreset = curriculumBoardPreset;
-        state.allowedTetrominoTypes = allowedTetrominoTypes;
-        // Additional metrics
-        state.holesCount = board.CountHoles();
-        state.stackHeight = board.CalculateStackHeight();
-        state.perfectClear = board.IsPerfectClear();
-        state.linesCleared = 0; // This should be set when lines are actually cleared
-
-        SocketManager.Instance.SendGameState(state);
-
-        // Reset reward after sending
-        if (!gameOver)
-        {
-            lastReward = 0f;
-        }
+        lastReward = 0f;
     }
-
+}
     float[] GetBoardState()
     {
         var bounds = board.Bounds;

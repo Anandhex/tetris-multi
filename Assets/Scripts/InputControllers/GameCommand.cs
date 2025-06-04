@@ -51,14 +51,15 @@ public class GameState
     public bool waitingForAction = true;
 
     // Additional metrics
-    public int linesCleared;
-    public int holesCount;
-    public float stackHeight;
-    public bool perfectClear;
+ // Board metrics
+    public int holesCount = 0;
+    public float stackHeight = 0f;
+    public bool perfectClear = false;
+    public int linesCleared = 0;
 
 
-    public float curriculumBoardHeight;
-    public int curriculumBoardPreset;
-    public int allowedTetrominoTypes;
-     public bool curriculumConfirmed;
+  public float curriculumBoardHeight = 20f;
+    public int curriculumBoardPreset = 0;
+    public int allowedTetrominoTypes = 7;
+    public bool curriculumConfirmed = false;
 }
