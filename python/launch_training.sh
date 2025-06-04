@@ -10,16 +10,8 @@ timestamp=$(date +"%Y%m%d_%H%M%S")
 echo "Session: $timestamp"
 echo ""
 
-# Start TensorBoard in background
-echo "Starting TensorBoard..."
-tensorboard --logdir runs --port 6006 --reload_interval 1 &
-TENSORBOARD_PID=$!
 
-# Wait for TensorBoard to start
-sleep 5
 
-echo "TensorBoard started at http://localhost:6006"
-echo ""
 
 # Check Unity connection
 echo "IMPORTANT: Make sure Unity is running with the Tetris scene!"
@@ -28,7 +20,6 @@ read -p "Is Unity running and ready? (y/n): " unity_ready
 
 if [ "$unity_ready" != "y" ] && [ "$unity_ready" != "Y" ]; then
     echo "Please start Unity first, then run this script again."
-    kill $TENSORBOARD_PID 2>/dev/null
     exit 1
 fi
 

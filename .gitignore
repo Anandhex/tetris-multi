@@ -76,3 +76,9 @@ crashlytics-build.properties
 /[Aa]ssets/python/results2/*
 
 /results/*
+
+/python/data/*
+/python/__pycache__/*
+/python/runs/*
+/python/logs/*
+/python/*.log

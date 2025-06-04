@@ -1,6 +1,7 @@
 public class PlacementInfo
 {
- public int actionIndex;       public int linesCleared;
+    public int actionIndex;
+    public int linesCleared;
     public float aggregateHeight;
     public float maxHeight;
     public int holes;

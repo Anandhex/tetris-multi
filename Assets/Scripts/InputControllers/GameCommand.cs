@@ -41,13 +41,13 @@ public class GameState
     public bool gameOver;
     public float reward;
     public bool episodeEnd;
-    
+
     // Action space information
     public int actionSpaceSize = 40;
     public string actionSpaceType = "column_rotation"; // 10 columns × 4 rotations
     public bool isExecutingAction = false;
     public bool waitingForAction = true;
-    
+
     // Additional metrics
     public int linesCleared;
     public int holesCount;
