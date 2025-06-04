@@ -95,7 +95,7 @@ void SendCurriculumConfirmation()
         
         SocketManager.Instance.SendGameState(confirmationState);
     }
-}  
+}
     void ExecuteAction(int actionIndex)
     {
         if (actionIndex < 0 || actionIndex >= 40)
@@ -103,26 +103,47 @@ void SendCurriculumConfirmation()
             Debug.LogWarning($"Invalid action index: {actionIndex}. Must be 0-39.");
             return;
         }
-        
+
         if (currentPiece == null || isExecutingAction)
         {
             Debug.LogWarning("Cannot execute action: no current piece or already executing action");
             return;
         }
-        
-        // Decode action: action = column * 4 + rotation
-        targetColumn = actionIndex / 4;  // 0-9
-        targetRotation = actionIndex % 4; // 0-3
-        
-        Debug.Log($"Executing action {actionIndex}: Column {targetColumn}, Rotation {targetRotation}");
-        
+
+        // Simple mapping: 40 actions = 10 columns × 4 rotations
+        int targetColumnIndex = actionIndex / 4;  // 0-9
+        targetRotation = actionIndex % 4;         // 0-3
+
+        // Map column index to actual board position
+        targetColumn = GetBoardColumnFromIndex(targetColumnIndex);
+
+        Debug.Log($"Action {actionIndex}: Column Index {targetColumnIndex} -> Board Column {targetColumn}, Rotation {targetRotation}");
+
         isExecutingAction = true;
         actionCompleted = false;
         waitingForNewPiece = false;
-        
+
         StartCoroutine(ExecuteDirectPlacement());
     }
+int GetBoardColumnFromIndex(int columnIndex)
+{
+    // Map action column index (0-9) to board coordinates
+    var bounds = board.Bounds;
     
+    // For a 10-wide board, distribute columns evenly across the board width
+    if (bounds.width != 10)
+    {
+        Debug.LogWarning($"Board width is {bounds.width}, not 10. Mapping may be incorrect.");
+    }
+    
+    // Simple mapping: column index directly maps to board position
+    int boardColumn = bounds.xMin + columnIndex;
+    
+    // Clamp to board bounds just in case
+    boardColumn = Mathf.Clamp(boardColumn, bounds.xMin, bounds.xMax - 1);
+    
+    return boardColumn;
+}
     IEnumerator ExecuteDirectPlacement()
     {
         if (currentPiece == null)
@@ -130,120 +151,164 @@ void SendCurriculumConfirmation()
             isExecutingAction = false;
             yield break;
         }
-        
-        // First, apply the target rotation
-        int currentRotation = currentPiece.rotationIndex;
-        int rotationsNeeded = (targetRotation - currentRotation + 4) % 4;
-        
-        for (int i = 0; i < rotationsNeeded; i++)
-        {
-            // Clear current position
-            board.Clear(currentPiece);
-            
-            // Try to rotate (using rotate right for simplicity)
-            currentPiece.Rotate(1);
-            
-            // Check if rotation is valid, if not try wall kicks or revert
-            if (!board.IsValidPosition(currentPiece, currentPiece.position))
-            {
-                // Simple wall kick attempts
-                Vector3Int[] kickOffsets = { 
-                    Vector3Int.left, Vector3Int.right, 
-                    Vector3Int.left * 2, Vector3Int.right * 2,
-                    Vector3Int.up, Vector3Int.down 
-                };
-                
-                bool kickSuccessful = false;
-                foreach (var offset in kickOffsets)
-                {
-                    if (board.IsValidPosition(currentPiece, currentPiece.position + offset))
-                    {
-                        currentPiece.position += offset;
-                        kickSuccessful = true;
-                        break;
-                    }
-                }
-                
-                if (!kickSuccessful)
-                {
-                    // Revert rotation if no valid position found
-                    currentPiece.Rotate(-1);
-                    Debug.LogWarning($"Could not rotate to target rotation {targetRotation}");
-                    break;
-                }
-            }
-            
-            // Set piece in new position
-            board.Set(currentPiece);
-            yield return new WaitForSeconds(0.05f); // Small delay to show rotation
-        }
-        
-        // Now move to target column
-        int currentColumn = currentPiece.position.x;
-        int columnsToMove = targetColumn - currentColumn;
-        
-        // Move horizontally
-        for (int i = 0; i < Mathf.Abs(columnsToMove); i++)
-        {
-            board.Clear(currentPiece);
-            
-            Vector3Int moveDirection = columnsToMove > 0 ? Vector3Int.right : Vector3Int.left;
-            Vector3Int newPosition = currentPiece.position + moveDirection;
-            
-            if (board.IsValidPosition(currentPiece, newPosition))
-            {
-                currentPiece.position = newPosition;
-            }
-            else
-            {
-                Debug.LogWarning($"Could not move to target column {targetColumn}");
-                break;
-            }
-            
-            board.Set(currentPiece);
-            yield return new WaitForSeconds(0.05f); // Small delay to show movement
-        }
-        
-        // Finally, drop the piece
-        while (true)
-        {
-            board.Clear(currentPiece);
-            Vector3Int newPosition = currentPiece.position + Vector3Int.down;
-            
-            if (board.IsValidPosition(currentPiece, newPosition))
-            {
-                currentPiece.position = newPosition;
-                board.Set(currentPiece);
-                yield return new WaitForSeconds(0.02f); // Fast drop
-            }
-            else
-            {
-                // Piece has landed
-                board.Set(currentPiece);
-                break;
-            }
-        }
-        
-        // Lock the piece
-        board.Set(currentPiece);
-        board.ClearLines();
-        
-        // Calculate reward for this placement
-        CalculatePlacementReward();
-        
-        // Mark action as completed
-        actionCompleted = true;
-        isExecutingAction = false;
-        waitingForNewPiece = true;
-        
-        // Spawn new piece
-        board.SpawnPiece();
-        
-        // Send final state for this action
-        yield return new WaitForSeconds(0.1f);
-        SendGameState();
-        waitingForNewPiece = false;
+
+        // Store original state for debugging
+        Vector3Int originalPosition = currentPiece.position;
+        int originalRotation = currentPiece.rotationIndex;
+
+        Debug.Log($"Starting placement: From {originalPosition} (rot {originalRotation}) to column {targetColumn} (rot {targetRotation})");
+
+        // Step 1: Apply target rotation
+        yield return StartCoroutine(RotatePiece());
+
+        // Step 2: Move to target column  
+        yield return StartCoroutine(MovePieceToColumn());
+
+        // Step 3: Drop piece
+        yield return StartCoroutine(DropPiece());
+
+        // Step 4: Finalize placement
+        FinalizePlacement();
     }
+IEnumerator RotatePiece()
+{
+    int currentRotation = currentPiece.rotationIndex;
+    int rotationsNeeded = (targetRotation - currentRotation + 4) % 4;
+    
+    for (int i = 0; i < rotationsNeeded; i++)
+    {
+        board.Clear(currentPiece);
+        
+        // Store current state for potential revert
+        Vector3Int positionBeforeRotation = currentPiece.position;
+        int rotationBeforeAttempt = currentPiece.rotationIndex;
+        
+        currentPiece.Rotate(1);
+        
+        // Try current position first
+        if (board.IsValidPosition(currentPiece, currentPiece.position))
+        {
+            board.Set(currentPiece);
+            yield return new WaitForSeconds(0.03f);
+            continue;
+        }
+        
+        // Try wall kicks
+        Vector3Int[] kickOffsets = { 
+            Vector3Int.left, Vector3Int.right, Vector3Int.up,
+            Vector3Int.left * 2, Vector3Int.right * 2,
+            new Vector3Int(-1, 1, 0), new Vector3Int(1, 1, 0) // diagonal kicks
+        };
+        
+        bool kickSuccessful = false;
+        foreach (var offset in kickOffsets)
+        {
+            Vector3Int testPosition = positionBeforeRotation + offset;
+            if (board.IsValidPosition(currentPiece, testPosition))
+            {
+                currentPiece.position = testPosition;
+                kickSuccessful = true;
+                break;
+            }
+        }
+        
+        if (!kickSuccessful)
+        {
+            // Revert rotation
+            currentPiece.Rotate(-1);
+            currentPiece.position = positionBeforeRotation;
+            Debug.LogWarning($"Could not rotate to target rotation {targetRotation}");
+            break;
+        }
+        
+        board.Set(currentPiece);
+        yield return new WaitForSeconds(0.03f);
+    }
+}
+
+IEnumerator MovePieceToColumn()
+{
+    int currentColumn = currentPiece.position.x;
+    int columnsToMove = targetColumn - currentColumn;
+    
+    // Move step by step
+    while (columnsToMove != 0)
+    {
+        board.Clear(currentPiece);
+        
+        Vector3Int moveDirection = columnsToMove > 0 ? Vector3Int.right : Vector3Int.left;
+        Vector3Int newPosition = currentPiece.position + moveDirection;
+        
+        if (board.IsValidPosition(currentPiece, newPosition))
+        {
+            currentPiece.position = newPosition;
+            columnsToMove += (columnsToMove > 0) ? -1 : 1;
+        }
+        else
+        {
+            Debug.LogWarning($"Cannot move further. Target: {targetColumn}, Current: {currentPiece.position.x}");
+            break;
+        }
+        
+        board.Set(currentPiece);
+        yield return new WaitForSeconds(0.03f);
+    }
+}
+
+IEnumerator DropPiece()
+{
+    int dropSteps = 0;
+    while (true)
+    {
+        board.Clear(currentPiece);
+        Vector3Int newPosition = currentPiece.position + Vector3Int.down;
+        
+        if (board.IsValidPosition(currentPiece, newPosition))
+        {
+            currentPiece.position = newPosition;
+            board.Set(currentPiece);
+            dropSteps++;
+            yield return new WaitForSeconds(0.01f); // Fast drop
+        }
+        else
+        {
+            board.Set(currentPiece);
+            break;
+        }
+    }
+    
+    Debug.Log($"Piece dropped {dropSteps} steps and landed at {currentPiece.position}");
+}
+
+void FinalizePlacement()
+{
+    // Lock the piece in place
+    board.Set(currentPiece);
+    
+    // Clear any completed lines
+    board.ClearLines();
+    
+    // Calculate reward
+    CalculatePlacementReward();
+    
+    // Mark action as completed
+    actionCompleted = true;
+    isExecutingAction = false;
+    waitingForNewPiece = true;
+    
+    // Spawn new piece
+    board.SpawnPiece();
+    
+    // Send final state
+    StartCoroutine(SendStateAfterDelay());
+}
+
+IEnumerator SendStateAfterDelay()
+{
+    yield return new WaitForSeconds(0.1f);
+    SendGameState();
+    waitingForNewPiece = false;
+}
     
     void CalculatePlacementReward()
     {
