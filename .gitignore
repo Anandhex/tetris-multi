@@ -82,3 +82,4 @@ crashlytics-build.properties
 /python/runs/*
 /python/logs/*
 /python/*.log
+/python/models/*

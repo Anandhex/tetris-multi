@@ -50,7 +50,7 @@ public class Board : MonoBehaviour
 
     public IPlayerInputController inputController;
 
-    public int playerScore { get; private set; }
+    public int playerScore;
     public TMP_Text playerScoreToDisplay;
     public TMP_Text playerTagHolder;
     public NextPiece nextPieceDisplay;
@@ -146,15 +146,9 @@ public class Board : MonoBehaviour
         int boardHeight = 20; // Default board height
 
         // Check for both types of ML agents
-        TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
         SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
 
-        if (mlAgent != null)
-        {
-            preset = (int)mlAgent.curriculumBoardPreset;
-            boardHeight = (int)mlAgent.curriculumBoardHeight;
-        }
-        else if (socketAgent != null)
+        if (socketAgent != null)
         {
             preset = socketAgent.curriculumBoardPreset;
             boardHeight = (int)socketAgent.curriculumBoardHeight;
@@ -167,7 +161,7 @@ public class Board : MonoBehaviour
         ApplyBoardPreset(preset, boardHeight);
 
 
-             Debug.Log($"[Board] Applied board_preset {preset} with height {boardHeight}");
+        Debug.Log($"[Board] Applied board_preset {preset} with height {boardHeight}");
     }
 
     private void ApplyBoardPreset(int preset, int boardHeight)
@@ -177,7 +171,7 @@ public class Board : MonoBehaviour
 
         // Your existing preset logic here...
         // (Keep all your switch statement code)
-       // Adjust bounds based on curriculum board height
+        // Adjust bounds based on curriculum board height
         int maxY = bounds.yMin + boardHeight - 1;
 
         switch (preset)
@@ -462,7 +456,7 @@ public class Board : MonoBehaviour
         }
 
 
-}
+    }
 
     private void SetTile(int x, int y)
     {
