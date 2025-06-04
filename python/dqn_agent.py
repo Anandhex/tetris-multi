@@ -20,8 +20,8 @@ class TetrisDQN(nn.Module):
         self.conv3 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
         self.pool = nn.AdaptiveAvgPool2d((5, 5))
         
-        # Calculate conv output size (assuming 20x10 board -> 10x5 after pooling)
-        conv_output_size = 64 * 5 * 5 
+        # Fixed conv output size after adaptive pooling
+        conv_output_size = 64 * 5 * 5  # Always 1600 after adaptive pooling
         
         # Fully connected layers
         self.fc1 = nn.Linear(conv_output_size + 8, hidden_size)  # +8 for piece info and metrics
@@ -30,26 +30,27 @@ class TetrisDQN(nn.Module):
         self.fc4 = nn.Linear(hidden_size // 2, output_size)
         
         self.dropout = nn.Dropout(0.3)
-        self.batch_norm1 = nn.BatchNorm1d(hidden_size)
-        self.batch_norm2 = nn.BatchNorm1d(hidden_size)
+        # Use LayerNorm instead of BatchNorm to avoid batch size issues
+        self.layer_norm1 = nn.LayerNorm(hidden_size)
+        self.layer_norm2 = nn.LayerNorm(hidden_size)
         
     def forward(self, board, piece_info, metrics):
-          # Process board through conv layers
+        # Process board through conv layers
         x = F.relu(self.conv1(board))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
-        x = self.pool(x)  # Always outputs 64x5x5
+        x = self.pool(x)  # Always outputs batch_size x 64 x 5 x 5
         
         # Flatten conv output
         x = x.view(x.size(0), -1)  # Should always be batch_size x 1600
         
         # Concatenate with piece info and metrics
-        x = torch.cat([x, piece_info, metrics], dim=1)
+        x = torch.cat([x, piece_info, metrics], dim=1)  # batch_size x 1608
         
-        # Fully connected layers with batch norm
-        x = F.relu(self.batch_norm1(self.fc1(x)))
+        # Fully connected layers with layer norm
+        x = F.relu(self.layer_norm1(self.fc1(x)))
         x = self.dropout(x)
-        x = F.relu(self.batch_norm2(self.fc2(x)))
+        x = F.relu(self.layer_norm2(self.fc2(x)))
         x = self.dropout(x)
         x = F.relu(self.fc3(x))
         x = self.fc4(x)
@@ -104,18 +105,29 @@ class DQNAgent:
         
         # Handle variable board sizes from curriculum learning
         if len(board) == 0:
-            # Default empty board
+            # Default empty board (20x10)
             board = np.zeros(200)
-        
-        # Calculate actual board dimensions
-        board_width = 10  # Always 10
-        board_height = len(board) // board_width
-        
-        if board_height == 0:
             board_height = 20
-            board = np.zeros(200)
+            board_width = 10
+        else:
+            # Calculate actual board dimensions
+            board_width = 10  # Always 10
+            board_height = len(board) // board_width
+            
+            if board_height == 0:
+                board_height = 20
+                board = np.zeros(200)
         
-        # Reshape board
+        # Ensure board is properly sized
+        expected_size = board_height * board_width
+        if len(board) != expected_size:
+            # Pad or truncate to expected size
+            if len(board) < expected_size:
+                board = np.pad(board, (0, expected_size - len(board)), mode='constant')
+            else:
+                board = board[:expected_size]
+        
+        # Reshape board to proper dimensions
         board = board.reshape(1, 1, board_height, board_width)
         
         # Convert to float32 for better performance
@@ -125,8 +137,8 @@ class DQNAgent:
         piece_info = game_state.get('currentPiece', [0, 0, 0, 0])
         next_piece = game_state.get('nextPiece', [0])
         
-        # Pad to exactly 8 features
-        piece_features = (piece_info + next_piece + [0, 0, 0])[:8]
+        # Pad to exactly 4 features for piece info
+        piece_features = (piece_info + [0, 0, 0, 0])[:4]
         piece_features = np.array(piece_features, dtype=np.float32).reshape(1, -1)
         
         # Game metrics (normalized) - ensure exactly 4 features
@@ -183,7 +195,12 @@ class DQNAgent:
         if len(self.memory) < self.batch_size:
             return None
         
-        batch = random.sample(self.memory, self.batch_size)
+        # Ensure we have enough samples for batch norm (minimum 2)
+        actual_batch_size = min(self.batch_size, len(self.memory))
+        if actual_batch_size < 2:
+            return None
+        
+        batch = random.sample(self.memory, actual_batch_size)
         states = [e[0] for e in batch]
         actions = [e[1] for e in batch]
         rewards = [e[2] for e in batch]
@@ -239,7 +256,7 @@ class DQNAgent:
         
         # Calculate target Q values
         target_q_values = []
-        for i in range(self.batch_size):
+        for i in range(actual_batch_size):
             if dones[i]:
                 target_q_values.append(rewards[i])
             else:
@@ -345,7 +362,7 @@ class DQNAgent:
         # Save model graph to TensorBoard
         try:
             dummy_board = torch.randn(1, 1, 20, 10).to(self.device)
-            dummy_piece = torch.randn(1, 8).to(self.device)
+            dummy_piece = torch.randn(1, 4).to(self.device)
             dummy_metrics = torch.randn(1, 4).to(self.device)
             self.writer.add_graph(self.q_network, (dummy_board, dummy_piece, dummy_metrics))
         except Exception as e:
