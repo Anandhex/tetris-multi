@@ -5,7 +5,6 @@ using TMPro;
 using System.Collections;
 using System.Collections.Generic;
 
-
 public class Board : MonoBehaviour
 {
     public Tilemap tilemap { get; private set; }
@@ -21,20 +20,31 @@ public class Board : MonoBehaviour
 
     private int lastBoardHeight = -1;
     public Vector3Int baseSpawnPosition;
+    
     public Vector3Int spawnPosition
     {
         get
         {
+            int currentHeight = 20; // Default height
+            
+            // Check for both types of ML agents
             TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
+            SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
+            
             if (mlAgent != null)
             {
-                int currentHeight = (int)mlAgent.curriculumBoardHeight;
-                // Adjust spawn position to be at the top of the current board height
-                return new Vector3Int(baseSpawnPosition.x, currentHeight / 2 - 2, baseSpawnPosition.z);
+                currentHeight = (int)mlAgent.curriculumBoardHeight;
             }
-            return baseSpawnPosition;
+            else if (socketAgent != null)
+            {
+                currentHeight = (int)socketAgent.curriculumBoardHeight;
+            }
+            
+            // Adjust spawn position to be at the top of the current board height
+            return new Vector3Int(baseSpawnPosition.x, currentHeight / 2 - 2, baseSpawnPosition.z);
         }
     }
+    
     public Vector2Int boardSize = new Vector2Int(10, 70);
     private float scoreSpeedBonus = 0f;
 
@@ -52,8 +62,20 @@ public class Board : MonoBehaviour
     {
         get
         {
+            int height = boardSize.y; // Default height
+            
+            // Check for both types of ML agents
             TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
-            int height = (mlAgent != null) ? (int)mlAgent.curriculumBoardHeight : boardSize.y;
+            SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
+            
+            if (mlAgent != null)
+            {
+                height = (int)mlAgent.curriculumBoardHeight;
+            }
+            else if (socketAgent != null)
+            {
+                height = (int)socketAgent.curriculumBoardHeight;
+            }
 
             Vector2Int position = new Vector2Int(-this.boardSize.x / 2, -height / 2);
             return new RectInt(position, new Vector2Int(boardSize.x, height));
@@ -88,17 +110,19 @@ public class Board : MonoBehaviour
         {
             this.tetrominoes[i].Initialize();
         }
-
-        // Check if we're using ML-Agent as input controller
     }
 
     private void Start()
     {
-
         this.playerScore = 0;
         this.gameStartTime = Time.time;
 
+        Debug.Log($"[Board] Starting with input controller: {inputController?.GetType().Name}");
+
         UpdateGridVisualization();
+
+        // Apply initial curriculum
+        ApplyCurriculumBoardPreset();
 
         // Only spawn a piece if all components are properly initialized
         if (activePiece != null && tetrominoes != null && tetrominoes.Length > 0)
@@ -107,7 +131,7 @@ public class Board : MonoBehaviour
         }
         else
         {
-            // Debug.LogError("Cannot spawn piece: Required components not initialized");
+            Debug.LogError("Cannot spawn piece: Required components not initialized");
         }
 
         if (playerTagHolder != null)
@@ -116,18 +140,27 @@ public class Board : MonoBehaviour
         }
     }
 
-    // Your board class
     public void ApplyCurriculumBoardPreset()
     {
         int preset = 0; // Default to empty board
         int boardHeight = 20; // Default board height
 
+        // Check for both types of ML agents
         TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
+        SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
+        
         if (mlAgent != null)
         {
             preset = (int)mlAgent.curriculumBoardPreset;
             boardHeight = (int)mlAgent.curriculumBoardHeight;
         }
+        else if (socketAgent != null)
+        {
+            preset = socketAgent.curriculumBoardPreset;
+            boardHeight = (int)socketAgent.curriculumBoardHeight;
+        }
+
+        Debug.Log($"[Board] Applying curriculum: preset={preset}, height={boardHeight}");
 
         ClearBoard(); // Always start clean
 
@@ -137,7 +170,7 @@ public class Board : MonoBehaviour
         switch (preset)
         {
             case 0: // empty_board - Full Tetris game
-                    // Empty board - no pre-configuration
+                // Empty board - no pre-configuration
                 break;
 
             case 1: // minimal_pre_config - Single obvious I-piece placement
@@ -426,11 +459,8 @@ public class Board : MonoBehaviour
         }
     }
 
-
     private void Update()
     {
-
-
         if (playerScoreToDisplay != null)
         {
             this.playerScoreToDisplay.text = this.playerScore.ToString();
@@ -449,9 +479,20 @@ public class Board : MonoBehaviour
 
     public void GenerateNextPiece()
     {
-        // Get curriculum parameters from ML agent
+        int allowedTypes = 7; // Default to all pieces
+        
+        // Check for both types of ML agents
         TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
-        int allowedTypes = (mlAgent != null) ? mlAgent.allowedTetrominoTypes : 7;
+        SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
+        
+        if (mlAgent != null)
+        {
+            allowedTypes = mlAgent.allowedTetrominoTypes;
+        }
+        else if (socketAgent != null)
+        {
+            allowedTypes = socketAgent.allowedTetrominoTypes;
+        }
 
         // Limit piece selection based on curriculum
         int maxIndex = Mathf.Min(allowedTypes, this.tetrominoes.Length);
@@ -466,38 +507,48 @@ public class Board : MonoBehaviour
 
     private void CheckForBoardHeightChange()
     {
+        int currentHeight = 20; // Default
+        
+        // Check for both types of ML agents
         TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
+        SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
+        
         if (mlAgent != null)
         {
-            // Debug.Log("Curriculum Board Height: " + mlAgent.curriculumBoardHeight);
-            int currentHeight = (int)mlAgent.curriculumBoardHeight;
-            // Debug.Log("Here:" + currentHeight + ":" + lastBoardHeight);
+            currentHeight = (int)mlAgent.curriculumBoardHeight;
+        }
+        else if (socketAgent != null)
+        {
+            currentHeight = (int)socketAgent.curriculumBoardHeight;
+        }
 
-            if (currentHeight != lastBoardHeight)
+        if (currentHeight != lastBoardHeight)
+        {
+            Debug.Log($"[Board] Board height changed from {lastBoardHeight} to {currentHeight}");
+            lastBoardHeight = currentHeight;
+
+            UpdateGridVisualization();
+            ClearBoard();
+            ApplyCurriculumBoardPreset();
+
+            // Reset the active piece to reflect curriculum change
+            if (activePiece != null)
             {
-                // Debug.Log("In Here");
-
-                // Debug.Log("LastBoardHeight:" + lastBoardHeight);
-                lastBoardHeight = currentHeight;
-                // Debug.Log("CurrentBoardHeight:" + lastBoardHeight);
-
-                UpdateGridVisualization();
-
-                ClearBoard();
-                ApplyCurriculumBoardPreset();
-
-                // Reset the active piece to reflect curriculum change:
-                if (activePiece != null)
-                {
-                    // Clear the piece tiles from tilemap
-                    Clear(activePiece);
-                }
-
-                // Spawn a new piece using updated curriculum parameters
-                SpawnPiece();
+                Clear(activePiece);
             }
+
+            // Spawn a new piece using updated curriculum parameters
+            SpawnPiece();
         }
     }
+
+    public void ForceCurriculumUpdate()
+    {
+        Debug.Log("[Board] Forcing curriculum update");
+        lastBoardHeight = -1; // Force update on next check
+        CheckForBoardHeightChange();
+    }
+
     private void UpdateGridVisualization()
     {
         if (gridSpriteRenderer == null) return;
@@ -520,7 +571,6 @@ public class Board : MonoBehaviour
         gridSpriteRenderer.transform.position = gridCenter;
     }
 
-
     public void SpawnPiece()
     {
         int random = Random.Range(0, this.tetrominoes.Length);
@@ -530,11 +580,17 @@ public class Board : MonoBehaviour
 
         this.activePiece.Initialize(this, this.spawnPosition, pieceToUse, this.inputController);
 
-        // Inform ML agent about the new piece if applicable
+        // Inform both types of ML agents about the new piece
         TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
+        SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
+        
         if (mlAgent != null)
         {
             mlAgent.SetCurrentPiece(this.activePiece);
+        }
+        else if (socketAgent != null)
+        {
+            socketAgent.SetCurrentPiece(this.activePiece);
         }
 
         GenerateNextPiece();
@@ -589,6 +645,7 @@ public class Board : MonoBehaviour
         }
         return holes;
     }
+
     public int CountHoles()
     {
         int holes = 0;
@@ -610,6 +667,7 @@ public class Board : MonoBehaviour
         }
         return holes;
     }
+
     public int[] GetRowFillCounts()
     {
         int[] rowFills = new int[Bounds.size.y];
@@ -691,30 +749,31 @@ public class Board : MonoBehaviour
 
         return false;
     }
+
     private void GameOver()
     {
-         // Notify ML agent if this is an ML agent-controlled board
-    SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
-    if (socketAgent != null)
-    {
-        socketAgent.OnGameOver();
-        // Don't immediately reset - let the agent handle it
-        return;
-    }
-    
-    TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
-    if (mlAgent != null)
-    {
-        mlAgent.OnGameOver();
-        StartCoroutine(ResetGameForMLTraining());
-        return;
-    }
+        // Notify ML agent if this is an ML agent-controlled board
+        SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
+        if (socketAgent != null)
+        {
+            socketAgent.OnGameOver();
+            // Don't immediately reset - let the agent handle it
+            return;
+        }
+        
+        TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
+        if (mlAgent != null)
+        {
+            mlAgent.OnGameOver();
+            StartCoroutine(ResetGameForMLTraining());
+            return;
+        }
 
-    // Store the score for the game over screen
-    Data.PlayerScore = this.playerScore;
+        // Store the score for the game over screen
+        Data.PlayerScore = this.playerScore;
 
-    // Load game over scene only if not in ML training
-    SceneManager.LoadScene(2);
+        // Load game over scene only if not in ML training
+        SceneManager.LoadScene(2);
     }
 
     private IEnumerator ResetGameForMLTraining()
@@ -764,10 +823,8 @@ public class Board : MonoBehaviour
         }
     }
 
-
     public bool IsValidPosition(Piece piece, Vector3Int position)
     {
-
         RectInt bounds = this.Bounds;
 
         for (int i = 0; i < piece.cells.Length; i++)
@@ -805,28 +862,36 @@ public class Board : MonoBehaviour
             {
                 row++;
             }
-        } // Notify ML agent about line clears
-    if (linesCleared > 0)
-    {
-        SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
-        if (socketAgent != null)
-        {
-            socketAgent.OnLinesCleared(linesCleared);
         }
-    }
+
+        // Notify ML agent about line clears
+        if (linesCleared > 0)
+        {
+            SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
+            if (socketAgent != null)
+            {
+                socketAgent.OnLinesCleared(linesCleared);
+            }
+            
+            // Also notify TetrisMLAgent if applicable
+            TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
+            if (mlAgent != null && mlAgent.GetType().GetMethod("OnLinesCleared") != null)
+            {
+                // Only call if the method exists
+                System.Reflection.MethodInfo method = mlAgent.GetType().GetMethod("OnLinesCleared");
+                method?.Invoke(mlAgent, new object[] { linesCleared });
+            }
+        }
 
         // Calculate score speed bonus based on player score
-        // This creates a gradual speed increase as score goes up
         scoreSpeedBonus = Mathf.Min(playerScore / 10000f, 1.0f);
 
         if (linesCleared >= 4)
         {
-            // Tetris (4 lines) gives temporary significant speed boost
             StartCoroutine(ApplyTemporarySpeedBoost(0.2f, 3f));
         }
         else if (linesCleared >= 2)
         {
-            // 2-3 lines gives smaller temporary boost
             StartCoroutine(ApplyTemporarySpeedBoost(0.1f, 2f));
         }
     }
@@ -841,7 +906,6 @@ public class Board : MonoBehaviour
 
         temporarySpeedBoost -= amount;
     }
-
 
     private void SpawnDebris(Vector3Int tilePosition, Color color)
     {
@@ -867,6 +931,7 @@ public class Board : MonoBehaviour
 
         Destroy(debris, 2f); // destroy after 2 seconds
     }
+
     private bool IsLineFull(int row)
     {
         RectInt bounds = this.Bounds;
@@ -880,6 +945,7 @@ public class Board : MonoBehaviour
         }
         return true;
     }
+
     private void LineClear(int row)
     {
         RectInt bounds = this.Bounds;
