@@ -21,7 +21,67 @@ class UnityTetrisClient:
         self.action_space_size = 40
         self.board_width = 10
         self.num_rotations = 4
+    
+    def get_curriculum_info(self, game_state):
+        """Extract curriculum information from game state"""
+        return {
+            'board_height': game_state.get('curriculumBoardHeight', 20),
+            'board_preset': game_state.get('curriculumBoardPreset', 0),
+            'allowed_tetromino_types': game_state.get('allowedTetrominoTypes', 7)
+        }
+    
+    def is_game_over(self, game_state):
+        """Check if the game is over"""
+        return game_state.get('gameOver', False) or game_state.get('episodeEnd', False)
+    
+    def get_action_space_info(self, game_state):
+        """Get action space information from game state"""
+        return {
+            'action_space_size': game_state.get('actionSpaceSize', 40),
+            'action_space_type': game_state.get('actionSpaceType', 'column_rotation'),
+            'is_executing_action': game_state.get('isExecutingAction', False),
+            'waiting_for_action': game_state.get('waitingForAction', False)
+        }
+    
+    def get_board_metrics(self, game_state):
+        """Get board analysis metrics"""
+        return {
+            'holes_count': game_state.get('holesCount', 0),
+            'stack_height': game_state.get('stackHeight', 0),
+            'perfect_clear': game_state.get('perfectClear', False),
+            'lines_cleared': game_state.get('linesCleared', 0)
+        }
+    
+    def wait_for_game_ready(self, timeout=10.0, check_interval=0.1):
+        """Wait until the game is ready to receive actions"""
+        start_time = time.time()
         
+        while time.time() - start_time < timeout:
+            state = self.get_game_state(timeout=check_interval)
+            if state:
+                action_info = self.get_action_space_info(state)
+                if action_info['waiting_for_action'] and not action_info['is_executing_action']:
+                    return state
+            time.sleep(check_interval)
+        
+        return None
+    
+    def send_action_and_wait(self, action_index, timeout=5.0):
+        """Send action and wait for the result state"""
+        if not self.send_action(action_index):
+            return None
+        
+        # Wait for the action to complete and get the resulting state
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            state = self.get_game_state(timeout=0.1)
+            if state:
+                action_info = self.get_action_space_info(state)
+                # Return state when action is complete
+                if not action_info['is_executing_action']:
+                    return state
+        
+        return None
     def connect(self, max_retries=5, retry_delay=2.0):
         """Connect to Unity with retries"""
         for attempt in range(max_retries):

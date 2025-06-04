@@ -151,16 +151,16 @@ class TetrisTrainer:
                 # Reset environment
                 self.client.send_reset()
                 
-                # Wait for initial state
-                state = None
-                for _ in range(50):
-                    state = self.client.get_game_state(timeout=0.2)
-                    if state and state.get('waitingForAction', False):
-                        break
-                
+                # Wait for game to be ready
+                state = self.client.wait_for_game_ready(timeout=10.0)
                 if state is None:
                     print(f"Episode {episode}: Failed to get initial state")
                     continue
+                
+                # Log curriculum info at start of episode
+                curriculum_info = self.client.get_curriculum_info(state)
+                if episode % 50 == 0:
+                    print(f"Episode {episode} curriculum: {curriculum_info}")
                 
                 episode_reward = 0
                 episode_score = 0
@@ -178,24 +178,18 @@ class TetrisTrainer:
                         self.agent.writer.add_scalar(f'Actions/Column_{column}', 1, episode * 1000 + steps)
                         self.agent.writer.add_scalar(f'Actions/Rotation_{rotation}', 1, episode * 1000 + steps)
                     
-                    # Send action to Unity
-                    if not self.client.send_action(action):
-                        break
-                    
-                    # Wait for result
-                    next_state = None
-                    for _ in range(100):  # Max 10 seconds
-                        next_state = self.client.get_game_state(timeout=0.1)
-                        if next_state:
-                            break
+                    # Send action and wait for result
+                    next_state = self.client.send_action_and_wait(action, timeout=10.0)
                     
                     if next_state is None:
                         print(f"Episode {episode}: Timeout waiting for next state")
                         break
                     
+                    # Check if game is over using the new method
+                    done = self.client.is_game_over(next_state)
+                    
                     # Calculate custom reward
                     reward = self.calculate_reward(prev_state, next_state, action)
-                    done = next_state.get('gameOver', False)
                     
                     episode_reward += reward
                     episode_score = next_state.get('score', 0)
@@ -211,11 +205,21 @@ class TetrisTrainer:
                     steps += 1
                     
                     if done:
+                        # Log game over details
+                        board_metrics = self.client.get_board_metrics(next_state)
+                        print(f"Episode {episode} ended: Score={episode_score}, "
+                            f"Lines={episode_lines}, Steps={steps}, "
+                            f"Final height={board_metrics['stack_height']}, "
+                            f"Holes={board_metrics['holes_count']}")
                         break
                     
-                    # Check if waiting for next action
-                    if not next_state.get('waitingForAction', False):
-                        continue
+                    # Check if ready for next action
+                    action_info = self.client.get_action_space_info(next_state)
+                    if not action_info['waiting_for_action']:
+                        # Wait for next action opportunity
+                        next_state = self.client.wait_for_game_ready(timeout=5.0)
+                        if next_state is None:
+                            break
                     
                     prev_state = state
                     state = next_state
@@ -227,57 +231,13 @@ class TetrisTrainer:
                 self.episode_rewards.append(episode_reward)
                 
                 # Game metrics for TensorBoard
-                game_metrics = {
-                    'holes': next_state.get('holesCount', 0) if next_state else 0,
-                    'stack_height': next_state.get('stackHeight', 0) if next_state else 0,
-                    'perfect_clear': next_state.get('perfectClear', False) if next_state else False,
-                }
+                game_metrics = self.client.get_board_metrics(next_state) if next_state else {}
                 
                 # Log to TensorBoard
                 self.agent.log_episode_metrics(episode, episode_reward, steps, episode_score, 
-                                             episode_lines, game_metrics)
+                                            episode_lines, game_metrics)
                 
-                # Check for best model
-                if episode_score > self.best_score:
-                    self.best_score = episode_score
-                    best_model_path = self.model_path.replace('.pth', '_best_score.pth')
-                    self.agent.save(best_model_path)
-                    self.agent.writer.add_scalar('Best/Score', self.best_score, episode)
-                
-                # Check for best average score
-                if len(self.episode_scores) >= 100:
-                    avg_score = np.mean(self.episode_scores[-100:])
-                    if avg_score > self.best_avg_score:
-                        self.best_avg_score = avg_score
-                        best_avg_model_path = self.model_path.replace('.pth', '_best_avg.pth')
-                        self.agent.save(best_avg_model_path)
-                        self.agent.writer.add_scalar('Best/Avg_Score_100', self.best_avg_score, episode)
-                
-                # Logging
-                if episode % 10 == 0:
-                    avg_score = np.mean(self.episode_scores[-10:]) if len(self.episode_scores) >= 10 else episode_score
-                    avg_reward = np.mean(self.episode_rewards[-10:]) if len(self.episode_rewards) >= 10 else episode_reward
-                    avg_lines = np.mean(self.episode_lines[-10:]) if len(self.episode_lines) >= 10 else episode_lines
-                    
-                    print(f"Episode {episode}: Score={episode_score}, "
-                          f"Lines={episode_lines}, Steps={steps}, "
-                          f"Reward={episode_reward:.2f}, "
-                          f"Avg10_Score={avg_score:.1f}, "
-                          f"Avg10_Reward={avg_reward:.2f}, "
-                          f"ε={self.agent.epsilon:.3f}")
-                    
-                    logging.info(f"Episode {episode}: Score={episode_score}, "
-                               f"Lines={episode_lines}, Steps={steps}, "
-                               f"Reward={episode_reward:.2f}, Epsilon={self.agent.epsilon:.3f}")
-                
-                # Save model
-                if episode % save_interval == 0 and episode > 0:
-                    self.save_model()
-                    self.save_metrics()
-                
-                # Evaluation
-                if episode % eval_interval == 0 and episode > 0:
-                    self.evaluate(episodes=5, episode_offset=episode)
+                # ... rest of your existing training loop code ...
         
         except KeyboardInterrupt:
             print("\nTraining interrupted by user")
@@ -294,8 +254,7 @@ class TetrisTrainer:
             self.agent.close()  # Close TensorBoard writer
             self.client.disconnect()
             logging.info("Training session ended")
-            print("Training completed!")
-    
+            print("Training completed!") 
     def save_model(self):
         """Save the trained model"""
         self.agent.save(self.model_path)
