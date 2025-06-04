@@ -21,6 +21,8 @@ public class CurriculumData
     public int boardHeight = 20;
     public int boardPreset = 0;
     public int allowedTetrominoTypes = 7;
+
+       public string stageName; 
 }
 
 [System.Serializable]
@@ -55,7 +57,8 @@ public class GameState
     public bool perfectClear;
 
 
-     public float curriculumBoardHeight;
+    public float curriculumBoardHeight;
     public int curriculumBoardPreset;
     public int allowedTetrominoTypes;
+     public bool curriculumConfirmed;
 }

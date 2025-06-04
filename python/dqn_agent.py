@@ -18,10 +18,10 @@ class TetrisDQN(nn.Module):
         self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
         self.conv3 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
-        self.pool = nn.MaxPool2d(2, 2)
+        self.pool = nn.AdaptiveAvgPool2d((5, 5))
         
         # Calculate conv output size (assuming 20x10 board -> 10x5 after pooling)
-        conv_output_size = 64 * 10 * 5
+        conv_output_size = 64 * 5 * 5 
         
         # Fully connected layers
         self.fc1 = nn.Linear(conv_output_size + 8, hidden_size)  # +8 for piece info and metrics
@@ -34,14 +34,14 @@ class TetrisDQN(nn.Module):
         self.batch_norm2 = nn.BatchNorm1d(hidden_size)
         
     def forward(self, board, piece_info, metrics):
-        # Process board through conv layers
+          # Process board through conv layers
         x = F.relu(self.conv1(board))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
-        x = self.pool(x)
+        x = self.pool(x)  # Always outputs 64x5x5
         
         # Flatten conv output
-        x = x.view(x.size(0), -1)
+        x = x.view(x.size(0), -1)  # Should always be batch_size x 1600
         
         # Concatenate with piece info and metrics
         x = torch.cat([x, piece_info, metrics], dim=1)
@@ -101,29 +101,41 @@ class DQNAgent:
     def preprocess_state(self, game_state):
         """Convert game state to neural network input"""
         board = np.array(game_state.get('board', []))
-        if len(board) == 200:  # 20x10 board
-            board = board.reshape(1, 1, 20, 10)
-        else:
-            height = len(board) // 10
-            board = board.reshape(1, 1, height, 10)
-            # Pad to 20x10 if smaller
-            if height < 20:
-                padding = np.zeros((1, 1, 20 - height, 10))
-                board = np.concatenate([padding, board], axis=2)
         
-        # Piece information
+        # Handle variable board sizes from curriculum learning
+        if len(board) == 0:
+            # Default empty board
+            board = np.zeros(200)
+        
+        # Calculate actual board dimensions
+        board_width = 10  # Always 10
+        board_height = len(board) // board_width
+        
+        if board_height == 0:
+            board_height = 20
+            board = np.zeros(200)
+        
+        # Reshape board
+        board = board.reshape(1, 1, board_height, board_width)
+        
+        # Convert to float32 for better performance
+        board = board.astype(np.float32)
+        
+        # Piece information (ensure consistent size)
         piece_info = game_state.get('currentPiece', [0, 0, 0, 0])
         next_piece = game_state.get('nextPiece', [0])
-        piece_features = np.array(piece_info + next_piece + [0, 0, 0])  # Pad to 8 features
-        piece_features = piece_features.reshape(1, -1)
         
-        # Game metrics (normalized)
+        # Pad to exactly 8 features
+        piece_features = (piece_info + next_piece + [0, 0, 0])[:8]
+        piece_features = np.array(piece_features, dtype=np.float32).reshape(1, -1)
+        
+        # Game metrics (normalized) - ensure exactly 4 features
         metrics = np.array([
             min(game_state.get('score', 0) / 10000.0, 1.0),  # Normalize score
             min(game_state.get('holesCount', 0) / 20.0, 1.0),  # Normalize holes
             min(game_state.get('stackHeight', 0) / 20.0, 1.0),  # Normalize height
             1.0 if game_state.get('perfectClear', False) else 0.0
-        ]).reshape(1, -1)
+        ], dtype=np.float32).reshape(1, -1)
         
         return {
             'board': torch.FloatTensor(board).to(self.device),

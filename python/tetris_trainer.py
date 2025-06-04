@@ -79,22 +79,42 @@ class TetrisTrainer:
         stage_idx, stage = self.get_curriculum_stage(episode)
         
         if stage_idx != self.current_curriculum_stage:
-            self.client.send_curriculum_change(
+            print(f"\n{'='*60}")
+            print(f"CURRICULUM CHANGE - Episode {episode}")
+            print(f"Previous Stage: {self.curriculum_stages[self.current_curriculum_stage]['name'] if self.current_curriculum_stage < len(self.curriculum_stages) else 'Unknown'}")
+            print(f"New Stage: {stage['name']}")
+            print(f"Height: {stage['height']}, Preset: {stage['preset']}, Pieces: {stage['pieces']}")
+            print(f"{'='*60}\n")
+            
+            # Send curriculum change with stage name
+            success = self.client.send_curriculum_change(
                 board_height=stage['height'],
                 board_preset=stage['preset'],
-                tetromino_types=stage['pieces']
+                tetromino_types=stage['pieces'],
+                stage_name=stage['name']
             )
             
-            logging.info(f"Curriculum updated for episode {episode}: "
-                        f"Stage={stage['name']}, Height={stage['height']}, "
-                        f"Preset={stage['preset']}, Pieces={stage['pieces']}")
-            
-            # Log to TensorBoard
-            self.agent.log_curriculum_change(episode, stage)
-            self.agent.writer.add_text('Curriculum/Stage_Change', 
-                                     f"Episode {episode}: Changed to {stage['name']}", episode)
-            
-            self.current_curriculum_stage = stage_idx
+            if success:
+                # Wait for confirmation
+                confirmation = self.client.get_curriculum_confirmation(timeout=5.0)
+                if confirmation:
+                    actual_curriculum = self.client.get_curriculum_info(confirmation)
+                    print(f"✓ Curriculum confirmed: {actual_curriculum}")
+                    
+                    logging.info(f"Curriculum updated for episode {episode}: "
+                            f"Stage={stage['name']}, Height={stage['height']}, "
+                            f"Preset={stage['preset']}, Pieces={stage['pieces']}")
+                    
+                    # Log to TensorBoard
+                    self.agent.log_curriculum_change(episode, stage)
+                    self.agent.writer.add_text('Curriculum/Stage_Change', 
+                                            f"Episode {episode}: Changed to {stage['name']}", episode)
+                    
+                    self.current_curriculum_stage = stage_idx
+                else:
+                    print(f"⚠ Warning: Curriculum change not confirmed by Unity")
+            else:
+                print(f"✗ Error: Failed to send curriculum change to Unity")
     
     def calculate_reward(self, prev_state, current_state, action):
         """Calculate custom reward function"""
@@ -132,7 +152,7 @@ class TetrisTrainer:
         
         print(f"Starting training for {episodes} episodes...")
         logging.info(f"Training started: {episodes} episodes, agent: {self.agent_type}")
-        
+    
         # Log hyperparameters to TensorBoard
         hparams = {
             'lr': self.agent.learning_rate,
@@ -157,11 +177,17 @@ class TetrisTrainer:
                     print(f"Episode {episode}: Failed to get initial state")
                     continue
                 
-                # Log curriculum info at start of episode
+                # Verify curriculum is applied
                 curriculum_info = self.client.get_curriculum_info(state)
-                if episode % 50 == 0:
-                    print(f"Episode {episode} curriculum: {curriculum_info}")
+                stage_idx, expected_stage = self.get_curriculum_stage(episode)
                 
+                # Log curriculum verification
+                if episode % 50 == 0:
+                    print(f"Episode {episode} curriculum verification:")
+                    print(f"  Expected: Height={expected_stage['height']}, Preset={expected_stage['preset']}, Pieces={expected_stage['pieces']}")
+                    print(f"  Actual:   Height={curriculum_info['board_height']}, Preset={curriculum_info['board_preset']}, Pieces={curriculum_info['allowed_tetromino_types']}")
+                
+                # Continue with existing training loop...
                 episode_reward = 0
                 episode_score = 0
                 episode_lines = 0
@@ -172,12 +198,6 @@ class TetrisTrainer:
                     # Choose action
                     action = self.agent.act(state, training=True)
                     
-                    # Log action distribution
-                    if episode % 50 == 0:
-                        column, rotation = self.client.action_to_column_rotation(action)
-                        self.agent.writer.add_scalar(f'Actions/Column_{column}', 1, episode * 1000 + steps)
-                        self.agent.writer.add_scalar(f'Actions/Rotation_{rotation}', 1, episode * 1000 + steps)
-                    
                     # Send action and wait for result
                     next_state = self.client.send_action_and_wait(action, timeout=10.0)
                     
@@ -185,7 +205,7 @@ class TetrisTrainer:
                         print(f"Episode {episode}: Timeout waiting for next state")
                         break
                     
-                    # Check if game is over using the new method
+                    # Check if game is over
                     done = self.client.is_game_over(next_state)
                     
                     # Calculate custom reward
@@ -200,17 +220,23 @@ class TetrisTrainer:
                     
                     # Train agent
                     if len(self.agent.memory) > self.agent.batch_size:
-                        loss = self.agent.replay()
+                        try:
+                            loss = self.agent.replay()
+                        except RuntimeError as e:
+                            print(f"Training error at episode {episode}, step {steps}: {e}")
+                            # Continue without this training step
+                            pass
                     
                     steps += 1
                     
                     if done:
                         # Log game over details
                         board_metrics = self.client.get_board_metrics(next_state)
-                        print(f"Episode {episode} ended: Score={episode_score}, "
-                            f"Lines={episode_lines}, Steps={steps}, "
-                            f"Final height={board_metrics['stack_height']}, "
-                            f"Holes={board_metrics['holes_count']}")
+                        if episode % 10 == 0:
+                            print(f"Episode {episode} ended: Score={episode_score}, "
+                                f"Lines={episode_lines}, Steps={steps}, "
+                                f"Final height={board_metrics['stack_height']}, "
+                                f"Holes={board_metrics['holes_count']}")
                         break
                     
                     # Check if ready for next action

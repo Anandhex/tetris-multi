@@ -148,17 +148,33 @@ class UnityTetrisClient:
         
         return self._send_command(command)
     
-    def send_curriculum_change(self, board_height=20, board_preset=0, tetromino_types=7):
+    def send_curriculum_change(self, board_height=20, board_preset=0, tetromino_types=7,stage_name=None):
         command = {
             "type": "curriculum_change",
             "curriculum": {
                 "boardHeight": board_height,
                 "boardPreset": board_preset,
-                "allowedTetrominoTypes": tetromino_types
+                "allowedTetrominoTypes": tetromino_types,
+                "stageName": stage_name or "Unknown",
+                "timestamp": time.time()
             }
         }
         return self._send_command(command)
+    def send_curriculum_status_request(self):
+        """Request current curriculum status from Unity"""
+        command = {
+            "type": "curriculum_status_request"
+        }
+        return self._send_command(command)
     
+    def get_curriculum_confirmation(self, timeout=2.0):
+        """Wait for curriculum change confirmation"""
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            state = self.get_game_state(timeout=0.1)
+            if state and 'curriculumConfirmed' in state:
+                return state
+        return None
     def send_reset(self):
         command = {
             "type": "reset",

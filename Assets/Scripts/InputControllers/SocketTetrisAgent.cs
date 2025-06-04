@@ -50,33 +50,52 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         }
     }
     
-    void HandleCommand(GameCommand command)
+  void HandleCommand(GameCommand command)
+{
+    switch (command.type)
     {
-        switch (command.type)
-        {
-            case "action":
-                if (command.action != null && !isExecutingAction)
-                {
-                    ExecuteAction(command.action.actionIndex);
-                }
-                break;
-                
-            case "curriculum_change":
-                if (command.curriculum != null)
-                {
-                    ApplyCurriculumChange(command.curriculum);
-                }
-                break;
-                
-            case "reset":
-                if (command.reset != null && command.reset.resetBoard)
-                {
-                    ResetGame();
-                }
-                break;
-        }
+        case "action":
+            if (command.action != null && !isExecutingAction)
+            {
+                ExecuteAction(command.action.actionIndex);
+            }
+            break;
+            
+        case "curriculum_change":
+            if (command.curriculum != null)
+            {
+                ApplyCurriculumChange(command.curriculum);
+                SendCurriculumConfirmation();
+            }
+            break;
+            
+        case "curriculum_status_request":
+            SendGameState(); // Will include current curriculum info
+            break;
+            
+        case "reset":
+            if (command.reset != null && command.reset.resetBoard)
+            {
+                ResetGame();
+            }
+            break;
     }
-    
+}
+
+void SendCurriculumConfirmation()
+{
+    // Send confirmation that curriculum was applied
+    if (SocketManager.Instance != null)
+    {
+        GameState confirmationState = new GameState();
+        confirmationState.curriculumBoardHeight = curriculumBoardHeight;
+        confirmationState.curriculumBoardPreset = curriculumBoardPreset;
+        confirmationState.allowedTetrominoTypes = allowedTetrominoTypes;
+        confirmationState.curriculumConfirmed = true;
+        
+        SocketManager.Instance.SendGameState(confirmationState);
+    }
+}  
     void ExecuteAction(int actionIndex)
     {
         if (actionIndex < 0 || actionIndex >= 40)
