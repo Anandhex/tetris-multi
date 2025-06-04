@@ -34,10 +34,10 @@ class TetrisTrainer:
         # Curriculum parameters
         self.current_curriculum_stage = 0
         self.curriculum_stages = [
-            {'episodes': 100, 'height': 8, 'preset': 1, 'pieces': 1, 'name': 'Very Easy'},
-            {'episodes': 200, 'height': 10, 'preset': 2, 'pieces': 2, 'name': 'Easy'},
-            {'episodes': 300, 'height': 15, 'preset': 3, 'pieces': 5, 'name': 'Medium'},
-            {'episodes': 500, 'height': 20, 'preset': 4, 'pieces': 7, 'name': 'Hard'},
+            {'episodes': 10, 'height': 8, 'preset': 1, 'pieces': 1, 'name': 'Very Easy'},
+            {'episodes': 20, 'height': 10, 'preset': 2, 'pieces': 2, 'name': 'Easy'},
+            {'episodes': 30, 'height': 15, 'preset': 3, 'pieces': 5, 'name': 'Medium'},
+            {'episodes': 50, 'height': 20, 'preset': 4, 'pieces': 7, 'name': 'Hard'},
             {'episodes': float('inf'), 'height': 20, 'preset': 0, 'pieces': 7, 'name': 'Full Game'},
         ]
         

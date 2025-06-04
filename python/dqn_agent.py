@@ -1,4 +1,3 @@
-# dqn_agent.py
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -18,6 +17,8 @@ class TetrisDQN(nn.Module):
         self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
         self.conv3 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        
+        # Use adaptive pooling to handle variable board sizes
         self.pool = nn.AdaptiveAvgPool2d((5, 5))
         
         # Fixed conv output size after adaptive pooling
@@ -30,7 +31,6 @@ class TetrisDQN(nn.Module):
         self.fc4 = nn.Linear(hidden_size // 2, output_size)
         
         self.dropout = nn.Dropout(0.3)
-        # Use LayerNorm instead of BatchNorm to avoid batch size issues
         self.layer_norm1 = nn.LayerNorm(hidden_size)
         self.layer_norm2 = nn.LayerNorm(hidden_size)
         
@@ -45,7 +45,7 @@ class TetrisDQN(nn.Module):
         x = x.view(x.size(0), -1)  # Should always be batch_size x 1600
         
         # Concatenate with piece info and metrics
-        x = torch.cat([x, piece_info, metrics], dim=1)  # batch_size x 1608
+        x = torch.cat([x, piece_info, metrics], dim=1)
         
         # Fully connected layers with layer norm
         x = F.relu(self.layer_norm1(self.fc1(x)))
@@ -62,15 +62,19 @@ class DQNAgent:
                  tensorboard_log_dir=None):
         self.device = device
         self.action_size = action_size
-        self.memory = deque(maxlen=50000)  # Increased memory size
+        self.memory = deque(maxlen=50000)
         self.epsilon = 1.0
         self.epsilon_min = 0.01
-        self.epsilon_decay = 0.9995  # Slower decay
+        self.epsilon_decay = 0.9995
         self.learning_rate = lr
-        self.batch_size = 64  # Increased batch size
+        self.batch_size = 32  # Reduced batch size for stability
         self.target_update_freq = 1000
         self.steps = 0
         self.training_steps = 0
+        
+        # Standard board size for normalization
+        self.standard_height = 20
+        self.standard_width = 10
         
         # TensorBoard writer
         if tensorboard_log_dir is None:
@@ -99,55 +103,110 @@ class DQNAgent:
         self.writer.add_text('Model/Architecture', str(self.q_network))
         self.writer.add_text('Model/Parameters', f"Total parameters: {sum(p.numel() for p in self.q_network.parameters())}")
     
+    def normalize_board_size(self, board, current_height, current_width):
+        """Normalize board to standard size for consistent processing"""
+        if current_height == self.standard_height and current_width == self.standard_width:
+            return board
+        
+        # Reshape to 2D for processing
+        board_2d = board.reshape(current_height, current_width)
+        
+        # Create standard size board (20x10)
+        normalized_board = np.zeros((self.standard_height, self.standard_width), dtype=np.float32)
+        
+        # Copy existing board data
+        copy_height = min(current_height, self.standard_height)
+        copy_width = min(current_width, self.standard_width)
+        
+        # Place the smaller board at the bottom (gravity effect)
+        start_row = self.standard_height - copy_height
+        normalized_board[start_row:start_row + copy_height, :copy_width] = board_2d[:copy_height, :copy_width]
+        
+        return normalized_board.flatten()
+    
     def preprocess_state(self, game_state):
-        """Convert game state to neural network input"""
-        board = np.array(game_state.get('board', []))
+        """Convert game state to neural network input with board size normalization"""
+        if not isinstance(game_state, dict) or 'board' not in game_state:
+            print("Warning: preprocess_state received invalid game_state.")
+            return {
+                'board': torch.zeros((1, 1, self.standard_height, self.standard_width), dtype=torch.float32).to(self.device),
+                'piece_info': torch.zeros((1, 4), dtype=torch.float32).to(self.device),
+                'metrics': torch.zeros((1, 4), dtype=torch.float32).to(self.device)
+            }
         
-        # Handle variable board sizes from curriculum learning
-        if len(board) == 0:
-            # Default empty board (20x10)
-            board = np.zeros(200)
-            board_height = 20
-            board_width = 10
+        # Get board data with better error handling
+        board_data = game_state.get('board', [])
+        
+        # Handle different types of board data
+        if board_data is None or (hasattr(board_data, '__len__') and len(board_data) == 0):
+            board = np.zeros(self.standard_height * self.standard_width)
+            current_height = self.standard_height
+            current_width = self.standard_width
+        elif isinstance(board_data, (int, float)):
+            board = np.zeros(self.standard_height * self.standard_width)
+            current_height = self.standard_height
+            current_width = self.standard_width
+        elif hasattr(board_data, '__len__'):
+            try:
+                board = np.array(board_data, dtype=np.float32)
+                if board.size == 0:
+                    board = np.zeros(self.standard_height * self.standard_width)
+                    current_height = self.standard_height
+                    current_width = self.standard_width
+                else:
+                    # Calculate current board dimensions from curriculum
+                    current_width = 10  # Always 10
+                    current_height = max(1, len(board) // current_width)
+                    
+                    # Ensure board is the right size
+                    expected_size = current_height * current_width
+                    if len(board) != expected_size:
+                        if len(board) < expected_size:
+                            board = np.pad(board, (0, expected_size - len(board)), mode='constant')
+                        else:
+                            board = board[:expected_size]
+            except (ValueError, TypeError) as e:
+                print(f"Warning: Could not convert board data to array: {e}")
+                board = np.zeros(self.standard_height * self.standard_width)
+                current_height = self.standard_height
+                current_width = self.standard_width
         else:
-            # Calculate actual board dimensions
-            board_width = 10  # Always 10
-            board_height = len(board) // board_width
-            
-            if board_height == 0:
-                board_height = 20
-                board = np.zeros(200)
+            print(f"Warning: Unknown board data type: {type(board_data)}")
+            board = np.zeros(self.standard_height * self.standard_width)
+            current_height = self.standard_height
+            current_width = self.standard_width
         
-        # Ensure board is properly sized
-        expected_size = board_height * board_width
-        if len(board) != expected_size:
-            # Pad or truncate to expected size
-            if len(board) < expected_size:
-                board = np.pad(board, (0, expected_size - len(board)), mode='constant')
-            else:
-                board = board[:expected_size]
+        # Normalize board to standard size
+        board = self.normalize_board_size(board, current_height, current_width)
         
-        # Reshape board to proper dimensions
-        board = board.reshape(1, 1, board_height, board_width)
+        # Reshape to standard dimensions
+        board = board.reshape(1, 1, self.standard_height, self.standard_width).astype(np.float32)
         
-        # Convert to float32 for better performance
-        board = board.astype(np.float32)
-        
-        # Piece information (ensure consistent size)
+        # Piece information
         piece_info = game_state.get('currentPiece', [0, 0, 0, 0])
-        next_piece = game_state.get('nextPiece', [0])
+        if not isinstance(piece_info, (list, tuple, np.ndarray)):
+            piece_info = [0, 0, 0, 0]
         
-        # Pad to exactly 4 features for piece info
+        piece_info = list(piece_info) if hasattr(piece_info, '__iter__') else [0, 0, 0, 0]
         piece_features = (piece_info + [0, 0, 0, 0])[:4]
         piece_features = np.array(piece_features, dtype=np.float32).reshape(1, -1)
         
-        # Game metrics (normalized) - ensure exactly 4 features
-        metrics = np.array([
-            min(game_state.get('score', 0) / 10000.0, 1.0),  # Normalize score
-            min(game_state.get('holesCount', 0) / 20.0, 1.0),  # Normalize holes
-            min(game_state.get('stackHeight', 0) / 20.0, 1.0),  # Normalize height
-            1.0 if game_state.get('perfectClear', False) else 0.0
-        ], dtype=np.float32).reshape(1, -1)
+        # Game metrics (normalized)
+        try:
+            score = float(game_state.get('score', 0))
+            holes = float(game_state.get('holesCount', 0))
+            height = float(game_state.get('stackHeight', 0))
+            perfect_clear = bool(game_state.get('perfectClear', False))
+            
+            metrics = np.array([
+                min(score / 10000.0, 1.0),
+                min(holes / 20.0, 1.0),
+                min(height / 20.0, 1.0),
+                1.0 if perfect_clear else 0.0
+            ], dtype=np.float32).reshape(1, -1)
+        except (ValueError, TypeError) as e:
+            print(f"Warning: Could not process game metrics: {e}")
+            metrics = np.zeros((1, 4), dtype=np.float32)
         
         return {
             'board': torch.FloatTensor(board).to(self.device),
@@ -171,7 +230,6 @@ class DQNAgent:
                 processed_state['metrics']
             )
             
-            # Log Q-values statistics
             if training and self.steps % 100 == 0:
                 self.writer.add_scalar('Agent/Q_Values_Mean', q_values.mean().item(), self.steps)
                 self.writer.add_scalar('Agent/Q_Values_Max', q_values.max().item(), self.steps)
@@ -186,7 +244,6 @@ class DQNAgent:
         """Store experience in replay buffer"""
         self.memory.append((state, action, reward, next_state, done))
         
-        # Log memory statistics
         if len(self.memory) % 1000 == 0:
             self.writer.add_scalar('Agent/Memory_Size', len(self.memory), self.steps)
     
@@ -195,52 +252,59 @@ class DQNAgent:
         if len(self.memory) < self.batch_size:
             return None
         
-        # Ensure we have enough samples for batch norm (minimum 2)
         actual_batch_size = min(self.batch_size, len(self.memory))
         if actual_batch_size < 2:
             return None
         
         batch = random.sample(self.memory, actual_batch_size)
-        states = [e[0] for e in batch]
-        actions = [e[1] for e in batch]
-        rewards = [e[2] for e in batch]
-        next_states = [e[3] for e in batch]
-        dones = [e[4] for e in batch]
         
-        # Process states
-        board_batch = []
-        piece_batch = []
-        metrics_batch = []
+        # Process each experience individually to handle different board sizes
+        board_tensors = []
+        piece_tensors = []
+        metrics_tensors = []
+        next_board_tensors = []
+        next_piece_tensors = []
+        next_metrics_tensors = []
         
-        next_board_batch = []
-        next_piece_batch = []
-        next_metrics_batch = []
+        actions = []
+        rewards = []
+        dones = []
         
-        for state, next_state in zip(states, next_states):
+        for state, action, reward, next_state, done in batch:
+            # Process current state
             processed_state = self.preprocess_state(state)
-            board_batch.append(processed_state['board'])
-            piece_batch.append(processed_state['piece_info'])
-            metrics_batch.append(processed_state['metrics'])
+            board_tensors.append(processed_state['board'])
+            piece_tensors.append(processed_state['piece_info'])
+            metrics_tensors.append(processed_state['metrics'])
             
+            # Process next state
             if next_state is not None:
                 processed_next_state = self.preprocess_state(next_state)
-                next_board_batch.append(processed_next_state['board'])
-                next_piece_batch.append(processed_next_state['piece_info'])
-                next_metrics_batch.append(processed_next_state['metrics'])
+                next_board_tensors.append(processed_next_state['board'])
+                next_piece_tensors.append(processed_next_state['piece_info'])
+                next_metrics_tensors.append(processed_next_state['metrics'])
             else:
-                # Use zeros for terminal states
-                next_board_batch.append(torch.zeros_like(processed_state['board']))
-                next_piece_batch.append(torch.zeros_like(processed_state['piece_info']))
-                next_metrics_batch.append(torch.zeros_like(processed_state['metrics']))
+                # Terminal state - use zeros with standard dimensions
+                next_board_tensors.append(torch.zeros((1, 1, self.standard_height, self.standard_width), dtype=torch.float32).to(self.device))
+                next_piece_tensors.append(torch.zeros((1, 4), dtype=torch.float32).to(self.device))
+                next_metrics_tensors.append(torch.zeros((1, 4), dtype=torch.float32).to(self.device))
+            
+            actions.append(action)
+            rewards.append(reward)
+            dones.append(done)
         
-        # Combine batches
-        board_batch = torch.cat(board_batch)
-        piece_batch = torch.cat(piece_batch)
-        metrics_batch = torch.cat(metrics_batch)
-        
-        next_board_batch = torch.cat(next_board_batch)
-        next_piece_batch = torch.cat(next_piece_batch)
-        next_metrics_batch = torch.cat(next_metrics_batch)
+        # Now all tensors should have the same dimensions and can be concatenated
+        try:
+            board_batch = torch.cat(board_tensors, dim=0)
+            piece_batch = torch.cat(piece_tensors, dim=0)
+            metrics_batch = torch.cat(metrics_tensors, dim=0)
+            
+            next_board_batch = torch.cat(next_board_tensors, dim=0)
+            next_piece_batch = torch.cat(next_piece_tensors, dim=0)
+            next_metrics_batch = torch.cat(next_metrics_tensors, dim=0)
+        except RuntimeError as e:
+            print(f"Error concatenating tensors: {e}")
+            return None
         
         # Current Q values
         current_q_values = self.q_network(board_batch, piece_batch, metrics_batch)
@@ -264,16 +328,13 @@ class DQNAgent:
         
         target_q_values = torch.FloatTensor(target_q_values).unsqueeze(1).to(self.device)
         
-        # Compute loss (Huber loss for stability)
+        # Compute loss
         loss = F.smooth_l1_loss(current_q_values, target_q_values)
         
         # Optimize
         self.optimizer.zero_grad()
         loss.backward()
-        
-        # Gradient clipping
         torch.nn.utils.clip_grad_norm_(self.q_network.parameters(), max_norm=10.0)
-        
         self.optimizer.step()
         self.scheduler.step()
         
@@ -286,17 +347,6 @@ class DQNAgent:
         self.writer.add_scalar('Training/Loss', loss.item(), self.training_steps)
         self.writer.add_scalar('Training/Epsilon', self.epsilon, self.training_steps)
         self.writer.add_scalar('Training/Learning_Rate', self.scheduler.get_last_lr()[0], self.training_steps)
-        self.writer.add_scalar('Training/Q_Values_Current_Mean', current_q_values.mean().item(), self.training_steps)
-        self.writer.add_scalar('Training/Q_Values_Target_Mean', target_q_values.mean().item(), self.training_steps)
-        
-        # Log gradient norms
-        total_norm = 0
-        for p in self.q_network.parameters():
-            if p.grad is not None:
-                param_norm = p.grad.data.norm(2)
-                total_norm += param_norm.item() ** 2
-        total_norm = total_norm ** (1. / 2)
-        self.writer.add_scalar('Training/Gradient_Norm', total_norm, self.training_steps)
         
         # Update target network
         self.steps += 1
@@ -316,7 +366,7 @@ class DQNAgent:
         self.writer.add_scalar('Episode/Lines_Cleared', episode_lines, episode)
         
         # Game-specific metrics
-        self.writer.add_scalar('Game/Holes_Count', game_metrics.get('holes', 0), episode)
+        self.writer.add_scalar('Game/Holes_Count', game_metrics.get('holes_count', 0), episode)
         self.writer.add_scalar('Game/Stack_Height', game_metrics.get('stack_height', 0), episode)
         self.writer.add_scalar('Game/Perfect_Clear', 1 if game_metrics.get('perfect_clear', False) else 0, episode)
         
@@ -358,15 +408,6 @@ class DQNAgent:
         
         torch.save(checkpoint, filepath)
         print(f"Model saved to {filepath}")
-        
-        # Save model graph to TensorBoard
-        try:
-            dummy_board = torch.randn(1, 1, 20, 10).to(self.device)
-            dummy_piece = torch.randn(1, 4).to(self.device)
-            dummy_metrics = torch.randn(1, 4).to(self.device)
-            self.writer.add_graph(self.q_network, (dummy_board, dummy_piece, dummy_metrics))
-        except Exception as e:
-            print(f"Could not save model graph: {e}")
     
     def load(self, filepath):
         """Load the model and training state"""
