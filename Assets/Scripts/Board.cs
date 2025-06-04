@@ -693,23 +693,28 @@ public class Board : MonoBehaviour
     }
     private void GameOver()
     {
-        // Notify ML agent if this is an ML agent-controlled board
-        TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
-        if (mlAgent != null)
-        {
-            mlAgent.OnGameOver();
+         // Notify ML agent if this is an ML agent-controlled board
+    SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
+    if (socketAgent != null)
+    {
+        socketAgent.OnGameOver();
+        // Don't immediately reset - let the agent handle it
+        return;
+    }
+    
+    TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
+    if (mlAgent != null)
+    {
+        mlAgent.OnGameOver();
+        StartCoroutine(ResetGameForMLTraining());
+        return;
+    }
 
-            // If in ML training mode, reset the game instead of loading the game over scene
+    // Store the score for the game over screen
+    Data.PlayerScore = this.playerScore;
 
-            StartCoroutine(ResetGameForMLTraining());
-            return;
-        }
-
-        // Store the score for the game over screen
-        Data.PlayerScore = this.playerScore;
-
-        // Load game over scene only if not in ML training
-        SceneManager.LoadScene(2);
+    // Load game over scene only if not in ML training
+    SceneManager.LoadScene(2);
     }
 
     private IEnumerator ResetGameForMLTraining()
@@ -800,7 +805,15 @@ public class Board : MonoBehaviour
             {
                 row++;
             }
+        } // Notify ML agent about line clears
+    if (linesCleared > 0)
+    {
+        SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
+        if (socketAgent != null)
+        {
+            socketAgent.OnLinesCleared(linesCleared);
         }
+    }
 
         // Calculate score speed bonus based on player score
         // This creates a gradual speed increase as score goes up

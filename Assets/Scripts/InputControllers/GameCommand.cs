@@ -53,4 +53,9 @@ public class GameState
     public int holesCount;
     public float stackHeight;
     public bool perfectClear;
+
+
+     public float curriculumBoardHeight;
+    public int curriculumBoardPreset;
+    public int allowedTetrominoTypes;
 }

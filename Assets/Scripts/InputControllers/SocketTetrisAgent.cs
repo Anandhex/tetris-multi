@@ -316,7 +316,10 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         state.actionSpaceType = "column_rotation";
         state.isExecutingAction = isExecutingAction;
         state.waitingForAction = !isExecutingAction && !waitingForNewPiece && currentPiece != null;
-        
+           // Curriculum information
+    state.curriculumBoardHeight = curriculumBoardHeight;
+    state.curriculumBoardPreset = curriculumBoardPreset;
+    state.allowedTetrominoTypes = allowedTetrominoTypes;
         // Additional metrics
         state.holesCount = board.CountHoles();
         state.stackHeight = board.CalculateStackHeight();
@@ -326,7 +329,10 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         SocketManager.Instance.SendGameState(state);
         
         // Reset reward after sending
+        if (!gameOver)
+    {
         lastReward = 0f;
+    }
     }
     
     float[] GetBoardState()
@@ -425,25 +431,50 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     {
         board = gameBoard;
     }
-    
+
     public void OnGameOver()
     {
         gameOver = true;
         lastReward = -10f; // Penalty for game over
         isExecutingAction = false;
+
+        // Send game over state BEFORE resetting
         SendGameState();
+
+        // Wait a moment to ensure the message is sent
+        StartCoroutine(DelayedReset());
+    }
+private IEnumerator DelayedReset()
+{
+    // Give time for the game over state to be sent and processed
+    yield return new WaitForSeconds(0.5f);
+    
+    // Now reset the game
+    gameOver = false;
+    lastReward = 0f;
+    isExecutingAction = false;
+    waitingForNewPiece = false;
+    actionCompleted = false;
+    
+    if (board != null)
+    {
+        board.ApplyCurriculumBoardPreset();
+    }
+}
+    
+   public void OnLinesCleared(int lines)
+{
+    // Reward for line clears (exponential for multi-line clears)
+    lastReward += lines * lines * 25f; // 25, 100, 225, 400 for 1, 2, 3, 4 lines
+    
+    if (lines == 4) // Tetris bonus
+    {
+        lastReward += 100f;
     }
     
-    public void OnLinesCleared(int lines)
-    {
-        // Reward for line clears (exponential for multi-line clears)
-        lastReward += lines * lines * 25f; // 25, 100, 225, 400 for 1, 2, 3, 4 lines
-        
-        if (lines == 4) // Tetris bonus
-        {
-            lastReward += 100f;
-        }
-    }
+    // Send updated state immediately after line clear
+    SendGameState();
+}
     
     void OnDestroy()
     {
