@@ -308,57 +308,56 @@ class DQNAgent:
 
     def act(self, state, training=True):
         """Choose action using epsilon-greedy policy with action masking"""
-        # Get valid actions if available
-        valid_actions = state.get('validActions', None)
+
+        # Get valid actions mask (default: all True if missing)
+        valid_actions = state.get('validActions')
         if valid_actions is None:
-            print("WARNING: No validActions received from Unity!")
-            return 0
+            valid_actions = [True] * self.action_size  # Assuming self.action_size = 40
 
         valid_indices = [i for i, valid in enumerate(valid_actions) if valid]
-        
+
         if not valid_indices:
-            print("ERROR: No valid actions available!")
+            print("ERROR: No valid actions available! Returning fallback action 0.")
             return 0
-        
-        if len(valid_indices) < 5:
-            print(f"WARNING: Only {len(valid_indices)} valid actions: {valid_indices}")
-            print(f"Piece: {state.get('currentPieceType', '?')}, Height: {state.get('stackHeight', '?')}, Holes: {state.get('holesCount', '?')}")
-        
+
+        # Exploration (epsilon-greedy)
         if training and random.random() <= self.epsilon:
-            action = random.choice(valid_indices)
-            return action
-        
+            return random.choice(valid_indices)
+
+        # Exploitation
         processed_state = self.preprocess_state(state)
-        
+
         with torch.no_grad():
             q_values = self.q_network(processed_state)
-            
-            # FIXED: Apply action masking based on valid_indices, not length comparison
-            if len(valid_indices) < self.action_size:  # If some actions are invalid
+
+            # Ensure q_values is 2D (batch dimension)
+            if q_values.dim() == 1:
+                q_values = q_values.unsqueeze(0)
+
+            if len(valid_indices) < self.action_size:
                 masked_q_values = q_values.clone()
-                invalid_actions = [i for i in range(self.action_size) if i not in valid_indices]
-                if invalid_actions:
-                    masked_q_values[0, invalid_actions] = float('-inf')
-                
-                action = masked_q_values.argmax().item()
-                
-                # Double-check the action is valid
+                invalid_indices = [i for i in range(self.action_size) if i not in valid_indices]
+                masked_q_values[0, invalid_indices] = float('-inf')
+                action = masked_q_values.argmax(dim=1).item()
+
+                # Safety check
                 if action not in valid_indices:
-                    print(f"ERROR: Selected invalid action {action}! Falling back to random valid action.")
+                    print(f"WARNING: Selected invalid action {action}! Falling back to random.")
                     action = random.choice(valid_indices)
             else:
-                # All actions are valid
-                action = q_values.argmax().item()
-            
-            # Log Q-value statistics
+                action = q_values.argmax(dim=1).item()
+
+            # Logging every 100 steps
             if training and self.steps % 100 == 0:
                 self.writer.add_scalar('Agent/Q_Values_Mean', q_values.mean().item(), self.steps)
                 self.writer.add_scalar('Agent/Q_Values_Max', q_values.max().item(), self.steps)
                 self.writer.add_scalar('Agent/Q_Values_Min', q_values.min().item(), self.steps)
                 self.writer.add_scalar('Agent/Q_Values_Std', q_values.std().item(), self.steps)
                 self.writer.add_scalar('Agent/Valid_Actions_Count', len(valid_indices), self.steps)
-            
-            return action    
+
+            return action
+
+   
     def remember(self, state, action, reward, next_state, done):
         """Store experience in replay buffer"""
         self.memory.append((state, action, reward, next_state, done))

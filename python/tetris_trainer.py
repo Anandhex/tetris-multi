@@ -198,6 +198,7 @@ class TetrisTrainer:
     
     def train(self, episodes=100000, save_interval=100, eval_interval=200):
         """Main training loop"""
+        last_tick = -1
         if not self.client.connect():
             print("Failed to connect to Unity. Make sure Unity is running!")
             return
@@ -219,8 +220,8 @@ class TetrisTrainer:
             for episode in range(episodes):
                 # Apply curriculum
                 self.apply_curriculum(episode)
+                waiting_for_reset = False
                 # Reset environment
-                self.client.send_reset()
                 
                 # Wait for game to be ready
                 state = self.client.wait_for_game_ready(timeout=10.0)
@@ -249,6 +250,11 @@ class TetrisTrainer:
                 
                 while True:
                     # Choose action
+                    tick = state.get("stateTick", -1)
+                    if tick == last_tick:
+                        continue  # Skip duplicate
+                    last_tick = tick
+
                     action = self.agent.act(state, training=True)
                     
                     # Send action and wait for result
@@ -259,6 +265,7 @@ class TetrisTrainer:
                     
                     # Check if game is over
                     done = self.client.is_game_over(next_state)
+
                     
                     # Calculate custom reward
                     reward = self.calculate_reward(prev_state, next_state, action)
@@ -374,7 +381,6 @@ class TetrisTrainer:
         self.agent.epsilon = 0  # No exploration during evaluation
         
         for eval_ep in range(episodes):
-            self.client.send_reset()
             
             # Wait for initial state
             state = None
