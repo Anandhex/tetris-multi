@@ -311,17 +311,21 @@ class DQNAgent:
         # Get valid actions if available
         valid_actions = state.get('validActions', None)
         if valid_actions is None:
-            valid_actions = list(range(self.action_size))
-        else:
-            # Convert boolean array to indices
-            valid_actions = [i for i, valid in enumerate(valid_actions) if valid]
+            print("WARNING: No validActions received from Unity!")
+            return 0
+
+        valid_indices = [i for i, valid in enumerate(valid_actions) if valid]
         
-        if not valid_actions:  # Fallback if no valid actions
-            valid_actions = list(range(self.action_size))
+        if not valid_indices:
+            print("ERROR: No valid actions available!")
+            return 0
+        
+        if len(valid_indices) < 5:
+            print(f"WARNING: Only {len(valid_indices)} valid actions: {valid_indices}")
+            print(f"Piece: {state.get('currentPieceType', '?')}, Height: {state.get('stackHeight', '?')}, Holes: {state.get('holesCount', '?')}")
         
         if training and random.random() <= self.epsilon:
-            action = random.choice(valid_actions)
-            self.writer.add_scalar('Agent/Random_Action_Taken', 1, self.steps)
+            action = random.choice(valid_indices)
             return action
         
         processed_state = self.preprocess_state(state)
@@ -329,13 +333,22 @@ class DQNAgent:
         with torch.no_grad():
             q_values = self.q_network(processed_state)
             
-            # Apply action masking
-            if len(valid_actions) < self.action_size:
+            # FIXED: Apply action masking based on valid_indices, not length comparison
+            if len(valid_indices) < self.action_size:  # If some actions are invalid
                 masked_q_values = q_values.clone()
-                invalid_actions = [i for i in range(self.action_size) if i not in valid_actions]
+                invalid_actions = [i for i in range(self.action_size) if i not in valid_indices]
                 if invalid_actions:
                     masked_q_values[0, invalid_actions] = float('-inf')
-                q_values = masked_q_values
+                
+                action = masked_q_values.argmax().item()
+                
+                # Double-check the action is valid
+                if action not in valid_indices:
+                    print(f"ERROR: Selected invalid action {action}! Falling back to random valid action.")
+                    action = random.choice(valid_indices)
+            else:
+                # All actions are valid
+                action = q_values.argmax().item()
             
             # Log Q-value statistics
             if training and self.steps % 100 == 0:
@@ -343,12 +356,9 @@ class DQNAgent:
                 self.writer.add_scalar('Agent/Q_Values_Max', q_values.max().item(), self.steps)
                 self.writer.add_scalar('Agent/Q_Values_Min', q_values.min().item(), self.steps)
                 self.writer.add_scalar('Agent/Q_Values_Std', q_values.std().item(), self.steps)
-                self.writer.add_scalar('Agent/Valid_Actions_Count', len(valid_actions), self.steps)
+                self.writer.add_scalar('Agent/Valid_Actions_Count', len(valid_indices), self.steps)
             
-            action = q_values.argmax().item()
-            self.writer.add_scalar('Agent/Random_Action_Taken', 0, self.steps)
-            return action
-        
+            return action    
     def remember(self, state, action, reward, next_state, done):
         """Store experience in replay buffer"""
         self.memory.append((state, action, reward, next_state, done))
