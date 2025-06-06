@@ -20,9 +20,9 @@ class TetrisTrainer:
             tensorboard_log_dir = f"runs/tetris_{agent_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         self.current_curriculum_stage = 0
         self.curriculum_stages = [
-            {'episodes': 1000, 'height': 8, 'preset': 1, 'pieces': 1, 'name': 'Very Easy'},
-            {'episodes': 2000, 'height': 10, 'preset': 2, 'pieces': 2, 'name': 'Easy'},
-            {'episodes': 3000, 'height': 15, 'preset': 3, 'pieces': 5, 'name': 'Medium'},
+            {'episodes': 1000, 'height': 20, 'preset': 1, 'pieces': 1, 'name': 'Very Easy'},
+            {'episodes': 2000, 'height': 20, 'preset': 2, 'pieces': 2, 'name': 'Easy'},
+            {'episodes': 3000, 'height': 20, 'preset': 3, 'pieces': 5, 'name': 'Medium'},
             {'episodes': 5000, 'height': 20, 'preset': 4, 'pieces': 7, 'name': 'Hard'},
             {'episodes': float('inf'), 'height': 20, 'preset': 0, 'pieces': 7, 'name': 'Full Game'},
         ]
@@ -128,7 +128,7 @@ class TetrisTrainer:
             # Reward for clearing lines (exponential)
             lines_cleared = current_state.get('linesCleared', 0) - prev_state.get('linesCleared', 0)
             if lines_cleared > 0:
-                reward += lines_cleared ** 2 * 10
+                reward += lines_cleared ** 4 * 10
             
            # === HOLE PENALTIES (Enhanced) ===
             holes_created = current_state.get('holesCount', 0) - prev_state.get('holesCount', 0)
@@ -141,9 +141,9 @@ class TetrisTrainer:
             bumpiness_change = curr_bumpiness - prev_bumpiness
             reward -= bumpiness_change * 5  # Penalty for increasing bumpiness
             
-            # === WELL PENALTIES ===
-            wells_created = current_state.get('wells', 0) - prev_state.get('wells', 0)
-            reward -= wells_created * 50  # Wells are very bad
+            # # === WELL PENALTIES ===
+            # wells_created = current_state.get('wells', 0) - prev_state.get('wells', 0)
+            # reward -= wells_created * 50  # Wells are very bad
             
             # === BOARD DENSITY MANAGEMENT ===
             board_density = current_state.get('boardDensity', 0)
@@ -187,7 +187,7 @@ class TetrisTrainer:
         
         # === GAME OVER PENALTY ===
         if current_state.get('gameOver', False):
-            reward -= 1000  # Heavy penalty for dying
+            reward -= 100  # Heavy penalty for dying
         
         # === PERFECT CLEAR BONUS ===
         if current_state.get('perfectClear', False):
@@ -196,7 +196,7 @@ class TetrisTrainer:
         return reward
        
     
-    def train(self, episodes=2000, save_interval=100, eval_interval=200):
+    def train(self, episodes=100000, save_interval=100, eval_interval=200):
         """Main training loop"""
         if not self.client.connect():
             print("Failed to connect to Unity. Make sure Unity is running!")
