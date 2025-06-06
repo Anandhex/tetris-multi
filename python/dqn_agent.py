@@ -27,26 +27,36 @@ class TetrisDQN(nn.Module):
         # Total input to first fully connected layer
         total_input_size = conv_output_size + piece_info_size + metrics_size  # 1635
 
-        # Enhanced network architecture for better learning
-        self.fc1 = nn.Linear(total_input_size, 1024)  # Larger first layer
+        # Enhanced network architecture WITHOUT batch normalization
+        self.fc1 = nn.Linear(total_input_size, 1024)
         self.fc2 = nn.Linear(1024, 512)
         self.fc3 = nn.Linear(512, 256)
         self.fc4 = nn.Linear(256, 128)
         self.fc5 = nn.Linear(128, output_size)
         
-        # Add dropout for regularization
+        # Keep dropout for regularization
         self.dropout = nn.Dropout(0.3)
         
-        # Batch normalization for stability
-        self.bn1 = nn.BatchNorm1d(1024)
-        self.bn2 = nn.BatchNorm1d(512)
-        self.bn3 = nn.BatchNorm1d(256)
+        # Initialize weights properly (replaces batch norm benefits)
+        self._initialize_weights()
+    
+    def _initialize_weights(self):
+        """Proper weight initialization to help with training stability"""
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
     
     def forward(self, state_dict):
         # Extract inputs
         board = state_dict['board']        # Shape: (batch, 2, 20, 10)
         piece_info = state_dict['piece_info']  # Shape: (batch, 19)
-        metrics = state_dict['metrics']    # Shape: (batch, 16) - UPDATED
+        metrics = state_dict['metrics']    # Shape: (batch, 16)
             
         # CNN processing
         x = F.relu(self.conv1(board))
@@ -58,16 +68,17 @@ class TetrisDQN(nn.Module):
         # Concatenate all features
         combined = torch.cat([x, piece_info, metrics], dim=1)
             
-        # Enhanced fully connected layers with regularization
-        x = F.relu(self.bn1(self.fc1(combined)))
+        # Fully connected layers with dropout
+        x = F.relu(self.fc1(combined))
         x = self.dropout(x)
-        x = F.relu(self.bn2(self.fc2(x)))
+        x = F.relu(self.fc2(x))
         x = self.dropout(x)
-        x = F.relu(self.bn3(self.fc3(x)))
+        x = F.relu(self.fc3(x))
         x = F.relu(self.fc4(x))
         x = self.fc5(x)
             
         return x
+    
 class DQNAgent:
     def __init__(self, state_size,curriculum_stages, action_size=40, lr=0.001, device='cuda' if torch.cuda.is_available() else 'cpu', 
                  tensorboard_log_dir=None,current_curriculum_stage=0):
