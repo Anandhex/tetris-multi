@@ -1228,8 +1228,8 @@ public class Board : MonoBehaviour
     /// <summary>
     /// Map action rotation to actual piece rotation based on tetromino type
     /// </summary>
-  
-  
+
+
     /// <summary>
     /// Helper method to map column index to board position
     /// </summary>
@@ -1240,53 +1240,54 @@ public class Board : MonoBehaviour
         return Mathf.Clamp(boardColumn, bounds.xMin, bounds.xMax - 1);
     }
 
-   /// <summary>
-/// Very simple and fast validation
-/// </summary>
-public bool[] GetValidActions(Piece piece)
-{
-    bool[] validActions = new bool[40];
-    
-    if (piece == null)
+    /// <summary>
+    /// Very simple and fast validation
+    /// </summary>
+    public bool[] GetValidActions(Piece piece)
+    {
+        bool[] validActions = new bool[40];
+
+        if (piece == null)
+            return validActions;
+
+        int validRotations = GetValidRotationsForPiece(piece.data.tetromino);
+        RectInt bounds = this.Bounds;
+
+        for (int columnIndex = 0; columnIndex < 10; columnIndex++)
+        {
+            int targetColumn = GetBoardColumnFromIndex(columnIndex);
+
+            // Simple check: is the column within bounds and not completely filled?
+            bool columnValid = (targetColumn >= bounds.xMin && targetColumn < bounds.xMax) &&
+                              !IsColumnCompletelyFilled(targetColumn);
+
+            for (int rotation = 0; rotation < 4; rotation++)
+            {
+                int actionIndex = columnIndex * 4 + rotation;
+
+                // Valid if: column is valid AND rotation is valid for this piece type
+                validActions[actionIndex] = columnValid && (rotation < validRotations);
+            }
+        }
+
         return validActions;
-
-    int validRotations = GetValidRotationsForPiece(piece.data.tetromino);
-    RectInt bounds = this.Bounds;
-    
-    for (int columnIndex = 0; columnIndex < 10; columnIndex++)
-    {
-        int targetColumn = GetBoardColumnFromIndex(columnIndex);
-        
-        // Simple check: is the column within bounds and not completely filled?
-        bool columnValid = (targetColumn >= bounds.xMin && targetColumn < bounds.xMax) &&
-                          !IsColumnCompletelyFilled(targetColumn);
-        
-        for (int rotation = 0; rotation < 4; rotation++)
-        {
-            int actionIndex = columnIndex * 4 + rotation;
-            
-            // Valid if: column is valid AND rotation is valid for this piece type
-            validActions[actionIndex] = columnValid && (rotation < validRotations);
-        }
     }
-    
-    return validActions;
+
+    /// <summary>
+    /// Quick check if a column is completely filled
+    /// </summary>
+    private bool IsColumnCompletelyFilled(int column)
+    {
+        RectInt bounds = this.Bounds;
+
+        // Check top few rows - if they're filled, column is likely unusable
+        for (int y = bounds.yMax - 3; y < bounds.yMax; y++)
+        {
+            if (!tilemap.HasTile(new Vector3Int(column, y, 0)))
+            {
+                return false; // Found empty space
+            }
+        }
+        return true; // Top rows are filled
+    }
 }
-
-/// <summary>
-/// Quick check if a column is completely filled
-/// </summary>
-private bool IsColumnCompletelyFilled(int column)
-{
-    RectInt bounds = this.Bounds;
-    
-    // Check top few rows - if they're filled, column is likely unusable
-    for (int y = bounds.yMax - 3; y < bounds.yMax; y++)
-    {
-        if (!tilemap.HasTile(new Vector3Int(column, y, 0)))
-        {
-            return false; // Found empty space
-        }
-    }
-    return true; // Top rows are filled
-}}
