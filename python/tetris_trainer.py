@@ -18,10 +18,17 @@ class TetrisTrainer:
         # Create tensorboard log directory
         if tensorboard_log_dir is None:
             tensorboard_log_dir = f"runs/tetris_{agent_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        
+        self.current_curriculum_stage = 0
+        self.curriculum_stages = [
+            {'episodes': 1000, 'height': 8, 'preset': 1, 'pieces': 1, 'name': 'Very Easy'},
+            {'episodes': 2000, 'height': 10, 'preset': 2, 'pieces': 2, 'name': 'Easy'},
+            {'episodes': 3000, 'height': 15, 'preset': 3, 'pieces': 5, 'name': 'Medium'},
+            {'episodes': 5000, 'height': 20, 'preset': 4, 'pieces': 7, 'name': 'Hard'},
+            {'episodes': float('inf'), 'height': 20, 'preset': 0, 'pieces': 7, 'name': 'Full Game'},
+        ]
         # Initialize agent
         if agent_type == 'dqn':
-            self.agent = DQNAgent(state_size=208, tensorboard_log_dir=tensorboard_log_dir)
+            self.agent = DQNAgent(state_size=208, tensorboard_log_dir=tensorboard_log_dir,curriculum_stages=self.curriculum_stages,current_curriculum_stage=self.current_curriculum_stage)
             if load_model:
                 self.agent.load(model_path)
         
@@ -32,14 +39,7 @@ class TetrisTrainer:
         self.episode_rewards = []
         
         # Curriculum parameters
-        self.current_curriculum_stage = 0
-        self.curriculum_stages = [
-            {'episodes': 100000, 'height': 8, 'preset': 1, 'pieces': 1, 'name': 'Very Easy'},
-            {'episodes': 200000, 'height': 10, 'preset': 2, 'pieces': 2, 'name': 'Easy'},
-            {'episodes': 300000, 'height': 15, 'preset': 3, 'pieces': 5, 'name': 'Medium'},
-            {'episodes': 500000, 'height': 20, 'preset': 4, 'pieces': 7, 'name': 'Hard'},
-            {'episodes': float('inf'), 'height': 20, 'preset': 0, 'pieces': 7, 'name': 'Full Game'},
-        ]
+      
         
         # Setup logging
         self.setup_logging()
@@ -117,10 +117,13 @@ class TetrisTrainer:
                 print(f"✗ Error: Failed to send curriculum change to Unity")
     
     def calculate_reward(self, prev_state, current_state, action):
-        """Calculate custom reward function"""
+        """Alternative reward function with height zones"""
         reward = current_state.get('reward', 0)
         
-        # Additional reward shaping
+        # Get current curriculum stage info
+        current_stage = self.curriculum_stages[self.current_curriculum_stage]
+        max_height = current_stage['height']
+        
         if prev_state is not None:
             # Reward for clearing lines (exponential)
             lines_cleared = current_state.get('linesCleared', 0) - prev_state.get('linesCleared', 0)
@@ -131,18 +134,27 @@ class TetrisTrainer:
             holes_created = current_state.get('holesCount', 0) - prev_state.get('holesCount', 0)
             reward -= holes_created * 5
             
-            # Reward for keeping stack low
+            # Height-based reward zones (scaled to curriculum)
             stack_height = current_state.get('stackHeight', 0)
-            if stack_height < 10:
-                reward += (10 - stack_height) * 0.5
-            elif stack_height > 15:
-                reward -= (stack_height - 15) * 2
+            height_ratio = stack_height / max_height
+            
+            if height_ratio <= 0.3:        # Bottom 30% - good zone
+                reward += 2.0
+            elif height_ratio <= 0.5:      # 30-50% - ok zone
+                reward += 1.0
+            elif height_ratio <= 0.7:      # 50-70% - caution zone
+                reward += 0.0  # neutral
+            elif height_ratio <= 0.85:     # 70-85% - danger zone
+                reward -= 3.0
+            else:                          # 85%+ - critical zone
+                reward -= 8.0
             
             # Bonus for perfect clear
             if current_state.get('perfectClear', False):
-                reward += 100
-        
+                reward += 500
+    
         return reward
+       
     
     def train(self, episodes=2000, save_interval=100, eval_interval=200):
         """Main training loop"""
@@ -167,7 +179,6 @@ class TetrisTrainer:
             for episode in range(episodes):
                 # Apply curriculum
                 self.apply_curriculum(episode)
-                
                 # Reset environment
                 self.client.send_reset()
                 
@@ -180,6 +191,8 @@ class TetrisTrainer:
                 # Verify curriculum is applied
                 curriculum_info = self.client.get_curriculum_info(state)
                 stage_idx, expected_stage = self.get_curriculum_stage(episode)
+                self.agent.update_curriculum_stage(stage_idx)                
+
                 
                 # Log curriculum verification
                 if episode % 50 == 0:
@@ -200,7 +213,6 @@ class TetrisTrainer:
                     
                     # Send action and wait for result
                     next_state = self.client.send_action_and_wait(action, timeout=10.0)
-                    
                     if next_state is None:
                         print(f"Episode {episode}: Timeout waiting for next state")
                         break
@@ -232,8 +244,9 @@ class TetrisTrainer:
                     if done:
                         # Log game over details
                         board_metrics = self.client.get_board_metrics(next_state)
-                        if episode % 10 == 0:
+                        if episode % 1 == 0:
                             print(f"Episode {episode} ended: Score={episode_score}, "
+                                f"reward={episode_reward}, "  
                                 f"Lines={episode_lines}, Steps={steps}, "
                                 f"Final height={board_metrics['stack_height']}, "
                                 f"Holes={board_metrics['holes_count']}")

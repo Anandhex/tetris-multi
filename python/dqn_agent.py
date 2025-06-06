@@ -13,53 +13,58 @@ class TetrisDQN(nn.Module):
     def __init__(self, input_size, hidden_size=512, output_size=40):
         super(TetrisDQN, self).__init__()
         
-        # Convolutional layers for board state
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)
+     # Updated CNN layers for 2-channel input
+        self.conv1 = nn.Conv2d(2, 32, kernel_size=3, padding=1)  # Changed: 1 -> 2 channels
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
         self.conv3 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
-        
-        # Use adaptive pooling to handle variable board sizes
+
+        # Keep your adaptive pooling - it's perfect for this use case
         self.pool = nn.AdaptiveAvgPool2d((5, 5))
-        
-        # Fixed conv output size after adaptive pooling
-        conv_output_size = 64 * 5 * 5  # Always 1600 after adaptive pooling
-        
+
+        # Update the flattened size calculation
+        # After conv3 + pool: 64 channels * 5 * 5 = 1600
+        conv_output_size = 64 * 5 * 5  # 1600
+
+        # Additional input sizes from preprocessing
+        piece_info_size = 19  # From _encode_piece_info
+        metrics_size = 8      # From _encode_metrics
+
+        # Total input to first fully connected layer
+        total_input_size = conv_output_size + piece_info_size + metrics_size  # 1627
+
         # Fully connected layers
-        self.fc1 = nn.Linear(conv_output_size + 8, hidden_size)  # +8 for piece info and metrics
-        self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.fc3 = nn.Linear(hidden_size, hidden_size // 2)
-        self.fc4 = nn.Linear(hidden_size // 2, output_size)
-        
-        self.dropout = nn.Dropout(0.3)
-        self.layer_norm1 = nn.LayerNorm(hidden_size)
-        self.layer_norm2 = nn.LayerNorm(hidden_size)
-        
-    def forward(self, board, piece_info, metrics):
-        # Process board through conv layers
-        x = F.relu(self.conv1(board))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
-        x = self.pool(x)  # Always outputs batch_size x 64 x 5 x 5
-        
-        # Flatten conv output
-        x = x.view(x.size(0), -1)  # Should always be batch_size x 1600
-        
-        # Concatenate with piece info and metrics
-        x = torch.cat([x, piece_info, metrics], dim=1)
-        
-        # Fully connected layers with layer norm
-        x = F.relu(self.layer_norm1(self.fc1(x)))
-        x = self.dropout(x)
-        x = F.relu(self.layer_norm2(self.fc2(x)))
-        x = self.dropout(x)
-        x = F.relu(self.fc3(x))
-        x = self.fc4(x)
-        
+        self.fc1 = nn.Linear(total_input_size, 512)
+        self.fc2 = nn.Linear(512, 256)
+        self.fc3 = nn.Linear(256, output_size)  # output_size = action_size
+
+    
+        # Forward pass example   
+    def forward(self, state_dict):
+        # Extract inputs
+        board = state_dict['board']        # Shape: (batch, 2, 20, 10)
+        piece_info = state_dict['piece_info']  # Shape: (batch, 19)
+        metrics = state_dict['metrics']    # Shape: (batch, 8)
+            
+        # CNN processing
+        x = F.relu(self.conv1(board))      # (batch, 32, 20, 10)
+        x = F.relu(self.conv2(x))          # (batch, 64, 20, 10)
+        x = F.relu(self.conv3(x))          # (batch, 64, 20, 10)
+        x = self.pool(x)                   # (batch, 64, 5, 5)
+        x = x.view(x.size(0), -1)          # (batch, 1600)
+            
+        # Concatenate all features
+        combined = torch.cat([x, piece_info, metrics], dim=1)  # (batch, 1627)
+            
+        # Fully connected layers
+        x = F.relu(self.fc1(combined))     # (batch, 512)
+        x = F.relu(self.fc2(x))            # (batch, 256)
+        x = self.fc3(x)                    # (batch, action_size)
+            
         return x
 
 class DQNAgent:
-    def __init__(self, state_size, action_size=40, lr=0.001, device='cuda' if torch.cuda.is_available() else 'cpu', 
-                 tensorboard_log_dir=None):
+    def __init__(self, state_size,curriculum_stages, action_size=40, lr=0.001, device='cuda' if torch.cuda.is_available() else 'cpu', 
+                 tensorboard_log_dir=None,current_curriculum_stage=0):
         self.device = device
         self.action_size = action_size
         self.memory = deque(maxlen=50000)
@@ -90,6 +95,8 @@ class DQNAgent:
         
         # Copy weights to target network
         self.target_network.load_state_dict(self.q_network.state_dict())
+        self.current_curriculum_stage =current_curriculum_stage
+        self.curriculum_stages = curriculum_stages
         
         # Metrics tracking
         self.episode_rewards = []
@@ -123,122 +130,165 @@ class DQNAgent:
         normalized_board[start_row:start_row + copy_height, :copy_width] = board_2d[:copy_height, :copy_width]
         
         return normalized_board.flatten()
-    
+
+    def update_curriculum_stage(self, stage):
+        self.current_curriculum_stage = stage    
+
+
     def preprocess_state(self, game_state):
-        """Convert game state to neural network input with board size normalization"""
+        """Convert game state to neural network input - fixed size with curriculum awareness"""
         if not isinstance(game_state, dict) or 'board' not in game_state:
-            print("Warning: preprocess_state received invalid game_state.")
-            return {
-                'board': torch.zeros((1, 1, self.standard_height, self.standard_width), dtype=torch.float32).to(self.device),
-                'piece_info': torch.zeros((1, 4), dtype=torch.float32).to(self.device),
-                'metrics': torch.zeros((1, 4), dtype=torch.float32).to(self.device)
-            }
+            return self._create_empty_state()
         
-        # Get board data with better error handling
+        # Get current curriculum stage
+        current_stage = self.curriculum_stages[self.current_curriculum_stage]
+        curr_height = current_stage['height']
+        
+        # Always use standard 20x10 board for network input
         board_data = game_state.get('board', [])
-        
-        # Handle different types of board data
-        if board_data is None or (hasattr(board_data, '__len__') and len(board_data) == 0):
-            board = np.zeros(self.standard_height * self.standard_width)
-            current_height = self.standard_height
-            current_width = self.standard_width
-        elif isinstance(board_data, (int, float)):
-            board = np.zeros(self.standard_height * self.standard_width)
-            current_height = self.standard_height
-            current_width = self.standard_width
-        elif hasattr(board_data, '__len__'):
-            try:
-                board = np.array(board_data, dtype=np.float32)
-                if board.size == 0:
-                    board = np.zeros(self.standard_height * self.standard_width)
-                    current_height = self.standard_height
-                    current_width = self.standard_width
-                else:
-                    # Calculate current board dimensions from curriculum
-                    current_width = 10  # Always 10
-                    current_height = max(1, len(board) // current_width)
-                    
-                    # Ensure board is the right size
-                    expected_size = current_height * current_width
-                    if len(board) != expected_size:
-                        if len(board) < expected_size:
-                            board = np.pad(board, (0, expected_size - len(board)), mode='constant')
-                        else:
-                            board = board[:expected_size]
-            except (ValueError, TypeError) as e:
-                print(f"Warning: Could not convert board data to array: {e}")
-                board = np.zeros(self.standard_height * self.standard_width)
-                current_height = self.standard_height
-                current_width = self.standard_width
-        else:
-            print(f"Warning: Unknown board data type: {type(board_data)}")
-            board = np.zeros(self.standard_height * self.standard_width)
-            current_height = self.standard_height
-            current_width = self.standard_width
-        
-        # Normalize board to standard size
-        board = self.normalize_board_size(board, current_height, current_width)
-        
-        # Reshape to standard dimensions
-        board = board.reshape(1, 1, self.standard_height, self.standard_width).astype(np.float32)
-        
-        # Piece information
-        piece_info = game_state.get('currentPiece', [0, 0, 0, 0])
-        if not isinstance(piece_info, (list, tuple, np.ndarray)):
-            piece_info = [0, 0, 0, 0]
-        
-        piece_info = list(piece_info) if hasattr(piece_info, '__iter__') else [0, 0, 0, 0]
-        piece_features = (piece_info + [0, 0, 0, 0])[:4]
-        piece_features = np.array(piece_features, dtype=np.float32).reshape(1, -1)
-        
-        # Game metrics (normalized)
         try:
-            score = float(game_state.get('score', 0))
-            holes = float(game_state.get('holesCount', 0))
-            height = float(game_state.get('stackHeight', 0))
-            perfect_clear = bool(game_state.get('perfectClear', False))
+            board = np.array(board_data, dtype=np.float32)
+            if board.size != curr_height * 10:
+                board = np.zeros(curr_height * 10)
             
-            metrics = np.array([
-                min(score / 10000.0, 1.0),
-                min(holes / 20.0, 1.0),
-                min(height / 20.0, 1.0),
-                1.0 if perfect_clear else 0.0
-            ], dtype=np.float32).reshape(1, -1)
-        except (ValueError, TypeError) as e:
-            print(f"Warning: Could not process game metrics: {e}")
-            metrics = np.zeros((1, 4), dtype=np.float32)
+            # Reshape to current curriculum size then pad/crop to standard size
+            curr_board = board.reshape(curr_height, 10)
+            
+            # Create standard 20x10 board
+            standard_board = np.zeros((self.standard_height, self.standard_width), dtype=np.float32)
+            
+            # Place curriculum board at the BOTTOM (like real Tetris)
+            start_row = self.standard_height - curr_height
+            standard_board[start_row:, :] = curr_board
+            
+            # Add curriculum mask as second channel
+            mask = np.zeros((self.standard_height, self.standard_width), dtype=np.float32)
+            mask[start_row:, :] = 1.0  # Mark active area
+            
+            # Stack board and mask as channels
+            board_with_mask = np.stack([standard_board, mask], axis=0)  # Shape: (2, 20, 10)
+            board_with_mask = board_with_mask.reshape(1, 2, self.standard_height, self.standard_width)
+            
+        except Exception as e:
+            print(f"Board processing error: {e}")
+            board_with_mask = np.zeros((1, 2, self.standard_height, self.standard_width), dtype=np.float32)
+            # Set bottom rows as active for current curriculum
+            start_row = self.standard_height - current_stage['height']
+            board_with_mask[0, 1, start_row:, :] = 1.0
+        
+        # Enhanced piece information
+        piece_info = self._encode_piece_info(game_state, current_stage)
+        
+        # Curriculum-adaptive game metrics
+        metrics = self._encode_metrics(game_state, current_stage)
         
         return {
-            'board': torch.FloatTensor(board).to(self.device),
-            'piece_info': torch.FloatTensor(piece_features).to(self.device),
+            'board': torch.FloatTensor(board_with_mask).to(self.device),
+            'piece_info': torch.FloatTensor(piece_info).to(self.device),
             'metrics': torch.FloatTensor(metrics).to(self.device)
         }
-    
+
+    def _encode_piece_info(self, game_state, current_stage):
+        """Encode current piece information"""
+        # Piece type encoding (one-hot for 7 piece types)
+        piece_type = game_state.get('currentPieceType', 0)  # 0-6 for I,O,T,S,Z,J,L
+        piece_onehot = np.zeros(7, dtype=np.float32)
+        if 0 <= piece_type < 7:
+            piece_onehot[piece_type] = 1.0
+        
+        # Piece position and rotation (normalized to standard board)
+        piece_x = game_state.get('currentPieceX', 0) / 10.0  # Normalize to [0,1]
+        piece_y = game_state.get('currentPieceY', 0) / 20.0  # Always normalize to full board
+        piece_rotation = game_state.get('currentPieceRotation', 0) / 3.0  # 0-3 rotations
+        
+        # Next piece info (if available)
+        next_piece = game_state.get('nextPieceType', 0)
+        next_onehot = np.zeros(7, dtype=np.float32)
+        if 0 <= next_piece < 7:
+            next_onehot[next_piece] = 1.0
+        
+        # Curriculum stage info
+        stage_features = [
+            current_stage['height'] / 20.0,  # Relative height
+            float(self.current_curriculum_stage) / len(self.curriculum_stages),  # Progress
+        ]
+        
+        # Combine all piece info
+        piece_features = np.concatenate([
+            piece_onehot,      # 7 features
+            [piece_x, piece_y, piece_rotation],  # 3 features
+            next_onehot,       # 7 features
+            stage_features     # 2 features
+        ]).reshape(1, -1)  # Total: 19 features
+        
+        return piece_features
+
+    def _encode_metrics(self, game_state, current_stage):
+        """Encode game metrics - curriculum adaptive"""
+        try:
+            score = float(game_state.get('score', 0))
+            lines_cleared = float(game_state.get('linesCleared', 0))
+            level = float(game_state.get('level', 1))
+            holes = float(game_state.get('holesCount', 0))
+            stack_height = float(game_state.get('stackHeight', 0))
+            perfect_clear = float(game_state.get('perfectClear', False))
+            
+            # Adaptive normalization based on curriculum
+            curr_height = current_stage['height']
+            max_expected_score = curr_height * 1000  # Rough estimate
+            
+            metrics = np.array([
+                min(score / max_expected_score, 1.0),  # Normalized score
+                min(lines_cleared / 100.0, 1.0),      # Lines cleared
+                min(level / 10.0, 1.0),               # Level
+                min(holes / (curr_height * 2), 1.0),  # Holes relative to board size
+                stack_height / curr_height,           # Stack height ratio (curriculum adaptive)
+                perfect_clear,                        # Perfect clear flag
+                curr_height / 20.0,                   # Current difficulty indicator
+                float(self.current_curriculum_stage) / len(self.curriculum_stages)  # Overall progress
+            ], dtype=np.float32).reshape(1, -1)
+            
+        except (ValueError, TypeError):
+            metrics = np.zeros((1, 8), dtype=np.float32)
+        
+        return metrics
+
+    def _create_empty_state(self):
+        """Create empty state for error cases"""
+        current_stage = self.curriculum_stages[self.current_curriculum_stage]
+        
+        # Create empty board with mask
+        empty_board = np.zeros((1, 2, self.standard_height, self.standard_width), dtype=np.float32)
+        # Set active area mask
+        start_row = self.standard_height - current_stage['height']
+        empty_board[0, 1, start_row:, :] = 1.0
+        
+        return {
+            'board': torch.FloatTensor(empty_board).to(self.device),
+            'piece_info': torch.zeros((1, 19), dtype=torch.float32).to(self.device),
+            'metrics': torch.zeros((1, 8), dtype=torch.float32).to(self.device)
+        }  
     def act(self, state, training=True):
-        """Choose action using epsilon-greedy policy"""
-        if training and random.random() <= self.epsilon:
-            action = random.randrange(self.action_size)
-            self.writer.add_scalar('Agent/Random_Action_Taken', 1, self.steps)
-            return action
-        
-        processed_state = self.preprocess_state(state)
-        
-        with torch.no_grad():
-            q_values = self.q_network(
-                processed_state['board'],
-                processed_state['piece_info'],
-                processed_state['metrics']
-            )
+            """Choose action using epsilon-greedy policy"""
+            if training and random.random() <= self.epsilon:
+                action = random.randrange(self.action_size)
+                self.writer.add_scalar('Agent/Random_Action_Taken', 1, self.steps)
+                return action
             
-            if training and self.steps % 100 == 0:
-                self.writer.add_scalar('Agent/Q_Values_Mean', q_values.mean().item(), self.steps)
-                self.writer.add_scalar('Agent/Q_Values_Max', q_values.max().item(), self.steps)
-                self.writer.add_scalar('Agent/Q_Values_Min', q_values.min().item(), self.steps)
-                self.writer.add_scalar('Agent/Q_Values_Std', q_values.std().item(), self.steps)
+            processed_state = self.preprocess_state(state)
             
-            action = q_values.argmax().item()
-            self.writer.add_scalar('Agent/Random_Action_Taken', 0, self.steps)
-            return action
+            with torch.no_grad():
+                q_values = self.q_network(processed_state)
+                
+                if training and self.steps % 100 == 0:
+                    self.writer.add_scalar('Agent/Q_Values_Mean', q_values.mean().item(), self.steps)
+                    self.writer.add_scalar('Agent/Q_Values_Max', q_values.max().item(), self.steps)
+                    self.writer.add_scalar('Agent/Q_Values_Min', q_values.min().item(), self.steps)
+                    self.writer.add_scalar('Agent/Q_Values_Std', q_values.std().item(), self.steps)
+                
+                action = q_values.argmax().item()
+                self.writer.add_scalar('Agent/Random_Action_Taken', 0, self.steps)
+                return action
     
     def remember(self, state, action, reward, next_state, done):
         """Store experience in replay buffer"""
@@ -285,9 +335,10 @@ class DQNAgent:
                 next_metrics_tensors.append(processed_next_state['metrics'])
             else:
                 # Terminal state - use zeros with standard dimensions
-                next_board_tensors.append(torch.zeros((1, 1, self.standard_height, self.standard_width), dtype=torch.float32).to(self.device))
-                next_piece_tensors.append(torch.zeros((1, 4), dtype=torch.float32).to(self.device))
-                next_metrics_tensors.append(torch.zeros((1, 4), dtype=torch.float32).to(self.device))
+                empty_state = self._create_empty_state()
+                next_board_tensors.append(empty_state['board'])
+                next_piece_tensors.append(empty_state['piece_info'])
+                next_metrics_tensors.append(empty_state['metrics'])
             
             actions.append(action)
             rewards.append(reward)
@@ -307,15 +358,19 @@ class DQNAgent:
             return None
         
         # Current Q values
-        current_q_values = self.q_network(board_batch, piece_batch, metrics_batch)
+        state_batch_dict = {'board': board_batch, 'piece_info': piece_batch, 'metrics': metrics_batch}
+        next_state_batch_dict = {'board': next_board_batch, 'piece_info': next_piece_batch, 'metrics': next_metrics_batch}
+        
+        # Current Q values
+        current_q_values = self.q_network(state_batch_dict)
         current_q_values = current_q_values.gather(1, torch.LongTensor(actions).unsqueeze(1).to(self.device))
         
         # Next Q values from target network (Double DQN)
         with torch.no_grad():
-            next_q_values_online = self.q_network(next_board_batch, next_piece_batch, next_metrics_batch)
+            next_q_values_online = self.q_network(next_state_batch_dict)
             next_actions = next_q_values_online.argmax(1)
             
-            next_q_values_target = self.target_network(next_board_batch, next_piece_batch, next_metrics_batch)
+            next_q_values_target = self.target_network(next_state_batch_dict)
             max_next_q_values = next_q_values_target.gather(1, next_actions.unsqueeze(1)).squeeze(1)
         
         # Calculate target Q values
