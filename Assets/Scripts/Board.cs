@@ -1013,13 +1013,13 @@ public class Board : MonoBehaviour
     {
         RectInt bounds = this.Bounds;
         int[] columnHeights = new int[bounds.width];
-        
+
         // Calculate height of each column
         for (int x = bounds.xMin; x < bounds.xMax; x++)
         {
             int columnIndex = x - bounds.xMin;
             columnHeights[columnIndex] = 0;
-            
+
             for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
             {
                 if (tilemap.HasTile(new Vector3Int(x, y, 0)))
@@ -1029,14 +1029,14 @@ public class Board : MonoBehaviour
                 }
             }
         }
-        
+
         // Calculate bumpiness as sum of height differences
         float bumpiness = 0;
         for (int i = 0; i < columnHeights.Length - 1; i++)
         {
             bumpiness += Mathf.Abs(columnHeights[i] - columnHeights[i + 1]);
         }
-        
+
         return bumpiness;
     }
 
@@ -1047,17 +1047,17 @@ public class Board : MonoBehaviour
     {
         RectInt bounds = this.Bounds;
         int wells = 0;
-        
+
         for (int x = bounds.xMin; x < bounds.xMax; x++)
         {
             int wellDepth = 0;
-            
+
             for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
             {
                 bool centerEmpty = !tilemap.HasTile(new Vector3Int(x, y, 0));
                 bool leftWall = (x == bounds.xMin) || tilemap.HasTile(new Vector3Int(x - 1, y, 0));
                 bool rightWall = (x == bounds.xMax - 1) || tilemap.HasTile(new Vector3Int(x + 1, y, 0));
-                
+
                 if (centerEmpty && leftWall && rightWall)
                 {
                     wellDepth++;
@@ -1072,14 +1072,14 @@ public class Board : MonoBehaviour
                     wellDepth = 0;
                 }
             }
-            
+
             // Don't forget wells that go to the bottom
             if (wellDepth > 0)
             {
                 wells += wellDepth * wellDepth;
             }
         }
-        
+
         return wells;
     }
 
@@ -1090,11 +1090,11 @@ public class Board : MonoBehaviour
     {
         RectInt bounds = this.Bounds;
         List<int> holeDepths = new List<int>();
-        
+
         for (int x = bounds.xMin; x < bounds.xMax; x++)
         {
             int blocksAbove = 0;
-            
+
             for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
             {
                 if (tilemap.HasTile(new Vector3Int(x, y, 0)))
@@ -1108,7 +1108,7 @@ public class Board : MonoBehaviour
                 }
             }
         }
-        
+
         return holeDepths.Count > 0 ? (float)holeDepths.Average() : 0f;
     }
 
@@ -1119,7 +1119,7 @@ public class Board : MonoBehaviour
     {
         RectInt bounds = this.Bounds;
         int potentialLines = 0;
-        
+
         for (int y = bounds.yMin; y < bounds.yMax; y++)
         {
             int gaps = 0;
@@ -1130,13 +1130,13 @@ public class Board : MonoBehaviour
                     gaps++;
                 }
             }
-            
+
             if (gaps > 0 && gaps <= maxGaps)
             {
                 potentialLines++;
             }
         }
-        
+
         return potentialLines;
     }
 
@@ -1148,7 +1148,7 @@ public class Board : MonoBehaviour
         RectInt bounds = this.Bounds;
         int totalCells = bounds.width * bounds.height;
         int filledCells = 0;
-        
+
         for (int x = bounds.xMin; x < bounds.xMax; x++)
         {
             for (int y = bounds.yMin; y < bounds.yMax; y++)
@@ -1159,7 +1159,7 @@ public class Board : MonoBehaviour
                 }
             }
         }
-        
+
         return totalCells > 0 ? (float)filledCells / totalCells : 0f;
     }
 
@@ -1169,7 +1169,7 @@ public class Board : MonoBehaviour
     public bool HasTSpinOpportunity()
     {
         RectInt bounds = this.Bounds;
-        
+
         // Look for T-spin setups (simplified check)
         for (int x = bounds.xMin + 1; x < bounds.xMax - 1; x++)
         {
@@ -1181,16 +1181,16 @@ public class Board : MonoBehaviour
                 bool rightEmpty = !tilemap.HasTile(new Vector3Int(x + 1, y, 0));
                 bool belowFilled = tilemap.HasTile(new Vector3Int(x, y - 1, 0));
                 bool aboveEmpty = !tilemap.HasTile(new Vector3Int(x, y + 1, 0));
-                
+
                 // Basic T-spin setup: T-shaped cavity
-                if (centerEmpty && belowFilled && aboveEmpty && 
+                if (centerEmpty && belowFilled && aboveEmpty &&
                     (leftEmpty || rightEmpty) && !(leftEmpty && rightEmpty))
                 {
                     return true;
                 }
             }
         }
-        
+
         return false;
     }
 }
