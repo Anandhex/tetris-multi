@@ -1228,71 +1228,8 @@ public class Board : MonoBehaviour
     /// <summary>
     /// Map action rotation to actual piece rotation based on tetromino type
     /// </summary>
-    private int GetActualRotation(Tetromino tetrominoType, int actionRotation)
-    {
-        switch (tetrominoType)
-        {
-            case Tetromino.I: // I-piece: map 0,1,2,3 -> 0,1,0,1
-                return actionRotation % 2;
-            case Tetromino.O: // O-piece: always 0
-                return 0;
-            case Tetromino.T:
-            case Tetromino.J:
-            case Tetromino.L:
-            case Tetromino.S:
-            case Tetromino.Z: // All rotations valid
-            default:
-                return actionRotation;
-        }
-    }
-
-    /// <summary>
-    /// Map action rotation using TetrominoData
-    /// </summary>
-    private int GetActualRotation(TetrominoData pieceData, int actionRotation)
-    {
-        return GetActualRotation(pieceData.tetromino, actionRotation);
-    }
-
-    /// <summary>
-    /// Get valid actions for current piece (piece-specific)
-    /// </summary>
-    public bool[] GetValidActions(Piece piece)
-    {
-        bool[] validActions = new bool[40]; // 40 actions: 10 columns × 4 rotations
-
-        if (piece == null)
-        {
-            return validActions; // All false if no piece
-        }
-
-        RectInt bounds = this.Bounds;
-        int validRotations = GetValidRotationsForPiece(piece.data.tetromino);
-
-        for (int columnIndex = 0; columnIndex < 10; columnIndex++)
-        {
-            int targetColumn = GetBoardColumnFromIndex(columnIndex);
-
-            for (int rotation = 0; rotation < 4; rotation++)
-            {
-                int actionIndex = columnIndex * 4 + rotation;
-
-                // Skip invalid rotations for this piece type
-                if (rotation >= validRotations)
-                {
-                    validActions[actionIndex] = false;
-                    continue;
-                }
-
-                // For pieces with limited rotations, map to actual valid rotations
-                int actualTargetRotation = GetActualRotation(piece.data.tetromino, rotation);
-                validActions[actionIndex] = IsActionValidDetailed(piece, targetColumn, actualTargetRotation);
-            }
-        }
-
-        return validActions;
-    }
-
+  
+  
     /// <summary>
     /// Helper method to map column index to board position
     /// </summary>
@@ -1303,166 +1240,53 @@ public class Board : MonoBehaviour
         return Mathf.Clamp(boardColumn, bounds.xMin, bounds.xMax - 1);
     }
 
-    /// <summary>
-    /// Detailed validation for a specific action
-    /// </summary>
-    private bool IsActionValidDetailed(Piece piece, int targetColumn, int targetRotation)
+   /// <summary>
+/// Very simple and fast validation
+/// </summary>
+public bool[] GetValidActions(Piece piece)
+{
+    bool[] validActions = new bool[40];
+    
+    if (piece == null)
+        return validActions;
+
+    int validRotations = GetValidRotationsForPiece(piece.data.tetromino);
+    RectInt bounds = this.Bounds;
+    
+    for (int columnIndex = 0; columnIndex < 10; columnIndex++)
     {
-        // Store original state
-        Vector3Int originalPosition = piece.position;
-        int originalRotation = piece.rotationIndex;
-        Vector2Int[] originalCells = new Vector2Int[piece.cells.Length];
-        System.Array.Copy(piece.cells, originalCells, piece.cells.Length);
-
-        try
+        int targetColumn = GetBoardColumnFromIndex(columnIndex);
+        
+        // Simple check: is the column within bounds and not completely filled?
+        bool columnValid = (targetColumn >= bounds.xMin && targetColumn < bounds.xMax) &&
+                          !IsColumnCompletelyFilled(targetColumn);
+        
+        for (int rotation = 0; rotation < 4; rotation++)
         {
-            // Clear piece from board temporarily
-            Clear(piece);
-
-            // Step 1: Try to rotate to target rotation
-            bool rotationSuccess = TryRotateToTarget(piece, targetRotation);
-            if (!rotationSuccess)
-            {
-                RestorePieceState(piece, originalPosition, originalRotation, originalCells);
-                Set(piece);
-                return false;
-            }
-
-            // Step 2: Try to move to target column
-            bool moveSuccess = TryMoveToColumn(piece, targetColumn);
-            if (!moveSuccess)
-            {
-                RestorePieceState(piece, originalPosition, originalRotation, originalCells);
-                Set(piece);
-                return false;
-            }
-
-            // Step 3: Check if piece can be dropped to a valid position
-            piece.position = new Vector3Int(targetColumn, piece.position.y, piece.position.z);
-            bool hasValidDrop = HasValidDropPosition(piece);
-
-            // Restore original state
-            RestorePieceState(piece, originalPosition, originalRotation, originalCells);
-            Set(piece);
-
-            return hasValidDrop;
-        }
-        catch
-        {
-            // Restore state on any error
-            RestorePieceState(piece, originalPosition, originalRotation, originalCells);
-            Set(piece);
-            return false;
+            int actionIndex = columnIndex * 4 + rotation;
+            
+            // Valid if: column is valid AND rotation is valid for this piece type
+            validActions[actionIndex] = columnValid && (rotation < validRotations);
         }
     }
-
-    /// <summary>
-    /// Try to rotate piece to target rotation with wall kicks
-    /// </summary>
-    private bool TryRotateToTarget(Piece piece, int targetRotation)
-    {
-        int currentRotation = piece.rotationIndex;
-        int rotationsNeeded = (targetRotation - currentRotation + 4) % 4;
-
-        for (int i = 0; i < rotationsNeeded; i++)
-        {
-            if (!TryRotateWithWallKicks(piece))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// Try to rotate piece with wall kick attempts
-    /// </summary>
-    private bool TryRotateWithWallKicks(Piece piece)
-    {
-        Vector3Int originalPosition = piece.position;
-        int originalRotation = piece.rotationIndex;
-
-        // Try rotation at current position first
-        piece.Rotate(1);
-        if (IsValidPosition(piece, piece.position))
-        {
-            return true;
-        }
-
-        // Try wall kicks
-        Vector3Int[] kickOffsets = {
-        Vector3Int.left, Vector3Int.right, Vector3Int.up,
-        Vector3Int.left * 2, Vector3Int.right * 2,
-        new Vector3Int(-1, 1, 0), new Vector3Int(1, 1, 0)
-    };
-
-        foreach (var offset in kickOffsets)
-        {
-            Vector3Int testPosition = originalPosition + offset;
-            if (IsValidPosition(piece, testPosition))
-            {
-                piece.position = testPosition;
-                return true;
-            }
-        }
-
-        // Revert rotation if no valid position found
-        piece.Rotate(-1);
-        piece.position = originalPosition;
-        return false;
-    }
-
-    /// <summary>
-    /// Try to move piece to target column
-    /// </summary>
-    private bool TryMoveToColumn(Piece piece, int targetColumn)
-    {
-        int currentColumn = piece.position.x;
-        int distance = Mathf.Abs(targetColumn - currentColumn);
-        int direction = targetColumn > currentColumn ? 1 : -1;
-
-        Vector3Int testPosition = piece.position;
-
-        for (int i = 0; i < distance; i++)
-        {
-            testPosition.x += direction;
-            if (!IsValidPosition(piece, testPosition))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// Check if piece has at least one valid drop position
-    /// </summary>
-    private bool HasValidDropPosition(Piece piece)
-    {
-        Vector3Int testPosition = piece.position;
-
-        // Try dropping from current position
-        while (testPosition.y >= Bounds.yMin)
-        {
-            if (IsValidPosition(piece, testPosition))
-            {
-                return true;
-            }
-            testPosition.y--;
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Restore piece to its original state
-    /// </summary>
-    private void RestorePieceState(Piece piece, Vector3Int originalPosition, int originalRotation, Vector2Int[] originalCells)
-    {
-        piece.position = originalPosition;
-        piece.rotationIndex = originalRotation;
-        System.Array.Copy(originalCells, piece.cells, originalCells.Length);
-    }
+    
+    return validActions;
 }
+
+/// <summary>
+/// Quick check if a column is completely filled
+/// </summary>
+private bool IsColumnCompletelyFilled(int column)
+{
+    RectInt bounds = this.Bounds;
+    
+    // Check top few rows - if they're filled, column is likely unusable
+    for (int y = bounds.yMax - 3; y < bounds.yMax; y++)
+    {
+        if (!tilemap.HasTile(new Vector3Int(column, y, 0)))
+        {
+            return false; // Found empty space
+        }
+    }
+    return true; // Top rows are filled
+}}

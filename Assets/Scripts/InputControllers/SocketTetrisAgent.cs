@@ -5,11 +5,6 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
 {
     private Board board;
     // Add these fields to SocketTetrisAgent class
-    private bool[] cachedValidActions;
-    private Piece lastValidatedPiece;
-    private Vector3Int lastValidatedPosition;
-    private int lastValidatedRotation;
-    private Tetromino lastValidatedTetrominoType;
     private Piece currentPiece;
     private bool isExecutingAction = false;
     private bool waitingForNewPiece = false;
@@ -476,7 +471,7 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         state.stackHeight = board.CalculateStackHeight();
         state.perfectClear = board.IsPerfectClear();
         state.linesCleared = board.GetTotalLinesCleared(); // This should be set when lines are actually cleared
-        state.validActions = GetCachedValidActions();
+        state.validActions = board.GetValidActions(currentPiece);
         if (currentPiece != null)
         {
             state.currentPieceType = GetPieceTypeIndex(currentPiece.data);
@@ -518,24 +513,6 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
             currentLinesCleared = 0;
             lastReward = 0f;
         }
-    }
-    private bool[] GetCachedValidActions()
-    {
-        // Check if we need to recalculate
-        if (currentPiece != lastValidatedPiece ||
-            currentPiece == null ||
-            currentPiece.position != lastValidatedPosition ||
-            currentPiece.rotationIndex != lastValidatedRotation ||
-            currentPiece.data.tetromino != lastValidatedTetrominoType)
-        {
-            cachedValidActions = board.GetValidActions(currentPiece);
-            lastValidatedPiece = currentPiece;
-            lastValidatedPosition = currentPiece?.position ?? Vector3Int.zero;
-            lastValidatedRotation = currentPiece?.rotationIndex ?? 0;
-            lastValidatedTetrominoType = currentPiece?.data.tetromino ?? Tetromino.I;
-        }
-
-        return cachedValidActions ?? new bool[40];
     }
     private bool IsActionValid(int actionIndex)
     {
