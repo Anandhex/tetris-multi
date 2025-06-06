@@ -111,6 +111,13 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
             Debug.LogWarning("Cannot execute action: no current piece or already executing action");
             return;
         }
+        if (!IsActionValid(actionIndex))
+    {
+        Debug.LogWarning($"Invalid action {actionIndex} rejected");
+        lastReward = -50f; // Penalty for invalid action
+        SendGameState();
+        return;
+    }
 
         // Simple mapping: 40 actions = 10 columns × 4 rotations
         int targetColumnIndex = actionIndex / 4;  // 0-9
@@ -313,38 +320,88 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     }
 
     void CalculatePlacementReward()
+{
+    // Reset reward
+    lastReward = 0f;
+
+    // Base placement reward
+    lastReward += 1f;
+
+    // Get current curriculum stage for adaptive scaling
+    float maxHeight = curriculumBoardHeight;
+    
+    // === HOLE PENALTIES (Enhanced) ===
+    int holes = board.CountHoles();
+    float avgHoleDepth = board.CalculateAverageHoleDepth();
+    lastReward -= holes * 25f * (1f + avgHoleDepth * 0.5f); // Deeper holes worse
+    
+    // === BUMPINESS PENALTY ===
+    float bumpiness = board.CalculateBumpiness();
+    lastReward -= bumpiness * 3f;
+    
+    // === WELL PENALTY ===
+    int wells = board.CountWells();
+    lastReward -= wells * 10f; // Wells are very bad
+    
+    // === HEIGHT MANAGEMENT (Curriculum-aware) ===
+    float stackHeight = board.CalculateStackHeight();
+    float heightRatio = stackHeight / maxHeight;
+    
+    // Progressive height penalty
+    if (heightRatio <= 0.3f)
     {
-        // Reset reward
-        lastReward = 0f;
-
-        // Small reward for successful placement
-        lastReward += 1f;
-
-        // Penalty for creating holes
-        int holes = board.CountHoles();
-        lastReward -= holes * 2f;
-
-        // Penalty for high stacks
-        float stackHeight = board.CalculateStackHeight();
-        if (stackHeight > 15)
-        {
-            lastReward -= (stackHeight - 15) * 1f;
-        }
-
-        // Bonus for keeping stack low
-        if (stackHeight < 10)
-        {
-            lastReward += (10 - stackHeight) * 0.5f;
-        }
-
-        // Big bonus for perfect clear
-        if (board.IsPerfectClear())
-        {
-            lastReward += 50f;
-        }
-
-        // Line clear rewards are handled separately in OnLinesCleared
+        lastReward += 5f; // Good zone
     }
+    else if (heightRatio <= 0.5f)
+    {
+        lastReward += 2f; // OK zone
+    }
+    else if (heightRatio <= 0.7f)
+    {
+        lastReward += 0f; // Neutral
+    }
+    else if (heightRatio <= 0.85f)
+    {
+        lastReward -= 10f; // Danger zone
+    }
+    else
+    {
+        lastReward -= 25f; // Critical zone
+    }
+    
+    // === POTENTIAL LINE CLEAR BONUS ===
+    int potentialLines = board.CountPotentialLineClears(2);
+    lastReward += potentialLines * 8f; // Reward setting up line clears
+    
+    // === BOARD DENSITY MANAGEMENT ===
+    float density = board.CalculateBoardDensity();
+    if (density > 0.8f)
+    {
+        lastReward -= 15f; // Too dense is bad
+    }
+    else if (density < 0.3f && stackHeight > 5)
+    {
+        lastReward += 3f; // Good density with some height
+    }
+    
+    // === T-SPIN OPPORTUNITY BONUS ===
+    if (board.HasTSpinOpportunity())
+    {
+        lastReward += 20f; // Reward creating T-spin setups
+    }
+    
+    // === PERFECT CLEAR BONUS ===
+    if (board.IsPerfectClear())
+    {
+        lastReward += 500f; // Massive bonus for perfect clear
+    }
+    
+    // === EFFICIENCY BONUS ===
+    // Reward keeping the board clean and efficient
+    float efficiency = 1f - (holes * 0.1f + bumpiness * 0.05f + wells * 0.15f);
+    efficiency = Mathf.Clamp01(efficiency);
+    lastReward += efficiency * 10f;
+}
 
     void ApplyCurriculumChange(CurriculumData curriculum)
     {
@@ -440,6 +497,16 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
             state.nextPieceType = 0;
         }
 
+        state.bumpiness = board.CalculateBumpiness();
+    state.wells = board.CountWells();
+    state.averageHoleDepth = board.CalculateAverageHoleDepth();
+    state.potentialLineClears = board.CountPotentialLineClears(2);
+    state.boardDensity = board.CalculateBoardDensity();
+    state.tSpinOpportunity = board.HasTSpinOpportunity();
+    
+    // Efficiency score
+    state.efficiencyScore = CalculateEfficiencyScore();
+
         // Reset reward after sending
         if (!gameOver)
         {
@@ -447,6 +514,36 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
             lastReward = 0f;
         }
     }
+private bool IsActionValid(int actionIndex)
+{
+    if (currentPiece == null || actionIndex < 0 || actionIndex >= 40)
+        return false;
+    
+    int targetColumnIndex = actionIndex / 4;
+    int targetRotation = actionIndex % 4;
+    int targetColumn = GetBoardColumnFromIndex(targetColumnIndex);
+    
+    // Test if this action would be valid
+    var bounds = board.Bounds;
+    
+    // Quick boundary check
+    if (targetColumn < bounds.xMin || targetColumn >= bounds.xMax)
+        return false;
+    
+    // Create a temporary piece to test the action
+    // (You might need to implement a more sophisticated check)
+    return true; // Simplified - implement full collision detection if needed
+}
+    private float CalculateEfficiencyScore()
+{
+    float holes = board.CountHoles();
+    float bumpiness = board.CalculateBumpiness();
+    float wells = board.CountWells();
+    
+    // Calculate efficiency as inverse of problems (0-1 scale)
+    float problems = holes * 0.1f + bumpiness * 0.05f + wells * 0.15f;
+    return Mathf.Clamp01(1f - problems / 10f); // Normalize to 0-1
+}
     float[] GetBoardState()
     {
         var bounds = board.Bounds;

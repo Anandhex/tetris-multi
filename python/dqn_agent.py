@@ -13,55 +13,61 @@ class TetrisDQN(nn.Module):
     def __init__(self, input_size, hidden_size=512, output_size=40):
         super(TetrisDQN, self).__init__()
         
-     # Updated CNN layers for 2-channel input
-        self.conv1 = nn.Conv2d(2, 32, kernel_size=3, padding=1)  # Changed: 1 -> 2 channels
+        # CNN layers for 2-channel input (unchanged)
+        self.conv1 = nn.Conv2d(2, 32, kernel_size=3, padding=1)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
         self.conv3 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
-
-        # Keep your adaptive pooling - it's perfect for this use case
         self.pool = nn.AdaptiveAvgPool2d((5, 5))
 
-        # Update the flattened size calculation
-        # After conv3 + pool: 64 channels * 5 * 5 = 1600
+        # Updated input sizes
         conv_output_size = 64 * 5 * 5  # 1600
-
-        # Additional input sizes from preprocessing
-        piece_info_size = 19  # From _encode_piece_info
-        metrics_size = 8      # From _encode_metrics
+        piece_info_size = 19           # From _encode_piece_info
+        metrics_size = 16              # UPDATED: was 8, now 16
 
         # Total input to first fully connected layer
-        total_input_size = conv_output_size + piece_info_size + metrics_size  # 1627
+        total_input_size = conv_output_size + piece_info_size + metrics_size  # 1635
 
-        # Fully connected layers
-        self.fc1 = nn.Linear(total_input_size, 512)
-        self.fc2 = nn.Linear(512, 256)
-        self.fc3 = nn.Linear(256, output_size)  # output_size = action_size
-
+        # Enhanced network architecture for better learning
+        self.fc1 = nn.Linear(total_input_size, 1024)  # Larger first layer
+        self.fc2 = nn.Linear(1024, 512)
+        self.fc3 = nn.Linear(512, 256)
+        self.fc4 = nn.Linear(256, 128)
+        self.fc5 = nn.Linear(128, output_size)
+        
+        # Add dropout for regularization
+        self.dropout = nn.Dropout(0.3)
+        
+        # Batch normalization for stability
+        self.bn1 = nn.BatchNorm1d(1024)
+        self.bn2 = nn.BatchNorm1d(512)
+        self.bn3 = nn.BatchNorm1d(256)
     
-        # Forward pass example   
     def forward(self, state_dict):
         # Extract inputs
         board = state_dict['board']        # Shape: (batch, 2, 20, 10)
         piece_info = state_dict['piece_info']  # Shape: (batch, 19)
-        metrics = state_dict['metrics']    # Shape: (batch, 8)
+        metrics = state_dict['metrics']    # Shape: (batch, 16) - UPDATED
             
         # CNN processing
-        x = F.relu(self.conv1(board))      # (batch, 32, 20, 10)
-        x = F.relu(self.conv2(x))          # (batch, 64, 20, 10)
-        x = F.relu(self.conv3(x))          # (batch, 64, 20, 10)
-        x = self.pool(x)                   # (batch, 64, 5, 5)
-        x = x.view(x.size(0), -1)          # (batch, 1600)
+        x = F.relu(self.conv1(board))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
+        x = self.pool(x)
+        x = x.view(x.size(0), -1)
             
         # Concatenate all features
-        combined = torch.cat([x, piece_info, metrics], dim=1)  # (batch, 1627)
+        combined = torch.cat([x, piece_info, metrics], dim=1)
             
-        # Fully connected layers
-        x = F.relu(self.fc1(combined))     # (batch, 512)
-        x = F.relu(self.fc2(x))            # (batch, 256)
-        x = self.fc3(x)                    # (batch, action_size)
+        # Enhanced fully connected layers with regularization
+        x = F.relu(self.bn1(self.fc1(combined)))
+        x = self.dropout(x)
+        x = F.relu(self.bn2(self.fc2(x)))
+        x = self.dropout(x)
+        x = F.relu(self.bn3(self.fc3(x)))
+        x = F.relu(self.fc4(x))
+        x = self.fc5(x)
             
         return x
-
 class DQNAgent:
     def __init__(self, state_size,curriculum_stages, action_size=40, lr=0.001, device='cuda' if torch.cuda.is_available() else 'cpu', 
                  tensorboard_log_dir=None,current_curriculum_stage=0):
@@ -224,8 +230,9 @@ class DQNAgent:
         return piece_features
 
     def _encode_metrics(self, game_state, current_stage):
-        """Encode game metrics - curriculum adaptive"""
+        """Encode game metrics - enhanced with new metrics"""
         try:
+            # Basic metrics
             score = float(game_state.get('score', 0))
             lines_cleared = float(game_state.get('linesCleared', 0))
             level = float(game_state.get('level', 1))
@@ -233,23 +240,42 @@ class DQNAgent:
             stack_height = float(game_state.get('stackHeight', 0))
             perfect_clear = float(game_state.get('perfectClear', False))
             
+            # NEW ENHANCED METRICS
+            bumpiness = float(game_state.get('bumpiness', 0))
+            wells = float(game_state.get('wells', 0))
+            avg_hole_depth = float(game_state.get('averageHoleDepth', 0))
+            potential_lines = float(game_state.get('potentialLineClears', 0))
+            board_density = float(game_state.get('boardDensity', 0))
+            tspin_opportunity = float(game_state.get('tSpinOpportunity', False))
+            efficiency_score = float(game_state.get('efficiencyScore', 0))
+            
             # Adaptive normalization based on curriculum
             curr_height = current_stage['height']
-            max_expected_score = curr_height * 1000  # Rough estimate
+            max_expected_score = curr_height * 1000
             
+            # Enhanced metrics array (expanded from 8 to 16 features)
             metrics = np.array([
-                min(score / max_expected_score, 1.0),  # Normalized score
-                min(lines_cleared / 100.0, 1.0),      # Lines cleared
-                min(level / 10.0, 1.0),               # Level
-                min(holes / (curr_height * 2), 1.0),  # Holes relative to board size
-                stack_height / curr_height,           # Stack height ratio (curriculum adaptive)
-                perfect_clear,                        # Perfect clear flag
-                curr_height / 20.0,                   # Current difficulty indicator
-                float(self.current_curriculum_stage) / len(self.curriculum_stages)  # Overall progress
+                min(score / max_expected_score, 1.0),      # Normalized score
+                min(lines_cleared / 100.0, 1.0),          # Lines cleared
+                min(level / 10.0, 1.0),                   # Level
+                min(holes / (curr_height * 2), 1.0),      # Holes relative to board size
+                stack_height / curr_height,               # Stack height ratio
+                perfect_clear,                            # Perfect clear flag
+                min(bumpiness / (curr_height * 2), 1.0),  # Normalized bumpiness
+                min(wells / 10.0, 1.0),                   # Wells (max ~10)
+                min(avg_hole_depth / curr_height, 1.0),   # Average hole depth
+                min(potential_lines / 4.0, 1.0),          # Potential line clears (max 4)
+                board_density,                            # Board density (0-1)
+                tspin_opportunity,                        # T-spin opportunity flag
+                efficiency_score,                         # Efficiency score (0-1)
+                curr_height / 20.0,                       # Current difficulty indicator
+                float(self.current_curriculum_stage) / len(self.curriculum_stages),  # Overall progress
+                min((holes + wells * 2) / (curr_height * 3), 1.0)  # Combined problem score
             ], dtype=np.float32).reshape(1, -1)
             
-        except (ValueError, TypeError):
-            metrics = np.zeros((1, 8), dtype=np.float32)
+        except (ValueError, TypeError) as e:
+            print(f"Error encoding metrics: {e}")
+            metrics = np.zeros((1, 16), dtype=np.float32)  # Updated size
         
         return metrics
 
@@ -266,30 +292,52 @@ class DQNAgent:
         return {
             'board': torch.FloatTensor(empty_board).to(self.device),
             'piece_info': torch.zeros((1, 19), dtype=torch.float32).to(self.device),
-            'metrics': torch.zeros((1, 8), dtype=torch.float32).to(self.device)
-        }  
+            'metrics': torch.zeros((1, 16), dtype=torch.float32).to(self.device)  # UPDATED: was 8, now 16
+        }
+
     def act(self, state, training=True):
-            """Choose action using epsilon-greedy policy"""
-            if training and random.random() <= self.epsilon:
-                action = random.randrange(self.action_size)
-                self.writer.add_scalar('Agent/Random_Action_Taken', 1, self.steps)
-                return action
+        """Choose action using epsilon-greedy policy with action masking"""
+        # Get valid actions if available
+        valid_actions = state.get('validActions', None)
+        if valid_actions is None:
+            valid_actions = list(range(self.action_size))
+        else:
+            # Convert boolean array to indices
+            valid_actions = [i for i, valid in enumerate(valid_actions) if valid]
+        
+        if not valid_actions:  # Fallback if no valid actions
+            valid_actions = list(range(self.action_size))
+        
+        if training and random.random() <= self.epsilon:
+            action = random.choice(valid_actions)
+            self.writer.add_scalar('Agent/Random_Action_Taken', 1, self.steps)
+            return action
+        
+        processed_state = self.preprocess_state(state)
+        
+        with torch.no_grad():
+            q_values = self.q_network(processed_state)
             
-            processed_state = self.preprocess_state(state)
+            # Apply action masking
+            if len(valid_actions) < self.action_size:
+                masked_q_values = q_values.clone()
+                invalid_actions = [i for i in range(self.action_size) if i not in valid_actions]
+                if invalid_actions:
+                    masked_q_values[0, invalid_actions] = float('-inf')
+                q_values = masked_q_values
             
-            with torch.no_grad():
-                q_values = self.q_network(processed_state)
-                
-                if training and self.steps % 100 == 0:
-                    self.writer.add_scalar('Agent/Q_Values_Mean', q_values.mean().item(), self.steps)
-                    self.writer.add_scalar('Agent/Q_Values_Max', q_values.max().item(), self.steps)
-                    self.writer.add_scalar('Agent/Q_Values_Min', q_values.min().item(), self.steps)
-                    self.writer.add_scalar('Agent/Q_Values_Std', q_values.std().item(), self.steps)
-                
-                action = q_values.argmax().item()
-                self.writer.add_scalar('Agent/Random_Action_Taken', 0, self.steps)
-                return action
-    
+            # Log Q-value statistics
+            if training and self.steps % 100 == 0:
+                self.writer.add_scalar('Agent/Q_Values_Mean', q_values.mean().item(), self.steps)
+                self.writer.add_scalar('Agent/Q_Values_Max', q_values.max().item(), self.steps)
+                self.writer.add_scalar('Agent/Q_Values_Min', q_values.min().item(), self.steps)
+                self.writer.add_scalar('Agent/Q_Values_Std', q_values.std().item(), self.steps)
+                self.writer.add_scalar('Agent/Valid_Actions_Count', len(valid_actions), self.steps)
+            
+            action = q_values.argmax().item()
+            self.writer.add_scalar('Agent/Random_Action_Taken', 0, self.steps)
+            return action
+        
     def remember(self, state, action, reward, next_state, done):
         """Store experience in replay buffer"""
         self.memory.append((state, action, reward, next_state, done))
@@ -413,19 +461,35 @@ class DQNAgent:
         return loss.item()
     
     def log_episode_metrics(self, episode, episode_reward, episode_length, episode_score, 
-                          episode_lines, game_metrics):
-        """Log episode metrics to TensorBoard"""
+                      episode_lines, game_metrics):
+        """Enhanced episode metrics logging"""
+        # Basic metrics
         self.writer.add_scalar('Episode/Reward', episode_reward, episode)
         self.writer.add_scalar('Episode/Length', episode_length, episode)
         self.writer.add_scalar('Episode/Score', episode_score, episode)
         self.writer.add_scalar('Episode/Lines_Cleared', episode_lines, episode)
         
-        # Game-specific metrics
+        # Enhanced game metrics
         self.writer.add_scalar('Game/Holes_Count', game_metrics.get('holes_count', 0), episode)
         self.writer.add_scalar('Game/Stack_Height', game_metrics.get('stack_height', 0), episode)
         self.writer.add_scalar('Game/Perfect_Clear', 1 if game_metrics.get('perfect_clear', False) else 0, episode)
         
-        # Running averages
+        # NEW ENHANCED METRICS
+        self.writer.add_scalar('Game/Bumpiness', game_metrics.get('bumpiness', 0), episode)
+        self.writer.add_scalar('Game/Wells', game_metrics.get('wells', 0), episode)
+        self.writer.add_scalar('Game/Avg_Hole_Depth', game_metrics.get('averageHoleDepth', 0), episode)
+        self.writer.add_scalar('Game/Potential_Lines', game_metrics.get('potentialLineClears', 0), episode)
+        self.writer.add_scalar('Game/Board_Density', game_metrics.get('boardDensity', 0), episode)
+        self.writer.add_scalar('Game/TSpin_Opportunity', 1 if game_metrics.get('tSpinOpportunity', False) else 0, episode)
+        self.writer.add_scalar('Game/Efficiency_Score', game_metrics.get('efficiencyScore', 0), episode)
+        
+        # Composite metrics
+        problem_score = (game_metrics.get('holes_count', 0) + 
+                        game_metrics.get('wells', 0) * 2 + 
+                        game_metrics.get('bumpiness', 0) * 0.5)
+        self.writer.add_scalar('Game/Problem_Score', problem_score, episode)
+        
+        # Running averages (existing code unchanged)
         self.episode_rewards.append(episode_reward)
         self.episode_lengths.append(episode_length)
         
@@ -434,13 +498,8 @@ class DQNAgent:
             avg_length_100 = np.mean(self.episode_lengths[-100:])
             self.writer.add_scalar('Episode/Avg_Reward_100', avg_reward_100, episode)
             self.writer.add_scalar('Episode/Avg_Length_100', avg_length_100, episode)
-        
-        if len(self.episode_rewards) >= 10:
-            avg_reward_10 = np.mean(self.episode_rewards[-10:])
-            avg_length_10 = np.mean(self.episode_lengths[-10:])
-            self.writer.add_scalar('Episode/Avg_Reward_10', avg_reward_10, episode)
-            self.writer.add_scalar('Episode/Avg_Length_10', avg_length_10, episode)
-    
+
+
     def log_curriculum_change(self, episode, stage_info):
         """Log curriculum changes"""
         self.writer.add_scalar('Curriculum/Board_Height', stage_info['height'], episode)

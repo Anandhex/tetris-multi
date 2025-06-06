@@ -4,6 +4,7 @@ using UnityEngine.SceneManagement;
 using TMPro;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 
 public class Board : MonoBehaviour
 {
@@ -1002,5 +1003,194 @@ public class Board : MonoBehaviour
             }
             row++;
         }
+    }
+
+
+    /// <summary>
+    /// Calculate bumpiness (height differences between adjacent columns)
+    /// </summary>
+    public float CalculateBumpiness()
+    {
+        RectInt bounds = this.Bounds;
+        int[] columnHeights = new int[bounds.width];
+        
+        // Calculate height of each column
+        for (int x = bounds.xMin; x < bounds.xMax; x++)
+        {
+            int columnIndex = x - bounds.xMin;
+            columnHeights[columnIndex] = 0;
+            
+            for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
+            {
+                if (tilemap.HasTile(new Vector3Int(x, y, 0)))
+                {
+                    columnHeights[columnIndex] = bounds.yMax - y;
+                    break;
+                }
+            }
+        }
+        
+        // Calculate bumpiness as sum of height differences
+        float bumpiness = 0;
+        for (int i = 0; i < columnHeights.Length - 1; i++)
+        {
+            bumpiness += Mathf.Abs(columnHeights[i] - columnHeights[i + 1]);
+        }
+        
+        return bumpiness;
+    }
+
+    /// <summary>
+    /// Count wells (single-width holes with walls on both sides)
+    /// </summary>
+    public int CountWells()
+    {
+        RectInt bounds = this.Bounds;
+        int wells = 0;
+        
+        for (int x = bounds.xMin; x < bounds.xMax; x++)
+        {
+            int wellDepth = 0;
+            
+            for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
+            {
+                bool centerEmpty = !tilemap.HasTile(new Vector3Int(x, y, 0));
+                bool leftWall = (x == bounds.xMin) || tilemap.HasTile(new Vector3Int(x - 1, y, 0));
+                bool rightWall = (x == bounds.xMax - 1) || tilemap.HasTile(new Vector3Int(x + 1, y, 0));
+                
+                if (centerEmpty && leftWall && rightWall)
+                {
+                    wellDepth++;
+                }
+                else if (!centerEmpty)
+                {
+                    // Add well score (deeper wells are exponentially worse)
+                    if (wellDepth > 0)
+                    {
+                        wells += wellDepth * wellDepth; // Quadratic penalty for depth
+                    }
+                    wellDepth = 0;
+                }
+            }
+            
+            // Don't forget wells that go to the bottom
+            if (wellDepth > 0)
+            {
+                wells += wellDepth * wellDepth;
+            }
+        }
+        
+        return wells;
+    }
+
+    /// <summary>
+    /// Calculate average hole depth (how deep holes are buried)
+    /// </summary>
+    public float CalculateAverageHoleDepth()
+    {
+        RectInt bounds = this.Bounds;
+        List<int> holeDepths = new List<int>();
+        
+        for (int x = bounds.xMin; x < bounds.xMax; x++)
+        {
+            int blocksAbove = 0;
+            
+            for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
+            {
+                if (tilemap.HasTile(new Vector3Int(x, y, 0)))
+                {
+                    blocksAbove++;
+                }
+                else if (blocksAbove > 0)
+                {
+                    // This is a hole with 'blocksAbove' blocks above it
+                    holeDepths.Add(blocksAbove);
+                }
+            }
+        }
+        
+        return holeDepths.Count > 0 ? (float)holeDepths.Average() : 0f;
+    }
+
+    /// <summary>
+    /// Count potential line clears (rows that are almost full)
+    /// </summary>
+    public int CountPotentialLineClears(int maxGaps = 2)
+    {
+        RectInt bounds = this.Bounds;
+        int potentialLines = 0;
+        
+        for (int y = bounds.yMin; y < bounds.yMax; y++)
+        {
+            int gaps = 0;
+            for (int x = bounds.xMin; x < bounds.xMax; x++)
+            {
+                if (!tilemap.HasTile(new Vector3Int(x, y, 0)))
+                {
+                    gaps++;
+                }
+            }
+            
+            if (gaps > 0 && gaps <= maxGaps)
+            {
+                potentialLines++;
+            }
+        }
+        
+        return potentialLines;
+    }
+
+    /// <summary>
+    /// Calculate board density (percentage of filled cells)
+    /// </summary>
+    public float CalculateBoardDensity()
+    {
+        RectInt bounds = this.Bounds;
+        int totalCells = bounds.width * bounds.height;
+        int filledCells = 0;
+        
+        for (int x = bounds.xMin; x < bounds.xMax; x++)
+        {
+            for (int y = bounds.yMin; y < bounds.yMax; y++)
+            {
+                if (tilemap.HasTile(new Vector3Int(x, y, 0)))
+                {
+                    filledCells++;
+                }
+            }
+        }
+        
+        return totalCells > 0 ? (float)filledCells / totalCells : 0f;
+    }
+
+    /// <summary>
+    /// Check if the last placed piece created a T-spin opportunity
+    /// </summary>
+    public bool HasTSpinOpportunity()
+    {
+        RectInt bounds = this.Bounds;
+        
+        // Look for T-spin setups (simplified check)
+        for (int x = bounds.xMin + 1; x < bounds.xMax - 1; x++)
+        {
+            for (int y = bounds.yMin + 1; y < bounds.yMax - 1; y++)
+            {
+                // Check for T-spin triple slot pattern
+                bool centerEmpty = !tilemap.HasTile(new Vector3Int(x, y, 0));
+                bool leftEmpty = !tilemap.HasTile(new Vector3Int(x - 1, y, 0));
+                bool rightEmpty = !tilemap.HasTile(new Vector3Int(x + 1, y, 0));
+                bool belowFilled = tilemap.HasTile(new Vector3Int(x, y - 1, 0));
+                bool aboveEmpty = !tilemap.HasTile(new Vector3Int(x, y + 1, 0));
+                
+                // Basic T-spin setup: T-shaped cavity
+                if (centerEmpty && belowFilled && aboveEmpty && 
+                    (leftEmpty || rightEmpty) && !(leftEmpty && rightEmpty))
+                {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
     }
 }

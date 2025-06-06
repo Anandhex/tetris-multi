@@ -68,4 +68,15 @@ public class GameState
     public int currentPieceY;
     public int currentPieceRotation;
     public int nextPieceType;
+
+      public float bumpiness;
+    public int wells;
+    public float averageHoleDepth;
+    public int potentialLineClears;
+    public float boardDensity;
+    public bool tSpinOpportunity;
+    public float efficiencyScore;
+    
+    // Action validation
+    public bool[] validActions; // A
 }

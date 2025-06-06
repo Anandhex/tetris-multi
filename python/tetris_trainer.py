@@ -130,28 +130,68 @@ class TetrisTrainer:
             if lines_cleared > 0:
                 reward += lines_cleared ** 2 * 10
             
-            # Penalty for creating holes
+           # === HOLE PENALTIES (Enhanced) ===
             holes_created = current_state.get('holesCount', 0) - prev_state.get('holesCount', 0)
-            reward -= holes_created * 5
+            avg_hole_depth = current_state.get('averageHoleDepth', 1)
+            reward -= holes_created * 30 * avg_hole_depth  # Deeper holes worse
             
-            # Height-based reward zones (scaled to curriculum)
+            # === BUMPINESS PENALTY ===
+            prev_bumpiness = prev_state.get('bumpiness', 0)
+            curr_bumpiness = current_state.get('bumpiness', 0)
+            bumpiness_change = curr_bumpiness - prev_bumpiness
+            reward -= bumpiness_change * 5  # Penalty for increasing bumpiness
+            
+            # === WELL PENALTIES ===
+            wells_created = current_state.get('wells', 0) - prev_state.get('wells', 0)
+            reward -= wells_created * 50  # Wells are very bad
+            
+            # === BOARD DENSITY MANAGEMENT ===
+            board_density = current_state.get('boardDensity', 0)
+            if board_density > 0.85:
+                reward -= 20  # Too dense
+            elif 0.3 <= board_density <= 0.7:
+                reward += 5   # Good density range
+            
+            # === T-SPIN OPPORTUNITIES ===
+            if current_state.get('tSpinOpportunity', False):
+                reward += 25  # Bonus for creating T-spin setups
+            
+            # === POTENTIAL LINE CLEAR BONUS ===
+            potential_lines = current_state.get('potentialLineClears', 0)
+            reward += potential_lines * 10  # Reward setting up line clears
+            
+            # === EFFICIENCY BONUS ===
+            efficiency = current_state.get('efficiencyScore', 0)
+            reward += efficiency * 15  # Reward keeping board clean
+            
+            # === HEIGHT MANAGEMENT (Curriculum-aware) ===
+            current_stage = self.curriculum_stages[self.current_curriculum_stage]
+            max_height = current_stage['height']
             stack_height = current_state.get('stackHeight', 0)
             height_ratio = stack_height / max_height
             
-            if height_ratio <= 0.3:        # Bottom 30% - good zone
-                reward += 2.0
-            elif height_ratio <= 0.5:      # 30-50% - ok zone
-                reward += 1.0
-            elif height_ratio <= 0.7:      # 50-70% - caution zone
-                reward += 0.0  # neutral
-            elif height_ratio <= 0.85:     # 70-85% - danger zone
-                reward -= 3.0
-            else:                          # 85%+ - critical zone
-                reward -= 8.0
+            # Progressive height penalty/bonus
+            if height_ratio <= 0.3:
+                reward += 8
+            elif height_ratio <= 0.5:
+                reward += 4
+            elif height_ratio <= 0.7:
+                reward += 0  # Neutral
+            elif height_ratio <= 0.85:
+                reward -= 15
+            else:
+                reward -= 35  # Critical danger
             
-            # Bonus for perfect clear
-            if current_state.get('perfectClear', False):
-                reward += 500
+            # === SURVIVAL BONUS ===
+            reward += 2  # Small bonus for staying alive
+        
+        # === GAME OVER PENALTY ===
+        if current_state.get('gameOver', False):
+            reward -= 1000  # Heavy penalty for dying
+        
+        # === PERFECT CLEAR BONUS ===
+        if current_state.get('perfectClear', False):
+            reward += 3000  # Massive bonus
     
         return reward
        
@@ -242,14 +282,25 @@ class TetrisTrainer:
                     steps += 1
                     
                     if done:
-                        # Log game over details
-                        board_metrics = self.client.get_board_metrics(next_state)
+                        enhanced_metrics = {
+                        'holes_count': next_state.get('holesCount', 0),
+                        'stack_height': next_state.get('stackHeight', 0),
+                        'perfect_clear': next_state.get('perfectClear', False),
+                        'bumpiness': next_state.get('bumpiness', 0),
+                        'wells': next_state.get('wells', 0),
+                        'averageHoleDepth': next_state.get('averageHoleDepth', 0),
+                        'potentialLineClears': next_state.get('potentialLineClears', 0),
+                        'boardDensity': next_state.get('boardDensity', 0),
+                        'tSpinOpportunity': next_state.get('tSpinOpportunity', False),
+                        'efficiencyScore': next_state.get('efficiencyScore', 0)
+                        }
+                        
                         if episode % 1 == 0:
-                            print(f"Episode {episode} ended: Score={episode_score}, "
-                                f"reward={episode_reward}, "  
-                                f"Lines={episode_lines}, Steps={steps}, "
-                                f"Final height={board_metrics['stack_height']}, "
-                                f"Holes={board_metrics['holes_count']}")
+                            print(f"Episode {episode}: Score={episode_score}, "
+                                f"Reward={episode_reward:.1f}, Lines={episode_lines}, "
+                                f"Steps={steps}, Holes={enhanced_metrics['holes_count']}, "
+                                f"Bumpiness={enhanced_metrics['bumpiness']:.1f}, "
+                                f"Efficiency={enhanced_metrics['efficiencyScore']:.2f}")
                         break
                     
                     # Check if ready for next action
