@@ -188,26 +188,26 @@ public class Board : MonoBehaviour
                 {
                     // For small boards (6-8 height), use bottom row
                     // For larger boards, place higher to avoid immediate danger
-                    // int targetRow = boardHeight <= 8 ? bounds.yMin : bounds.yMin + 1;
+                    int targetRow = boardHeight <= 8 ? bounds.yMin : bounds.yMin + 1;
 
-                    // // Create I-piece gap (4 spaces) - NEVER fill completely
-                    // int gapStart = Random.Range(bounds.xMin, bounds.xMax - 3);
-                    // int gapEnd = gapStart + 4;
+                    // Create I-piece gap (4 spaces) - NEVER fill completely
+                    int gapStart = Random.Range(bounds.xMin, bounds.xMax - 3);
+                    int gapEnd = gapStart + 4;
 
-                    // for (int col = bounds.xMin; col < bounds.xMax; col++)
-                    // {
-                    //     if (col < gapStart || col >= gapEnd)
-                    //     {
-                    //         SetTile(col, targetRow);
-                    //     }
-                    // }
+                    for (int col = bounds.xMin; col < bounds.xMax; col++)
+                    {
+                        if (col < gapStart || col >= gapEnd)
+                        {
+                            SetTile(col, targetRow);
+                        }
+                    }
 
-                    // // Ensure we never create a complete line
-                    // if (gapEnd - gapStart >= bounds.xMax - bounds.xMin)
-                    // {
-                    //     // If gap would be entire row, add one tile
-                    //     SetTile(gapStart, targetRow);
-                    // }
+                    // Ensure we never create a complete line
+                    if (gapEnd - gapStart >= bounds.xMax - bounds.xMin)
+                    {
+                        // If gap would be entire row, add one tile
+                        SetTile(gapStart, targetRow);
+                    }
                 }
                 break;
 

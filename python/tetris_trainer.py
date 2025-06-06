@@ -20,9 +20,9 @@ class TetrisTrainer:
             tensorboard_log_dir = f"runs/tetris_{agent_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         self.current_curriculum_stage = 0
         self.curriculum_stages = [
-            {'episodes': 1000, 'height': 20, 'preset': 1, 'pieces': 1, 'name': 'Very Easy'},
-            {'episodes': 2000, 'height': 20, 'preset': 2, 'pieces': 2, 'name': 'Easy'},
-            {'episodes': 3000, 'height': 20, 'preset': 3, 'pieces': 5, 'name': 'Medium'},
+            {'episodes': 1000, 'height': 8, 'preset': 1, 'pieces': 1, 'name': 'Very Easy'},
+            {'episodes': 2000, 'height': 10, 'preset': 2, 'pieces': 2, 'name': 'Easy'},
+            {'episodes': 3000, 'height': 15, 'preset': 3, 'pieces': 5, 'name': 'Medium'},
             {'episodes': 5000, 'height': 20, 'preset': 4, 'pieces': 7, 'name': 'Hard'},
             {'episodes': float('inf'), 'height': 20, 'preset': 0, 'pieces': 7, 'name': 'Full Game'},
         ]

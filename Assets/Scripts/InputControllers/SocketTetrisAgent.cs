@@ -10,7 +10,7 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     private bool waitingForNewPiece = false;
 
     [Header("Curriculum Parameters")]
-    public float curriculumBoardHeight = 20f;
+    public float curriculumBoardHeight = 8f;
     public int curriculumBoardPreset = 1;
     public int allowedTetrominoTypes = 1;
 
