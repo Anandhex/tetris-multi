@@ -15,6 +15,10 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     public int allowedTetrominoTypes = 1;
 
     private int currentLinesCleared = 0;
+    // Add these fields to SocketTetrisAgent
+private int totalActionsRequested = 0;
+private int totalActionsExecuted = 0;
+private int totalInvalidActions = 0;
 
     // Timing
     private float lastStateTime = 0f;
@@ -101,34 +105,49 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     }
     void ExecuteAction(int actionIndex)
     {
-        if (actionIndex < 0 || actionIndex >= 40)
+        
+        totalActionsRequested++;
+if (actionIndex < 0 || actionIndex >= 40)
         {
             Debug.LogWarning($"Invalid action index: {actionIndex}. Must be 0-39.");
             return;
         }
 
-        if (currentPiece == null || isExecutingAction)
+    if (currentPiece == null || isExecutingAction)
+    {
+        Debug.LogWarning("Cannot execute action: no current piece or already executing action");
+        return;
+    }
+
+    // Get valid actions for debugging
+    bool[] validActions = board.GetValidActions(currentPiece);
+    if (!validActions[actionIndex])
+    {
+        totalInvalidActions++;
+        Debug.LogWarning($"Invalid action ratio: {totalInvalidActions}/{totalActionsRequested} = {(float)totalInvalidActions/totalActionsRequested:P1}");
+      
+        // Show what actions were valid
+        var validList = new System.Collections.Generic.List<int>();
+        for (int i = 0; i < validActions.Length; i++)
         {
-            Debug.LogWarning("Cannot execute action: no current piece or already executing action");
-            return;
+            if (validActions[i]) validList.Add(i);
         }
-        if (!IsActionValid(actionIndex))
-        {
-            Debug.LogWarning($"Invalid action {actionIndex} rejected");
-            lastReward = -50f; // Penalty for invalid action
-            SendGameState();
-            return;
-        }
+        Debug.Log($"Valid actions were: [{string.Join(", ", validList)}]");
+        
+        lastReward = -50f;
+        SendGameState();
+        return;
+    }
+totalActionsExecuted++;
 
-        // Simple mapping: 40 actions = 10 columns × 4 rotations
-        int targetColumnIndex = actionIndex / 4;  // 0-9
-        targetRotation = actionIndex % 4;         // 0-3
+    int targetColumnIndex = actionIndex / 4;  // 0-9
+targetRotation = actionIndex % 4;         // 0-3
 
-        // Map column index to actual board position
-        targetColumn = GetBoardColumnFromIndex(targetColumnIndex);
-
-        Debug.Log($"Action {actionIndex}: Column Index {targetColumnIndex} -> Board Column {targetColumn}, Rotation {targetRotation}");
-
+// FIXED: Direct mapping to centered coordinates
+var bounds = board.Bounds;
+targetColumn = bounds.xMin + targetColumnIndex;
+    Debug.Log($"Executing Action {actionIndex}: Column {targetColumnIndex}→{targetColumn}, Rotation {targetRotation}");
+    Debug.Log($"Piece type: {currentPiece.data.tetromino}, Valid rotations: {board.GetValidRotationsForPiece(currentPiece.data.tetromino)}");
         isExecutingAction = true;
         actionCompleted = false;
         waitingForNewPiece = false;
@@ -472,6 +491,37 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         state.perfectClear = board.IsPerfectClear();
         state.linesCleared = board.GetTotalLinesCleared(); // This should be set when lines are actually cleared
         state.validActions = board.GetValidActions(currentPiece);
+
+           if (currentPiece != null)
+    {
+        var validCount = 0;
+        var validList = new System.Collections.Generic.List<int>();
+        for (int i = 0; i < state.validActions.Length; i++)
+        {
+            if (state.validActions[i])
+            {
+                validCount++;
+                if (validList.Count < 10) // Limit debug output
+                    validList.Add(i);
+            }
+        }
+        
+        Debug.Log($"Piece {currentPiece.data.tetromino} at ({currentPiece.position.x}, {currentPiece.position.y}): {validCount}/40 valid actions");
+        if (validCount < 10)
+        {
+            Debug.Log($"Valid actions: [{string.Join(", ", validList)}]");
+        }
+        
+        // Check if we're in a bad state
+        if (validCount == 0)
+        {
+            Debug.LogError("NO VALID ACTIONS! This will cause problems.");
+        }
+        else if (validCount < 5)
+        {
+            Debug.LogWarning($"Very few valid actions ({validCount}). Game might be in trouble.");
+        }
+    }
         if (currentPiece != null)
         {
             state.currentPieceType = GetPieceTypeIndex(currentPiece.data);

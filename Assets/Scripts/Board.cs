@@ -1233,61 +1233,65 @@ public class Board : MonoBehaviour
     /// <summary>
     /// Helper method to map column index to board position
     /// </summary>
-    private int GetBoardColumnFromIndex(int columnIndex)
-    {
-        var bounds = this.Bounds;
-        int boardColumn = bounds.xMin + columnIndex;
-        return Mathf.Clamp(boardColumn, bounds.xMin, bounds.xMax - 1);
-    }
-
+   
     /// <summary>
     /// Very simple and fast validation
     /// </summary>
-    public bool[] GetValidActions(Piece piece)
-    {
-        bool[] validActions = new bool[40];
+   public bool[] GetValidActions(Piece piece)
+{
+    bool[] validActions = new bool[40];
 
-        if (piece == null)
-            return validActions;
-
-        int validRotations = GetValidRotationsForPiece(piece.data.tetromino);
-        RectInt bounds = this.Bounds;
-
-        for (int columnIndex = 0; columnIndex < 10; columnIndex++)
-        {
-            int targetColumn = GetBoardColumnFromIndex(columnIndex);
-
-            // Simple check: is the column within bounds and not completely filled?
-            bool columnValid = (targetColumn >= bounds.xMin && targetColumn < bounds.xMax) &&
-                              !IsColumnCompletelyFilled(targetColumn);
-
-            for (int rotation = 0; rotation < 4; rotation++)
-            {
-                int actionIndex = columnIndex * 4 + rotation;
-
-                // Valid if: column is valid AND rotation is valid for this piece type
-                validActions[actionIndex] = columnValid && (rotation < validRotations);
-            }
-        }
-
+    if (piece == null)
         return validActions;
+
+    int validRotations = GetValidRotationsForPiece(piece.data.tetromino);
+    RectInt bounds = this.Bounds;
+
+    for (int columnIndex = 0; columnIndex < 10; columnIndex++)
+    {
+        // FIXED: Use same mapping as ExecuteAction
+        int targetColumn = bounds.xMin + columnIndex;  // -5, -4, -3, ..., 4
+
+        // Check if column is usable
+        bool columnValid = (targetColumn >= bounds.xMin && targetColumn < bounds.xMax) &&
+                          !IsColumnCompletelyFilled(targetColumn);
+
+        for (int rotation = 0; rotation < 4; rotation++)
+        {
+            int actionIndex = columnIndex * 4 + rotation;
+
+            // Valid if: column is valid AND rotation is valid for this piece type
+            validActions[actionIndex] = columnValid && (rotation < validRotations);
+        }
     }
 
+    return validActions;
+}
     /// <summary>
     /// Quick check if a column is completely filled
     /// </summary>
-    private bool IsColumnCompletelyFilled(int column)
+   private bool IsColumnCompletelyFilled(int column)
+{
+    RectInt bounds = this.Bounds;
+    
+    // Check if we can place any piece in this column
+    // Look for the first empty space from top
+    for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
     {
-        RectInt bounds = this.Bounds;
-
-        // Check top few rows - if they're filled, column is likely unusable
-        for (int y = bounds.yMax - 3; y < bounds.yMax; y++)
+        if (!tilemap.HasTile(new Vector3Int(column, y, 0)))
         {
-            if (!tilemap.HasTile(new Vector3Int(column, y, 0)))
+            // Found empty space, check if there's room for a piece
+            // Need at least 2 rows of space for most pieces
+            int emptyRows = 0;
+            for (int checkY = y; checkY >= bounds.yMin && emptyRows < 4; checkY--)
             {
-                return false; // Found empty space
+                if (!tilemap.HasTile(new Vector3Int(column, checkY, 0)))
+                    emptyRows++;
+                else
+                    break;
             }
+            return emptyRows < 2; // If less than 2 empty rows, consider it filled
         }
-        return true; // Top rows are filled
     }
-}
+    return true; // Column is completely filled
+}}
