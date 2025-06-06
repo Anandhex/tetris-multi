@@ -4,6 +4,12 @@ using System.Collections;
 public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
 {
     private Board board;
+    // Add these fields to SocketTetrisAgent class
+private bool[] cachedValidActions;
+private Piece lastValidatedPiece;
+private Vector3Int lastValidatedPosition;
+private int lastValidatedRotation;
+private Tetromino lastValidatedTetrominoType;
     private Piece currentPiece;
     private bool isExecutingAction = false;
     private bool waitingForNewPiece = false;
@@ -470,7 +476,7 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         state.stackHeight = board.CalculateStackHeight();
         state.perfectClear = board.IsPerfectClear();
         state.linesCleared = board.GetTotalLinesCleared(); // This should be set when lines are actually cleared
-
+ state.validActions = GetCachedValidActions();
         if (currentPiece != null)
         {
             state.currentPieceType = GetPieceTypeIndex(currentPiece.data);
@@ -513,27 +519,46 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
             lastReward = 0f;
         }
     }
-    private bool IsActionValid(int actionIndex)
+    private bool[] GetCachedValidActions()
+{
+    // Check if we need to recalculate
+    if (currentPiece != lastValidatedPiece || 
+        currentPiece == null ||
+        currentPiece.position != lastValidatedPosition || 
+        currentPiece.rotationIndex != lastValidatedRotation ||
+        currentPiece.data.tetromino != lastValidatedTetrominoType)
+    {
+        cachedValidActions = board.GetValidActions(currentPiece);
+        lastValidatedPiece = currentPiece;
+        lastValidatedPosition = currentPiece?.position ?? Vector3Int.zero;
+        lastValidatedRotation = currentPiece?.rotationIndex ?? 0;
+        lastValidatedTetrominoType = currentPiece?.data.tetromino ?? Tetromino.I;
+    }
+    
+    return cachedValidActions ?? new bool[40];
+}
+   private bool IsActionValid(int actionIndex)
     {
         if (currentPiece == null || actionIndex < 0 || actionIndex >= 40)
             return false;
 
         int targetColumnIndex = actionIndex / 4;
-        int targetRotation = actionIndex % 4;
+        int requestedRotation = actionIndex % 4;
+
+        // Check if this rotation is valid for this piece type
+        int validRotations = board.GetValidRotationsForPiece(currentPiece.data.tetromino);
+        if (requestedRotation >= validRotations)
+            return false; // Invalid rotation for this piece type
+
         int targetColumn = GetBoardColumnFromIndex(targetColumnIndex);
 
-        // Test if this action would be valid
-        var bounds = board.Bounds;
-
         // Quick boundary check
+        var bounds = board.Bounds;
         if (targetColumn < bounds.xMin || targetColumn >= bounds.xMax)
             return false;
 
-        // Create a temporary piece to test the action
-        // (You might need to implement a more sophisticated check)
-        return true; // Simplified - implement full collision detection if needed
-    }
-    private float CalculateEfficiencyScore()
+        return true; // Simplified check - full validation happens in GetValidActions
+    } private float CalculateEfficiencyScore()
     {
         float holes = board.CountHoles();
         float bumpiness = board.CalculateBumpiness();
@@ -585,14 +610,9 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     }
 
     int GetPieceTypeIndex(TetrominoData data)
-    {
-        for (int i = 0; i < board.tetrominoes.Length; i++)
-        {
-            if (board.tetrominoes[i].Equals(data))
-                return i;
-        }
-        return 0;
-    }
+{
+    return (int)data.tetromino;
+}
 
     // IPlayerInputController implementation - Updated method names
     public bool GetLeft()
