@@ -470,7 +470,6 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         state.stackHeight = board.CalculateStackHeight();
         state.perfectClear = board.IsPerfectClear();
         state.linesCleared = board.GetTotalLinesCleared(); // This should be set when lines are actually cleared
-        SocketManager.Instance.SendGameState(state);
 
         if (currentPiece != null)
         {
@@ -496,7 +495,6 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         {
             state.nextPieceType = 0;
         }
-
         state.bumpiness = board.CalculateBumpiness();
         state.wells = board.CountWells();
         state.averageHoleDepth = board.CalculateAverageHoleDepth();
@@ -506,6 +504,7 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
 
         // Efficiency score
         state.efficiencyScore = CalculateEfficiencyScore();
+        SocketManager.Instance.SendGameState(state);
 
         // Reset reward after sending
         if (!gameOver)
