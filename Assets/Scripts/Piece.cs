@@ -1,3 +1,4 @@
+using System.Linq;
 using UnityEngine;
 
 public class Piece : MonoBehaviour
@@ -96,8 +97,11 @@ public class Piece : MonoBehaviour
         {
             HandleMoveInputs();
         }
-
-        if (Time.time > stepTime)
+        if (inputController is SocketTetrisAgent)
+        {
+            // No automatic gravity when controlled via socket
+        }
+        else if (Time.time > stepTime)
         {
             Step();
         }
@@ -264,5 +268,56 @@ public class Piece : MonoBehaviour
             return min + (input - min) % (max - min);
         }
     }
+    public void RotateToIndex(int targetIndex)
+    {
+        if (rotationIndex == targetIndex)
+            return;
+
+        int maxRotations = 4; // Max attempts to avoid infinite loops
+        int attempts = 0;
+
+        while (rotationIndex != targetIndex && attempts < maxRotations)
+        {
+            Rotate(1);
+            attempts++;
+        }
+
+        if (rotationIndex != targetIndex)
+        {
+            Debug.LogWarning($"RotateToIndex failed: current={rotationIndex}, target={targetIndex}");
+        }
+    }
+    public void RestoreCells(Vector3Int[] savedCells)
+    {
+        for (int i = 0; i < cells.Length; i++)
+        {
+            cells[i] = savedCells[i];
+        }
+    }
+    public void ForceRotateToIndex(int targetIndex)
+    {
+        if (rotationIndex == targetIndex)
+            return;
+
+        int maxAttempts = 4;
+        int attempts = 0;
+
+        while (rotationIndex != targetIndex && attempts < maxAttempts)
+        {
+            int direction = 1;
+            int originalRotation = rotationIndex;
+
+            rotationIndex = Wrap(rotationIndex + direction, 0, 4);
+            ApplyRotationMatrix(direction);
+
+            attempts++;
+        }
+
+        if (rotationIndex != targetIndex)
+        {
+            Debug.LogWarning($"ForceRotateToIndex failed: current={rotationIndex}, target={targetIndex}");
+        }
+    }
+
 
 }

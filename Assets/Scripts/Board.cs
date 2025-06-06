@@ -602,10 +602,12 @@ public class Board : MonoBehaviour
         if (mlAgent != null)
         {
             mlAgent.SetCurrentPiece(this.activePiece);
+
         }
         else if (socketAgent != null)
         {
             socketAgent.SetCurrentPiece(this.activePiece);
+
         }
 
         GenerateNextPiece();
@@ -618,6 +620,15 @@ public class Board : MonoBehaviour
         {
             Data.PlayerScore = this.playerScore;
             GameOver();
+            return;
+        }
+        Vector3Int below = this.activePiece.position + Vector3Int.down;
+        if (!IsValidPosition(this.activePiece, below))
+        {
+            Debug.LogWarning("[SpawnPiece] Piece has no room to move down → triggering GameOver.");
+            GameOver(); // Only now it's truly stuck
+            Data.PlayerScore = this.playerScore;
+            return;
         }
     }
 
@@ -1011,9 +1022,6 @@ public class Board : MonoBehaviour
     }
 
 
-    /// <summary>
-    /// Calculate bumpiness (height differences between adjacent columns)
-    /// </summary>
     public float CalculateBumpiness()
     {
         RectInt bounds = this.Bounds;
@@ -1045,9 +1053,7 @@ public class Board : MonoBehaviour
         return bumpiness;
     }
 
-    /// <summary>
-    /// Count wells (single-width holes with walls on both sides)
-    /// </summary>
+
     public int CountWells()
     {
         RectInt bounds = this.Bounds;
@@ -1088,9 +1094,7 @@ public class Board : MonoBehaviour
         return wells;
     }
 
-    /// <summary>
-    /// Calculate average hole depth (how deep holes are buried)
-    /// </summary>
+
     public float CalculateAverageHoleDepth()
     {
         RectInt bounds = this.Bounds;
@@ -1117,9 +1121,7 @@ public class Board : MonoBehaviour
         return holeDepths.Count > 0 ? (float)holeDepths.Average() : 0f;
     }
 
-    /// <summary>
-    /// Count potential line clears (rows that are almost full)
-    /// </summary>
+
     public int CountPotentialLineClears(int maxGaps = 2)
     {
         RectInt bounds = this.Bounds;
@@ -1145,9 +1147,7 @@ public class Board : MonoBehaviour
         return potentialLines;
     }
 
-    /// <summary>
-    /// Calculate board density (percentage of filled cells)
-    /// </summary>
+
     public float CalculateBoardDensity()
     {
         RectInt bounds = this.Bounds;
@@ -1199,9 +1199,7 @@ public class Board : MonoBehaviour
         return false;
     }
 
-    /// <summary>
-    /// Get valid rotations for a specific tetromino type
-    /// </summary>
+
     public int GetValidRotationsForPiece(Tetromino tetrominoType)
     {
         switch (tetrominoType)
@@ -1217,81 +1215,13 @@ public class Board : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Get valid rotations for a piece using TetrominoData
-    /// </summary>
+
     public int GetValidRotationsForPiece(TetrominoData pieceData)
     {
         return GetValidRotationsForPiece(pieceData.tetromino);
     }
 
-    /// <summary>
-    /// Map action rotation to actual piece rotation based on tetromino type
-    /// </summary>
 
 
-    /// <summary>
-    /// Helper method to map column index to board position
-    /// </summary>
-   
-    /// <summary>
-    /// Very simple and fast validation
-    /// </summary>
-   public bool[] GetValidActions(Piece piece)
-{
-    bool[] validActions = new bool[40];
 
-    if (piece == null)
-        return validActions;
-
-    int validRotations = GetValidRotationsForPiece(piece.data.tetromino);
-    RectInt bounds = this.Bounds;
-
-    for (int columnIndex = 0; columnIndex < 10; columnIndex++)
-    {
-        // FIXED: Use same mapping as ExecuteAction
-        int targetColumn = bounds.xMin + columnIndex;  // -5, -4, -3, ..., 4
-
-        // Check if column is usable
-        bool columnValid = (targetColumn >= bounds.xMin && targetColumn < bounds.xMax) &&
-                          !IsColumnCompletelyFilled(targetColumn);
-
-        for (int rotation = 0; rotation < 4; rotation++)
-        {
-            int actionIndex = columnIndex * 4 + rotation;
-
-            // Valid if: column is valid AND rotation is valid for this piece type
-            validActions[actionIndex] = columnValid && (rotation < validRotations);
-        }
-    }
-
-    return validActions;
 }
-    /// <summary>
-    /// Quick check if a column is completely filled
-    /// </summary>
-   private bool IsColumnCompletelyFilled(int column)
-{
-    RectInt bounds = this.Bounds;
-    
-    // Check if we can place any piece in this column
-    // Look for the first empty space from top
-    for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
-    {
-        if (!tilemap.HasTile(new Vector3Int(column, y, 0)))
-        {
-            // Found empty space, check if there's room for a piece
-            // Need at least 2 rows of space for most pieces
-            int emptyRows = 0;
-            for (int checkY = y; checkY >= bounds.yMin && emptyRows < 4; checkY--)
-            {
-                if (!tilemap.HasTile(new Vector3Int(column, checkY, 0)))
-                    emptyRows++;
-                else
-                    break;
-            }
-            return emptyRows < 2; // If less than 2 empty rows, consider it filled
-        }
-    }
-    return true; // Column is completely filled
-}}

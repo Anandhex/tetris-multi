@@ -8,6 +8,7 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     private Piece currentPiece;
     private bool isExecutingAction = false;
     private bool waitingForNewPiece = false;
+    private ulong stateTick = 0;
 
     [Header("Curriculum Parameters")]
     public float curriculumBoardHeight = 8f;
@@ -16,9 +17,9 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
 
     private int currentLinesCleared = 0;
     // Add these fields to SocketTetrisAgent
-private int totalActionsRequested = 0;
-private int totalActionsExecuted = 0;
-private int totalInvalidActions = 0;
+    private int totalActionsRequested = 0;
+    private int totalActionsExecuted = 0;
+    private int totalInvalidActions = 0;
 
     // Timing
     private float lastStateTime = 0f;
@@ -105,49 +106,39 @@ private int totalInvalidActions = 0;
     }
     void ExecuteAction(int actionIndex)
     {
-        
+
         totalActionsRequested++;
-if (actionIndex < 0 || actionIndex >= 40)
+        if (!IsActionValid(actionIndex))
+        {
+            totalInvalidActions++;
+            Debug.LogWarning($"Rejected action {actionIndex} early: Invalid rotation or column.");
+            lastReward = -50f;
+            SendGameState();
+            return;
+        }
+        if (actionIndex < 0 || actionIndex >= 40)
         {
             Debug.LogWarning($"Invalid action index: {actionIndex}. Must be 0-39.");
             return;
         }
 
-    if (currentPiece == null || isExecutingAction)
-    {
-        Debug.LogWarning("Cannot execute action: no current piece or already executing action");
-        return;
-    }
-
-    // Get valid actions for debugging
-    bool[] validActions = board.GetValidActions(currentPiece);
-    if (!validActions[actionIndex])
-    {
-        totalInvalidActions++;
-        Debug.LogWarning($"Invalid action ratio: {totalInvalidActions}/{totalActionsRequested} = {(float)totalInvalidActions/totalActionsRequested:P1}");
-      
-        // Show what actions were valid
-        var validList = new System.Collections.Generic.List<int>();
-        for (int i = 0; i < validActions.Length; i++)
+        if (currentPiece == null || isExecutingAction)
         {
-            if (validActions[i]) validList.Add(i);
+            Debug.LogWarning("Cannot execute action: no current piece or already executing action");
+            return;
         }
-        Debug.Log($"Valid actions were: [{string.Join(", ", validList)}]");
-        
-        lastReward = -50f;
-        SendGameState();
-        return;
-    }
-totalActionsExecuted++;
 
-    int targetColumnIndex = actionIndex / 4;  // 0-9
-targetRotation = actionIndex % 4;         // 0-3
 
-// FIXED: Direct mapping to centered coordinates
-var bounds = board.Bounds;
-targetColumn = bounds.xMin + targetColumnIndex;
-    Debug.Log($"Executing Action {actionIndex}: Column {targetColumnIndex}→{targetColumn}, Rotation {targetRotation}");
-    Debug.Log($"Piece type: {currentPiece.data.tetromino}, Valid rotations: {board.GetValidRotationsForPiece(currentPiece.data.tetromino)}");
+        totalActionsExecuted++;
+
+        int targetColumnIndex = actionIndex / 4;  // 0-9
+        targetRotation = actionIndex % 4;         // 0-3
+
+        // FIXED: Direct mapping to centered coordinates
+        var bounds = board.Bounds;
+        targetColumn = bounds.xMin + targetColumnIndex;
+        Debug.Log($"Executing Action {actionIndex}: Column {targetColumnIndex}→{targetColumn}, Rotation {targetRotation}");
+        Debug.Log($"Piece type: {currentPiece.data.tetromino}, Valid rotations: {board.GetValidRotationsForPiece(currentPiece.data.tetromino)}");
         isExecutingAction = true;
         actionCompleted = false;
         waitingForNewPiece = false;
@@ -306,7 +297,6 @@ targetColumn = bounds.xMin + targetColumnIndex;
             }
         }
 
-        Debug.Log($"Piece dropped {dropSteps} steps and landed at {currentPiece.position}");
     }
 
     void FinalizePlacement()
@@ -490,38 +480,9 @@ targetColumn = bounds.xMin + targetColumnIndex;
         state.stackHeight = board.CalculateStackHeight();
         state.perfectClear = board.IsPerfectClear();
         state.linesCleared = board.GetTotalLinesCleared(); // This should be set when lines are actually cleared
-        state.validActions = board.GetValidActions(currentPiece);
+        state.stateTick = stateTick++;
 
-           if (currentPiece != null)
-    {
-        var validCount = 0;
-        var validList = new System.Collections.Generic.List<int>();
-        for (int i = 0; i < state.validActions.Length; i++)
-        {
-            if (state.validActions[i])
-            {
-                validCount++;
-                if (validList.Count < 10) // Limit debug output
-                    validList.Add(i);
-            }
-        }
-        
-        Debug.Log($"Piece {currentPiece.data.tetromino} at ({currentPiece.position.x}, {currentPiece.position.y}): {validCount}/40 valid actions");
-        if (validCount < 10)
-        {
-            Debug.Log($"Valid actions: [{string.Join(", ", validList)}]");
-        }
-        
-        // Check if we're in a bad state
-        if (validCount == 0)
-        {
-            Debug.LogError("NO VALID ACTIONS! This will cause problems.");
-        }
-        else if (validCount < 5)
-        {
-            Debug.LogWarning($"Very few valid actions ({validCount}). Game might be in trouble.");
-        }
-    }
+
         if (currentPiece != null)
         {
             state.currentPieceType = GetPieceTypeIndex(currentPiece.data);
@@ -552,9 +513,10 @@ targetColumn = bounds.xMin + targetColumnIndex;
         state.potentialLineClears = board.CountPotentialLineClears(2);
         state.boardDensity = board.CalculateBoardDensity();
         state.tSpinOpportunity = board.HasTSpinOpportunity();
+        state.efficiencyScore = CalculateEfficiencyScore();
 
         // Efficiency score
-        state.efficiencyScore = CalculateEfficiencyScore();
+
         SocketManager.Instance.SendGameState(state);
 
         // Reset reward after sending
@@ -572,20 +534,35 @@ targetColumn = bounds.xMin + targetColumnIndex;
         int targetColumnIndex = actionIndex / 4;
         int requestedRotation = actionIndex % 4;
 
-        // Check if this rotation is valid for this piece type
-        int validRotations = board.GetValidRotationsForPiece(currentPiece.data.tetromino);
-        if (requestedRotation >= validRotations)
-            return false; // Invalid rotation for this piece type
+        // int validRotations = board.GetValidRotationsForPiece(currentPiece.data.tetromino);
+        // if (requestedRotation >= validRotations)
+        //     return false;
 
         int targetColumn = GetBoardColumnFromIndex(targetColumnIndex);
-
-        // Quick boundary check
         var bounds = board.Bounds;
         if (targetColumn < bounds.xMin || targetColumn >= bounds.xMax)
             return false;
 
-        return true; // Simplified check - full validation happens in GetValidActions
+        // Simulate piece adjustment for deeper validation
+        Vector3Int originalPosition = currentPiece.position;
+        int originalRotation = currentPiece.rotationIndex;
+        Vector3Int[] originalCells = (Vector3Int[])currentPiece.cells.Clone();
+
+        try
+        {
+            currentPiece.ForceRotateToIndex(requestedRotation);
+            currentPiece.position = new Vector3Int(targetColumn, originalPosition.y, 0);
+
+            return board.IsValidPosition(currentPiece, currentPiece.position);
+        }
+        finally
+        {
+            currentPiece.rotationIndex = originalRotation;
+            currentPiece.position = originalPosition;
+            currentPiece.RestoreCells(originalCells);
+        }
     }
+
     private float CalculateEfficiencyScore()
     {
         float holes = board.CountHoles();
@@ -696,7 +673,6 @@ targetColumn = bounds.xMin + targetColumnIndex;
 
         // Send game over state BEFORE resetting
         SendGameState();
-
 
         // Wait a moment to ensure the message is sent
         StartCoroutine(DelayedReset());

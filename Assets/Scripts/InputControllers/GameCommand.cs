@@ -76,6 +76,7 @@ public class GameState
     public float boardDensity;
     public bool tSpinOpportunity;
     public float efficiencyScore;
+    public ulong stateTick;
 
     // Action validation
     public bool[] validActions; // A
