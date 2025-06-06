@@ -17,6 +17,8 @@ public class Board : MonoBehaviour
 
     [Header("Visual Grid")]
     public SpriteRenderer gridSpriteRenderer;
+    private int totalLinesCleared = 0;
+
 
     private int lastBoardHeight = -1;
     public Vector3Int baseSpawnPosition;
@@ -756,6 +758,14 @@ public class Board : MonoBehaviour
 
         return false;
     }
+    public int GetTotalLinesCleared()
+    {
+        return this.totalLinesCleared;
+    }
+    public void ResetTotalLinesCleared()
+    {
+        this.totalLinesCleared = 0;
+    }
 
     private void GameOver()
     {
@@ -870,7 +880,7 @@ public class Board : MonoBehaviour
                 row++;
             }
         }
-
+        totalLinesCleared += linesCleared;
         // Notify ML agent about line clears
         if (linesCleared > 0)
         {

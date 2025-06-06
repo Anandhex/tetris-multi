@@ -13,6 +13,8 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     public int curriculumBoardPreset = 1;
     public int allowedTetrominoTypes = 1;
 
+    private int currentLinesCleared = 0;
+
     // Timing
     private float lastStateTime = 0f;
     private float stateUpdateInterval = 0.1f;
@@ -410,13 +412,38 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         state.holesCount = board.CountHoles();
         state.stackHeight = board.CalculateStackHeight();
         state.perfectClear = board.IsPerfectClear();
-        state.linesCleared = 0; // This should be set when lines are actually cleared
-
+        state.linesCleared = board.GetTotalLinesCleared(); // This should be set when lines are actually cleared
         SocketManager.Instance.SendGameState(state);
+
+        if (currentPiece != null)
+        {
+            state.currentPieceType = GetPieceTypeIndex(currentPiece.data);
+            state.currentPieceX = currentPiece.position.x;
+            state.currentPieceY = currentPiece.position.y;
+            state.currentPieceRotation = currentPiece.rotationIndex;
+        }
+        else
+        {
+            state.currentPieceType = 0;
+            state.currentPieceX = 0;
+            state.currentPieceY = 0;
+            state.currentPieceRotation = 0;
+        }
+
+        // Next piece type (single value, not array)
+        if (!board.nextPieceData.Equals(default))
+        {
+            state.nextPieceType = GetPieceTypeIndex(board.nextPieceData);
+        }
+        else
+        {
+            state.nextPieceType = 0;
+        }
 
         // Reset reward after sending
         if (!gameOver)
         {
+            currentLinesCleared = 0;
             lastReward = 0f;
         }
     }
@@ -526,6 +553,7 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         // Send game over state BEFORE resetting
         SendGameState();
 
+
         // Wait a moment to ensure the message is sent
         StartCoroutine(DelayedReset());
     }
@@ -541,6 +569,7 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         waitingForNewPiece = false;
         actionCompleted = false;
         board.playerScore = 0;
+        board.ResetTotalLinesCleared();
 
         if (board != null)
         {
@@ -550,6 +579,7 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
 
     public void OnLinesCleared(int lines)
     {
+        currentLinesCleared += lines;
         // Reward for line clears (exponential for multi-line clears)
         lastReward += lines * lines * 25f; // 25, 100, 225, 400 for 1, 2, 3, 4 lines
 
