@@ -96,10 +96,57 @@ class DQNAgent:
         
         print(f"DQN Agent initialized on {device}")
         print(f"TensorBoard logs: {tensorboard_log_dir}")
+
+        # Add curriculum-specific exploration parameters
+        self.base_epsilon = 1.0  # Store original epsilon for resets
+        self.curriculum_epsilon_boost = 0.3  # How much to boost epsilon on curriculum change
+        self.curriculum_decay_episodes = 200  # Episodes over which to decay the boost
+        self.curriculum_boost_active = False
+        self.curriculum_boost_episode_start = 0
         
         # Log model architecture
         self.writer.add_text('Model/Architecture', str(self.q_network))
         self.writer.add_text('Model/Parameters', f"Total parameters: {sum(p.numel() for p in self.q_network.parameters())}")
+
+    def reset_exploration_for_curriculum(self, boost_factor=0.3, decay_episodes=200):
+        """Reset/boost exploration when curriculum changes"""
+        print(f"🔄 Boosting exploration: epsilon {self.epsilon:.3f} → {min(1.0, self.epsilon + boost_factor):.3f}")
+        
+        # Boost epsilon for new curriculum stage
+        self.epsilon = min(1.0, self.epsilon + boost_factor)
+        self.curriculum_epsilon_boost = boost_factor
+        self.curriculum_decay_episodes = decay_episodes
+        self.curriculum_boost_active = True
+        self.curriculum_boost_episode_start = 0  # Will be set by trainer
+        
+        # Log the exploration reset
+        self.writer.add_scalar('Curriculum/Epsilon_Boost', boost_factor, self.steps)
+        self.writer.add_scalar('Agent/Epsilon_After_Curriculum_Change', self.epsilon, self.steps)
+    
+    def update_curriculum_epsilon(self, episodes_since_change):
+        """Gradually decay curriculum epsilon boost"""
+        if not self.curriculum_boost_active:
+            return
+            
+        if episodes_since_change >= self.curriculum_decay_episodes:
+            self.curriculum_boost_active = False
+            return
+        
+        # Linearly decay the boost over time
+        decay_progress = episodes_since_change / self.curriculum_decay_episodes
+        current_boost = self.curriculum_epsilon_boost * (1 - decay_progress)
+        
+        # Calculate what epsilon should be without the boost
+        base_epsilon = max(self.epsilon_min, self.base_epsilon * (self.epsilon_decay ** self.steps))
+        
+        # Apply the decaying boost
+        self.epsilon = min(1.0, base_epsilon + current_boost)
+        
+        # Log curriculum epsilon decay
+        if episodes_since_change % 10 == 0:
+            self.writer.add_scalar('Curriculum/Epsilon_Boost_Remaining', current_boost, self.steps)
+            self.writer.add_scalar('Curriculum/Episodes_Since_Change', episodes_since_change, self.steps)
+
     
     def normalize_board_size(self, board, current_height, current_width):
         """Normalize board to standard size for consistent processing"""

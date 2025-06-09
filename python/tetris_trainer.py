@@ -37,11 +37,13 @@ class TetrisTrainer:
         self.episode_rewards = []
                 # Start with a tiny positive value so division is safe
         self.max_score = 2000  
+
+        self.last_curriculum_change_episode = 0
         
         # Sliding window of normalized scores
         self.score_window = deque(maxlen=score_window_size)
         # Curriculum parameters
-        self.current_curriculum_stage = 1
+        self.current_curriculum_stage = 0
         self.curriculum_stages = [
             {'episodes': 1000, 'height': 8, 'preset': 1, 'pieces': 1, 'name': 'Very Easy'},
             {'episodes': 2000, 'height': 10, 'preset': 2, 'pieces': 2, 'name': 'Easy'},
@@ -75,7 +77,7 @@ class TetrisTrainer:
     
     def get_curriculum_stage(self, episode):
         """Get curriculum parameters for current episode"""
-        total_episodes = 999
+        total_episodes = 0
         for i, stage in enumerate(self.curriculum_stages):
             total_episodes += stage['episodes']
             if episode < total_episodes:
@@ -85,7 +87,7 @@ class TetrisTrainer:
         return len(self.curriculum_stages) - 1, self.curriculum_stages[-1]
     
     def apply_curriculum(self, episode):
-        """Apply curriculum learning parameters"""
+        """Apply curriculum learning parameters with exploration reset"""
         stage_idx, stage = self.get_curriculum_stage(episode)
         if stage_idx != self.current_curriculum_stage:
             print(f"\n{'='*60}")
@@ -95,7 +97,15 @@ class TetrisTrainer:
             print(f"Height: {stage['height']}, Preset: {stage['preset']}, Pieces: {stage['pieces']}")
             print(f"{'='*60}\n")
             
-            # Send curriculum change with stage name
+            # OPTION 1: Reset exploration for new curriculum stage
+            self.agent.reset_exploration_for_curriculum(
+                boost_factor=0.4,  # Increase epsilon by 40%
+                decay_episodes=300  # Decay over 300 episodes
+            )
+            self.agent.curriculum_boost_episode_start = episode
+            self.last_curriculum_change_episode = episode
+            
+            # Send curriculum change to Unity
             success = self.client.send_curriculum_change(
                 board_height=stage['height'],
                 board_preset=stage['preset'],
@@ -104,7 +114,6 @@ class TetrisTrainer:
             )
             
             if success:
-                # Wait for confirmation
                 confirmation = self.client.get_curriculum_confirmation(timeout=5.0)
                 if confirmation:
                     actual_curriculum = self.client.get_curriculum_info(confirmation)
@@ -114,7 +123,6 @@ class TetrisTrainer:
                             f"Stage={stage['name']}, Height={stage['height']}, "
                             f"Preset={stage['preset']}, Pieces={stage['pieces']}")
                     
-                    # Log to TensorBoard
                     self.agent.log_curriculum_change(episode, stage)
                     self.agent.writer.add_text('Curriculum/Stage_Change', 
                                             f"Episode {episode}: Changed to {stage['name']}", episode)
@@ -127,63 +135,119 @@ class TetrisTrainer:
     
     def calculate_reward(self, prev_state, current_state, action, step):
         """
-        Shape the reward, log every component to TensorBoard,
-        and histogram action‐selection frequency every 100 steps.
+        FIXED: Better reward shaping with proper scaling and debugging
         """
-        # 1) base reward from Unity
-        reward = current_state.get('reward', 0.0)
-        # survival reward
-        reward+=0.2 
-
-        # 2) update action count
+        # Base reward from Unity
+        base_reward = current_state.get('reward', 0.0)
+        
+        # Initialize total reward
+        total_reward = base_reward
+        
+        # Update action counter
         self.action_counter[action] += 1
-
-        # 3) compute deltas
+        
+        # Calculate deltas
         lines_cleared = 0
         holes_created = 0
-        if prev_state is not None:
-            lines_cleared   = current_state.get('linesCleared', 0) - prev_state.get('linesCleared', 0)
-            holes_created   = current_state.get('holesCount',   0) - prev_state.get('holesCount',   0)
-
-        # 4) read state metrics
-        stack_height   = current_state.get('stackHeight', 0)
-        bumpiness      = current_state.get('bumpiness',    0)
-        covered_holes  = current_state.get('covered',      0)
-        perfect_clear  = int(current_state.get('perfectClear', False))
-
-        # 5) reward shaping
-        if lines_cleared > 0:
-            reward += (lines_cleared ** 2) * 10
-        reward -= holes_created * 5
-
-        if stack_height < 10:
-            reward += (10 - stack_height) * 0.5
-        elif stack_height > 15:
-            reward -= (stack_height - 15) * 2
-
-        if perfect_clear:
-            reward += 100
-
-        reward -= bumpiness     * 0.5
-        reward -= covered_holes * 1.0
+        score_gained = 0
         
-
-        # 6) TensorBoard logging
+        if prev_state is not None:
+            lines_cleared = current_state.get('linesCleared', 0) - prev_state.get('linesCleared', 0)
+            holes_created = current_state.get('holesCount', 0) - prev_state.get('holesCount', 0)
+            score_gained = current_state.get('score', 0) - prev_state.get('score', 0)
+        
+        # Read current state metrics
+        stack_height = current_state.get('stackHeight', 0)
+        holes_count = current_state.get('holesCount', 0)
+        bumpiness = current_state.get('bumpiness', 0)
+        covered_holes = current_state.get('covered', 0)
+        perfect_clear = current_state.get('perfectClear', False)
+        
+        # FIXED: Reward components with better scaling
+        survival_bonus = 0.1  # Small positive reward for surviving
+        
+        # Lines cleared reward (exponential to encourage multi-line clears)
+        lines_reward = 0.0
+        if lines_cleared > 0:
+            lines_reward = (lines_cleared ** 2) * 50  # Increased multiplier
+        
+        # Hole penalties
+        holes_penalty = holes_created * 10  # Penalty for creating holes
+        existing_holes_penalty = holes_count * 0.1  # Small penalty for existing holes
+        
+        # Height management
+        height_reward = 0.0
+        if stack_height <= 8:
+            height_reward = (8 - stack_height) * 0.5  # Reward for keeping stack low
+        elif stack_height >= 15:
+            height_reward = -(stack_height - 15) * 3  # Strong penalty for high stacks
+        
+        # Perfect clear bonus
+        perfect_clear_bonus = 200 if perfect_clear else 0
+        
+        # Board quality penalties
+        bumpiness_penalty = bumpiness * 0.3
+        covered_penalty = covered_holes * 1.5
+        
+        # Score-based reward (normalized)
+        score_reward = score_gained * 0.01  # Small bonus for score gains
+        
+        # Combine all rewards
+        shaped_reward = (
+            survival_bonus +
+            lines_reward +
+            score_reward +
+            height_reward +
+            perfect_clear_bonus -
+            holes_penalty -
+            existing_holes_penalty -
+            bumpiness_penalty -
+            covered_penalty
+        )
+        
+        total_reward += shaped_reward
+        
+        # FIXED: More detailed TensorBoard logging
         w = self.agent.writer
-      
-        w.add_scalar("State/StackHeight",      stack_height,   step)
-        w.add_scalar("Penalty/Bumpiness",      bumpiness,      step)
-        w.add_scalar("Penalty/CoveredHoles",   covered_holes,  step)
-
-        # 7) histogram of the 40‐action distribution every 100 steps
+        
+        # Log reward components
+        w.add_scalar('Reward/Total', total_reward, step)
+        w.add_scalar('Reward/Base', base_reward, step)
+        w.add_scalar('Reward/Shaped', shaped_reward, step)
+        w.add_scalar('Reward/Lines', lines_reward, step)
+        w.add_scalar('Reward/Height', height_reward, step)
+        w.add_scalar('Reward/PerfectClear', perfect_clear_bonus, step)
+        
+        # Log penalties
+        w.add_scalar('Penalty/Holes', holes_penalty, step)
+        w.add_scalar('Penalty/ExistingHoles', existing_holes_penalty, step)
+        w.add_scalar('Penalty/Bumpiness', bumpiness_penalty, step)
+        w.add_scalar('Penalty/Covered', covered_penalty, step)
+        
+        # Log state metrics
+        w.add_scalar('State/StackHeight', stack_height, step)
+        w.add_scalar('State/HolesCount', holes_count, step)
+        w.add_scalar('State/Bumpiness', bumpiness, step)
+        w.add_scalar('State/CoveredHoles', covered_holes, step)
+        w.add_scalar('State/LinesCleared', current_state.get('linesCleared', 0), step)
+        w.add_scalar('State/Score', current_state.get('score', 0), step)
+        
+        # Log deltas
+        w.add_scalar('Delta/LinesCleared', lines_cleared, step)
+        w.add_scalar('Delta/HolesCreated', holes_created, step)
+        w.add_scalar('Delta/ScoreGained', score_gained, step)
+        
+        # Action distribution histogram every 100 steps
         if step % 100 == 0:
             counts = [self.action_counter[i] for i in range(40)]
-            w.add_histogram("Policy/ActionDistribution",
-                            torch.tensor(counts, dtype=torch.float32),
-                            step)
-
+            w.add_histogram('Policy/ActionDistribution',
+                          torch.tensor(counts, dtype=torch.float32), step)
+        
+        # Curriculum tracking
+        w.add_scalar('Curriculum/CurrentStage', self.current_curriculum_stage, step)
+        
         w.flush()
-        return reward
+        return total_reward
     
     def train(self, episodes=sys.maxsize, save_interval=100, eval_interval=200):
         """Main training loop"""
@@ -209,6 +273,7 @@ class TetrisTrainer:
                 # Apply curriculum
                 episode_score = 0
 
+
               
                 # Reset environment
                 
@@ -228,9 +293,14 @@ class TetrisTrainer:
                     print(f"  Expected: Height={expected_stage['height']}, Preset={expected_stage['preset']}, Pieces={expected_stage['pieces']}")
                     print(f"  Actual:   Height={curriculum_info['board_height']}, Preset={curriculum_info['board_preset']}, Pieces={curriculum_info['allowed_tetromino_types']}")
                 
-                
+                episodes_since_change = episode - self.last_curriculum_change_episode
+                self.agent.update_curriculum_epsilon(episodes_since_change)
                 
                 self.apply_curriculum(episode)
+
+                if episode % 50 == 0:
+                    print(f"Episode {episode}: epsilon={self.agent.epsilon:.4f}, "
+                          f"curriculum_boost_active={self.agent.curriculum_boost_active}")
                 # Continue with existing training loop...
                 episode_reward = 0
                 episode_score = 0
