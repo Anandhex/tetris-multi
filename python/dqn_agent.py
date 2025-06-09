@@ -7,53 +7,115 @@ from collections import deque
 import random
 import numpy as np
 import os
+import math  # FIX 1: Added missing import
 from datetime import datetime
+
+class NoisyLinear(nn.Module):
+    def __init__(self, in_features, out_features, sigma_init=0.017):
+        super().__init__()
+        self.in_features  = in_features
+        self.out_features = out_features
+        self.sigma_init   = sigma_init
+
+        # Learnable parameters
+        self.weight_mu    = nn.Parameter(torch.empty(out_features, in_features))
+        self.weight_sigma = nn.Parameter(torch.empty(out_features, in_features))
+        self.bias_mu      = nn.Parameter(torch.empty(out_features))
+        self.bias_sigma   = nn.Parameter(torch.empty(out_features))
+
+        # Buffers for noise
+        self.register_buffer('weight_epsilon', torch.empty(out_features, in_features))
+        self.register_buffer('bias_epsilon',   torch.empty(out_features))
+
+        self.reset_parameters()
+        self.reset_noise()
+
+    def reset_parameters(self):
+        # Initialization from Fortunato et al.
+        mu_range = 1.0 / math.sqrt(self.in_features)
+        self.weight_mu.data.uniform_(-mu_range, mu_range)
+        self.weight_sigma.data.fill_(self.sigma_init)
+        self.bias_mu.data.uniform_(-mu_range, mu_range)
+        self.bias_sigma.data.fill_(self.sigma_init)
+
+    def _scale_noise(self, size):
+        x = torch.randn(size)
+        return x.sign().mul_(x.abs().sqrt_())
+
+    def reset_noise(self):
+        epsilon_in  = self._scale_noise(self.in_features)
+        epsilon_out = self._scale_noise(self.out_features)
+        # outer product for factorized noise
+        self.weight_epsilon.copy_(epsilon_out.ger(epsilon_in))
+        self.bias_epsilon.copy_(epsilon_out)
+
+    def forward(self, input):
+        if self.training:
+            weight = self.weight_mu + self.weight_sigma * self.weight_epsilon
+            bias   = self.bias_mu   + self.bias_sigma   * self.bias_epsilon
+        else:
+            weight = self.weight_mu
+            bias   = self.bias_mu
+
+        return F.linear(input, weight, bias)
 
 class TetrisDQN(nn.Module):
     def __init__(self, input_size, hidden_size=512, output_size=40):
         super(TetrisDQN, self).__init__()
         
-        # Use the new QNetwork architecture
-        standard_height = 20  # Define this constant
-        
-        # Board CNN encoder
+        standard_height = 20
+
+        # --- shared encoder as before ---
         self.board_cnn = nn.Sequential(
             nn.Conv2d(1, 16, kernel_size=3, padding=1), nn.ReLU(),
             nn.Conv2d(16, 32, kernel_size=3, padding=1), nn.ReLU(),
             nn.Flatten(),
             nn.Linear(32 * standard_height * 10, 128), nn.ReLU()
         )
-        
-        # MLPs for other inputs
-        self.piece_mlp = nn.Sequential(nn.Linear(4, 32), nn.ReLU())
-        self.metrics_mlp = nn.Sequential(nn.Linear(5, 32), nn.ReLU()) 
-        self.heights_mlp = nn.Sequential(nn.Linear(10, 32), nn.ReLU())
+        self.piece_mlp      = nn.Sequential(nn.Linear(4, 32), nn.ReLU())
+        self.metrics_mlp    = nn.Sequential(nn.Linear(5, 32), nn.ReLU())
+        self.heights_mlp    = nn.Sequential(nn.Linear(10,32), nn.ReLU())
         self.next_piece_mlp = nn.Sequential(nn.Linear(7, 32), nn.ReLU())
-        self.curriculum_mlp = nn.Sequential(nn.Linear(9, 32), nn.ReLU())
-        
-        # Final fusion & head
-        total_size = 128 + 32*5  # 288
-        self.fc_out = nn.Sequential(
-            nn.Linear(total_size, 128), nn.ReLU(),
-            nn.Linear(128, output_size)
-        )
+        self.curr_mlp       = nn.Sequential(nn.Linear(9, 32), nn.ReLU())
+
+        # --- fusion layer ---
+        total_feats = 128 + 32*5  # = 288
+        self.fc_hidden = NoisyLinear(total_feats, hidden_size)
+        self.relu = nn.ReLU()
+
+        # --- dueling streams ---
+        self.value_stream     = NoisyLinear(hidden_size, 1)
+        self.advantage_stream = NoisyLinear(hidden_size, output_size)
+
+        # store for resetting noise
+        self.noisy_layers = [self.fc_hidden, self.value_stream, self.advantage_stream]
     
+    def reset_noise(self):
+        for layer in self.noisy_layers:
+            layer.reset_noise()
+
     def forward(self, board, piece_info, metrics, heights, next_piece, curriculum):
-        # Process each input through its dedicated pathway
-        board_features = self.board_cnn(board)
-        piece_features = self.piece_mlp(piece_info)
-        metrics_features = self.metrics_mlp(metrics)
-        heights_features = self.heights_mlp(heights)
-        next_piece_features = self.next_piece_mlp(next_piece)
-        curriculum_features = self.curriculum_mlp(curriculum)
-        
-        # Fuse all features
-        combined = torch.cat([
-            board_features, piece_features, metrics_features,
-            heights_features, next_piece_features, curriculum_features
-        ], dim=1)
-        
-        return self.fc_out(combined)
+        # FIX 3: Removed inefficient noise reset from forward pass
+        # self.reset_noise()  # ❌ REMOVED - too frequent!
+
+        # encode
+        b = self.board_cnn(board)
+        p = self.piece_mlp(piece_info)
+        m = self.metrics_mlp(metrics)
+        h = self.heights_mlp(heights)
+        n = self.next_piece_mlp(next_piece)
+        c = self.curr_mlp(curriculum)
+
+        # fuse
+        x = torch.cat([b, p, m, h, n, c], dim=1)
+        x = self.relu(self.fc_hidden(x))
+
+        # dueling outputs
+        v = self.value_stream(x)                    # [batch, 1]
+        a = self.advantage_stream(x)                # [batch, action_dim]
+        q = v + a - a.mean(dim=1, keepdim=True)     # broadcast v
+
+        return q
 
 class DQNAgent:
     def __init__(self, state_size, action_size=40, lr=0.001, device='cuda' if torch.cuda.is_available() else 'cpu', 
@@ -61,14 +123,12 @@ class DQNAgent:
         self.device = device
         self.action_size = action_size
         self.memory = deque(maxlen=50000)
-        self.epsilon = 1.0
-        self.epsilon_min = 0.01
-        self.epsilon_decay = 0.9995
         self.learning_rate = lr
         self.batch_size = 32  # Reduced batch size for stability
         self.target_update_freq = 1000
         self.steps = 0
         self.training_steps = 0
+        self.training_episodes = 0  # FIX 4: Added episode counter for curriculum
         
         # Standard board size for normalization
         self.standard_height = 20
@@ -81,8 +141,9 @@ class DQNAgent:
         self.tensorboard_log_dir = tensorboard_log_dir
         
         # Neural networks
-        self.q_network = TetrisDQN(state_size, output_size=action_size).to(device)
+        self.q_network      = TetrisDQN(state_size, output_size=action_size).to(device)
         self.target_network = TetrisDQN(state_size, output_size=action_size).to(device)
+        self.target_network.load_state_dict(self.q_network.state_dict())
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=lr, weight_decay=1e-5)
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=10000, gamma=0.9)
         
@@ -97,55 +158,16 @@ class DQNAgent:
         print(f"DQN Agent initialized on {device}")
         print(f"TensorBoard logs: {tensorboard_log_dir}")
 
-        # Add curriculum-specific exploration parameters
-        self.base_epsilon = 1.0  # Store original epsilon for resets
-        self.curriculum_epsilon_boost = 0.3  # How much to boost epsilon on curriculum change
-        self.curriculum_decay_episodes = 200  # Episodes over which to decay the boost
-        self.curriculum_boost_active = False
-        self.curriculum_boost_episode_start = 0
+        
+        # FIX 3: Add noise reset control
+        self.noise_reset_frequency = 100  # Reset noise every N steps
+        self.last_noise_reset = 0
         
         # Log model architecture
         self.writer.add_text('Model/Architecture', str(self.q_network))
         self.writer.add_text('Model/Parameters', f"Total parameters: {sum(p.numel() for p in self.q_network.parameters())}")
-
-    def reset_exploration_for_curriculum(self, boost_factor=0.3, decay_episodes=200):
-        """Reset/boost exploration when curriculum changes"""
-        print(f"🔄 Boosting exploration: epsilon {self.epsilon:.3f} → {min(1.0, self.epsilon + boost_factor):.3f}")
-        
-        # Boost epsilon for new curriculum stage
-        self.epsilon = min(1.0, self.epsilon + boost_factor)
-        self.curriculum_epsilon_boost = boost_factor
-        self.curriculum_decay_episodes = decay_episodes
-        self.curriculum_boost_active = True
-        self.curriculum_boost_episode_start = 0  # Will be set by trainer
-        
-        # Log the exploration reset
-        self.writer.add_scalar('Curriculum/Epsilon_Boost', boost_factor, self.steps)
-        self.writer.add_scalar('Agent/Epsilon_After_Curriculum_Change', self.epsilon, self.steps)
-    
-    def update_curriculum_epsilon(self, episodes_since_change):
-        """Gradually decay curriculum epsilon boost"""
-        if not self.curriculum_boost_active:
-            return
-            
-        if episodes_since_change >= self.curriculum_decay_episodes:
-            self.curriculum_boost_active = False
-            return
-        
-        # Linearly decay the boost over time
-        decay_progress = episodes_since_change / self.curriculum_decay_episodes
-        current_boost = self.curriculum_epsilon_boost * (1 - decay_progress)
-        
-        # Calculate what epsilon should be without the boost
-        base_epsilon = max(self.epsilon_min, self.base_epsilon * (self.epsilon_decay ** self.steps))
-        
-        # Apply the decaying boost
-        self.epsilon = min(1.0, base_epsilon + current_boost)
-        
-        # Log curriculum epsilon decay
-        if episodes_since_change % 10 == 0:
-            self.writer.add_scalar('Curriculum/Epsilon_Boost_Remaining', current_boost, self.steps)
-            self.writer.add_scalar('Curriculum/Episodes_Since_Change', episodes_since_change, self.steps)
+        print(f"DQN w/ NoisyNets & Dueling initialized on {device}")
+        self.writer.add_text('Model/Architecture', str(self.q_network))
 
     
     def normalize_board_size(self, board, current_height, current_width):
@@ -185,17 +207,44 @@ class DQNAgent:
     def preprocess_state(self, game_state):
         """Convert game state to neural network input with extended features"""
 
-        if not isinstance(game_state, dict) or 'board' not in game_state:
-            print("Warning: preprocess_state received invalid game_state.")
-            return {
-                'board': torch.zeros((1, 1, self.standard_height, self.standard_width), dtype=torch.float32).to(self.device),
-                'piece_info': torch.zeros((1, 4), dtype=torch.float32).to(self.device),
-                'metrics': torch.zeros((1, 5), dtype=torch.float32).to(self.device),
-                'heights': torch.zeros((1, 10), dtype=torch.float32).to(self.device),
-                'next_piece': torch.zeros((1, 7), dtype=torch.float32).to(self.device),
-                'curriculum': torch.zeros((1, 9), dtype=torch.float32).to(self.device)
-            }
+        # Comprehensive null checking at the beginning
+        if game_state is None:
+            print("Warning: preprocess_state received None game_state.")
+            return self._get_default_state()
+        
+        if not isinstance(game_state, dict):
+            print(f"Warning: preprocess_state received invalid game_state type: {type(game_state)}")
+            return self._get_default_state()
+        
+        if 'board' not in game_state:
+            print("Warning: preprocess_state received game_state without 'board' key.")
+            return self._get_default_state()
 
+        # Sanitize all numeric values that could be None
+        safe_game_state = {}
+        for key, value in game_state.items():
+            if value is None:
+                # Set reasonable defaults for None values
+                if key in ['holesCount', 'stackHeight', 'bumpiness', 'covered', 'curriculumBoardHeight', 
+                        'curriculumBoardPreset', 'allowedTetrominoTypes']:
+                    safe_game_state[key] = 0
+                elif key == 'perfectClear':
+                    safe_game_state[key] = False
+                elif key in ['currentPiece', 'nextPiece']:
+                    safe_game_state[key] = [0, 0, 0, 0] if key == 'currentPiece' else [0]
+                elif key == 'heights':
+                    safe_game_state[key] = [0] * 10
+                elif key == 'board':
+                    safe_game_state[key] = []
+                else:
+                    safe_game_state[key] = value  # Keep other values as-is
+            else:
+                safe_game_state[key] = value
+        
+        # Use the sanitized game_state for the rest of the method
+        game_state = safe_game_state
+
+        # Rest of your existing method continues here...
         board_data = game_state.get('board', [])
         if not board_data or len(board_data) == 0:
             board_array = np.zeros(self.standard_height * self.standard_width, dtype=np.float32)
@@ -216,7 +265,12 @@ class DQNAgent:
         ).to(self.device)
 
         # Current piece
-        piece = game_state.get('currentPiece', [0, 0, 0, 0])
+        raw_piece = game_state.get('currentPiece')
+        # if the environment ever gives us None (or something else odd), fall back to zeros
+        if not isinstance(raw_piece, (list, tuple)) or raw_piece is None:
+            piece = [0, 0, 0, 0]
+        else:
+            piece = raw_piece
         piece_info_tensor = torch.tensor([piece], dtype=torch.float32).to(self.device)
 
         # Metrics
@@ -268,15 +322,17 @@ class DQNAgent:
     
     def act(self, state, training=True):
         """Choose action using epsilon-greedy policy over valid actions only"""
+        # FIX 3: Reset noise periodically instead of every forward pass
+        if self.steps - self.last_noise_reset >= self.noise_reset_frequency:
+            self.q_network.reset_noise()
+            self.target_network.reset_noise()
+            self.last_noise_reset = self.steps
+        
         valid_actions = state['validActions']
         if not valid_actions:
             print("❌ No valid actions available — returning fallback or skipping step.")
             return 0
 
-        if training and random.random() <= self.epsilon:
-            action = random.choice(valid_actions)
-            self.writer.add_scalar('Agent/Random_Action_Taken', 1, self.steps)
-            return action
 
         processed_state = self.preprocess_state(state)
         
@@ -315,11 +371,11 @@ class DQNAgent:
     def replay(self):
         """Train the model on a batch of experiences"""
         if len(self.memory) < self.batch_size:
-            return None
-        
+            return 0.0  # Instead of None
+    
         actual_batch_size = min(self.batch_size, len(self.memory))
         if actual_batch_size < 2:
-            return None
+            return 0.0  # Instead of None
         
         batch = random.sample(self.memory, actual_batch_size)
         
@@ -391,14 +447,17 @@ class DQNAgent:
             next_curriculum_batch = torch.cat(next_curriculum_tensors, dim=0)    # Add this
         except RuntimeError as e:
             print(f"Error concatenating tensors: {e}")
-            return None
+            return 0.0
+        
+        # FIX 2: Fix tensor operations for action gathering
+        actions_tensor = torch.LongTensor(actions).to(self.device)
         
         # Current Q values - UPDATE to pass all features
         current_q_values = self.q_network(
             board_batch, piece_batch, metrics_batch, 
             heights_batch, next_piece_batch, curriculum_batch
         )
-        current_q_values = current_q_values.gather(1, torch.LongTensor(actions).unsqueeze(1).to(self.device))
+        current_q_values = current_q_values.gather(1, actions_tensor.unsqueeze(1))
         
         # Next Q values - UPDATE to pass all features
         with torch.no_grad():
@@ -434,14 +493,10 @@ class DQNAgent:
         self.optimizer.step()
         self.scheduler.step()
         
-        # Update epsilon
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
         
         # Log training metrics
         self.training_steps += 1
         self.writer.add_scalar('Training/Loss', loss.item(), self.training_steps)
-        self.writer.add_scalar('Training/Epsilon', self.epsilon, self.training_steps)
         self.writer.add_scalar('Training/Learning_Rate', self.scheduler.get_last_lr()[0], self.training_steps)
         
         # Update target network
@@ -456,6 +511,9 @@ class DQNAgent:
     def log_episode_metrics(self, episode, episode_reward, episode_length, episode_score, 
                           episode_lines, game_metrics):
         """Log episode metrics to TensorBoard"""
+        # FIX 4: Increment episode counter
+        self.training_episodes += 1
+        
         self.writer.add_scalar('Episode/Reward', episode_reward, episode)
         self.writer.add_scalar('Episode/Length', episode_length, episode)
         self.writer.add_scalar('Episode/Score', episode_score, episode)
@@ -481,12 +539,16 @@ class DQNAgent:
             avg_length_10 = np.mean(self.episode_lengths[-10:])
             self.writer.add_scalar('Episode/Avg_Reward_10', avg_reward_10, episode)
             self.writer.add_scalar('Episode/Avg_Length_10', avg_length_10, episode)
+        
+        # FIX 4: Update curriculum epsilon after episode logging
+        
     
     def log_curriculum_change(self, episode, stage_info):
         """Log curriculum changes"""
         self.writer.add_scalar('Curriculum/Board_Height', stage_info['height'], episode)
         self.writer.add_scalar('Curriculum/Board_Preset', stage_info['preset'], episode)
         self.writer.add_scalar('Curriculum/Tetromino_Types', stage_info['pieces'], episode)
+    
     
     def save(self, filepath):
         """Save the model and training state"""
@@ -495,7 +557,6 @@ class DQNAgent:
             'target_network_state_dict': self.target_network.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
-            'epsilon': self.epsilon,
             'steps': self.steps,
             'training_steps': self.training_steps,
             'episode_rewards': self.episode_rewards,
@@ -516,14 +577,12 @@ class DQNAgent:
             if 'scheduler_state_dict' in checkpoint:
                 self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
             
-            self.epsilon = checkpoint['epsilon']
             self.steps = checkpoint['steps']
             self.training_steps = checkpoint.get('training_steps', 0)
             self.episode_rewards = checkpoint.get('episode_rewards', [])
             self.episode_lengths = checkpoint.get('episode_lengths', [])
             
             print(f"Model loaded from {filepath}")
-            print(f"Resumed at step {self.steps}, epsilon {self.epsilon:.3f}")
             return True
         return False
     

@@ -13,7 +13,7 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     private bool pythonConnected = false;
 
     [Header("Curriculum Parameters")]
-    public int curriculumBoardHeight = 8;
+    public int curriculumBoardHeight = 20;
     public int curriculumBoardPreset = 1;
     public int allowedTetrominoTypes = 1;
 
