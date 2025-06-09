@@ -137,6 +137,7 @@ public class SocketManager : MonoBehaviour
     {
         if (connectedTcpClient == null || !connectedTcpClient.Connected)
             return;
+
         try
         {
             string json = JsonConvert.SerializeObject(gameState);

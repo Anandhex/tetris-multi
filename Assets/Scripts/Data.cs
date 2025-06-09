@@ -52,46 +52,4 @@ public static class Data
     };
     public static int PlayerScore = 0;
     public static BoardManager.GameMode gameMode = BoardManager.GameMode.SinglePlayer;
-    public static Vector2Int[] GetCells(Tetromino tetromino, int rotation)
-    {
-        Vector2Int[] original = Cells[tetromino];
-        Vector2Int[] rotated = new Vector2Int[original.Length];
-
-        for (int i = 0; i < original.Length; i++)
-        {
-            Vector2 cell = original[i];
-
-            // Apply rotation center offset based on SRS standard
-            Vector2 center;
-            if (tetromino == Tetromino.I)
-                center = new Vector2(0.5f, 0.5f);  // I-piece rotates around (0.5, 0.5)
-            else if (tetromino == Tetromino.O)
-                center = new Vector2(0.5f, 0.5f);  // O-piece rotates around (0.5, 0.5)
-            else
-                center = new Vector2(0f, 0f);      // Other pieces rotate around (0, 0)
-
-            // Translate to rotation center
-            cell -= center;
-
-            // Apply rotation (counterclockwise, 90° per step)
-            for (int r = 0; r < rotation; r++)
-            {
-                cell = new Vector2(-cell.y, cell.x);
-            }
-
-            // Translate back from rotation center
-            cell += center;
-
-            // Round to integer coordinates
-            rotated[i] = new Vector2Int(
-     Mathf.CeilToInt(cell.x),
-     Mathf.CeilToInt(cell.y)
- );
-        }
-
-        return rotated;
-    }
-
-
-
 }

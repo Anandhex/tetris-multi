@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using UnityEngine;
 
 public class Piece : MonoBehaviour
@@ -15,8 +14,6 @@ public class Piece : MonoBehaviour
     public float stepDelay = 1f;
     public float moveDelay = 0.1f;
     public float lockDelay = 0.5f;
-
-    public List<int> validMoves;
 
     private float stepTime;
     private float moveTime;
@@ -100,11 +97,7 @@ public class Piece : MonoBehaviour
             HandleMoveInputs();
         }
 
-        if (inputController is SocketTetrisAgent)
-        {
-            // No automatic gravity when controlled via socket
-        }
-        else if (Time.time > stepTime)
+        if (Time.time > stepTime)
         {
             Step();
         }
@@ -269,21 +262,6 @@ public class Piece : MonoBehaviour
         else
         {
             return min + (input - min) % (max - min);
-        }
-    }
-
-    public List<int> validActions { get; private set; }
-
-    public void ComputeAndStoreValidMoves(Board board)
-    {
-        if (board != null)
-        {
-            validActions = SocketTetrisAgent.GenerateValidActionIndices(board, data);
-        }
-        else
-        {
-            validActions = new List<int>();
-            Debug.LogWarning("Piece.ComputeAndStoreValidMoves called before board or data was set.");
         }
     }
 

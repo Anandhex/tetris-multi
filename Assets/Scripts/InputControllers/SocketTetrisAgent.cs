@@ -1,8 +1,5 @@
 using UnityEngine;
 using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
-using System;
 
 public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
 {
@@ -10,10 +7,9 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     private Piece currentPiece;
     private bool isExecutingAction = false;
     private bool waitingForNewPiece = false;
-    private bool pythonConnected = false;
 
     [Header("Curriculum Parameters")]
-    public int curriculumBoardHeight = 8;
+    public float curriculumBoardHeight = 8f;
     public int curriculumBoardPreset = 1;
     public int allowedTetrominoTypes = 1;
 
@@ -47,16 +43,11 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     void Update()
     {
         // Send game state periodically, but only when not executing an action
-        // if (!isExecutingAction && Time.time - lastStateTime > stateUpdateInterval)
-        // {
-        //     SendGameState();   // fires every 0.1 s even while waiting for next piece
-        //     lastStateTime = Time.time;
-        // }
-        // if (pythonConnected && !isExecutingAction && Time.time - lastStateTime > stateUpdateInterval)
-        // {
-        //     SendGameState();
-        //     lastStateTime = Time.time;
-        // }
+        if (Time.time - lastStateTime > stateUpdateInterval && !isExecutingAction)
+        {
+            SendGameState();
+            lastStateTime = Time.time;
+        }
     }
 
     void HandleCommand(GameCommand command)
@@ -82,7 +73,12 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
                 SendGameState(); // Will include current curriculum info
                 break;
 
-
+            case "reset":
+                if (command.reset != null && command.reset.resetBoard)
+                {
+                    ResetGame();
+                }
+                break;
         }
     }
 
@@ -104,33 +100,24 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     {
         if (actionIndex < 0 || actionIndex >= 40)
         {
+            Debug.LogWarning($"Invalid action index: {actionIndex}. Must be 0-39.");
             return;
         }
+
         if (currentPiece == null || isExecutingAction)
         {
+            Debug.LogWarning("Cannot execute action: no current piece or already executing action");
             return;
         }
 
-        // 1) total rotations for this piece
-        int rotationCount = currentPiece.data.RotationCount;  // always 4 :contentReference[oaicite:0]{index=0}
+        // Simple mapping: 40 actions = 10 columns × 4 rotations
+        int targetColumnIndex = actionIndex / 4;  // 0-9
+        targetRotation = actionIndex % 4;         // 0-3
 
-        // 2) decode flat action → columnIdx (0–9) and rotation (0–3)
-        int columnIdx = actionIndex / rotationCount;  // e.g. 0–9
-        int rotation = actionIndex % rotationCount;  // e.g. 0–3
+        // Map column index to actual board position
+        targetColumn = GetBoardColumnFromIndex(targetColumnIndex);
 
-        // 3) clamp into valid ranges
-        columnIdx = Mathf.Clamp(columnIdx, 0, board.boardSize.x - 1);
-        rotation = Mathf.Clamp(rotation, 0, rotationCount - 1);
-
-        // 4) map columnIdx (0..9) into your board’s [-5..+4] x-coordinate
-        int halfWidth = board.Bounds.width / 2;                         // 10/2=5 :contentReference[oaicite:1]{index=1}
-        int boardColumn = columnIdx - halfWidth;
-
-        // store for the placement coroutine
-        targetColumn = boardColumn;
-        targetRotation = rotation;
-
-        Debug.Log($"Action {actionIndex}: idx={columnIdx} → x={boardColumn}, rot={rotation}");
+        Debug.Log($"Action {actionIndex}: Column Index {targetColumnIndex} -> Board Column {targetColumn}, Rotation {targetRotation}");
 
         isExecutingAction = true;
         actionCompleted = false;
@@ -140,11 +127,22 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     }
     int GetBoardColumnFromIndex(int columnIndex)
     {
-        Vector3Int spawnCell = board.spawnPosition;
-        int halfWidth = board.Bounds.width / 2;
-        int leftmostX = spawnCell.x - halfWidth;
-        int boardColumn = leftmostX + columnIndex;
-        return Mathf.Clamp(boardColumn, board.Bounds.xMin, board.Bounds.xMax - 1);
+        // Map action column index (0-9) to board coordinates
+        var bounds = board.Bounds;
+
+        // For a 10-wide board, distribute columns evenly across the board width
+        if (bounds.width != 10)
+        {
+            Debug.LogWarning($"Board width is {bounds.width}, not 10. Mapping may be incorrect.");
+        }
+
+        // Simple mapping: column index directly maps to board position
+        int boardColumn = bounds.xMin + columnIndex;
+
+        // Clamp to board bounds just in case
+        boardColumn = Mathf.Clamp(boardColumn, bounds.xMin, bounds.xMax - 1);
+
+        return boardColumn;
     }
     IEnumerator ExecuteDirectPlacement()
     {
@@ -158,6 +156,7 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         Vector3Int originalPosition = currentPiece.position;
         int originalRotation = currentPiece.rotationIndex;
 
+        Debug.Log($"Starting placement: From {originalPosition} (rot {originalRotation}) to column {targetColumn} (rot {targetRotation})");
 
         // Step 1: Apply target rotation
         yield return StartCoroutine(RotatePiece());
@@ -218,6 +217,7 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
                 // Revert rotation
                 currentPiece.Rotate(-1);
                 currentPiece.position = positionBeforeRotation;
+                Debug.LogWarning($"Could not rotate to target rotation {targetRotation}");
                 break;
             }
 
@@ -228,30 +228,31 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
 
     IEnumerator MovePieceToColumn()
     {
-        // compute based on leftmost block
-        int minCellX = currentPiece.cells.Min(c => c.x);
-        int desiredPivotX = targetColumn - minCellX;
+        int currentColumn = currentPiece.position.x;
+        int columnsToMove = targetColumn - currentColumn;
 
-
-        while (currentPiece.position.x != desiredPivotX)
+        // Move step by step
+        while (columnsToMove != 0)
         {
-            var dir = (desiredPivotX > currentPiece.position.x)
-                      ? Vector3Int.right
-                      : Vector3Int.left;
-            var newPos = currentPiece.position + dir;
-
             board.Clear(currentPiece);
-            if (!board.IsValidPosition(currentPiece, newPos))
-            {
 
-                yield break;
+            Vector3Int moveDirection = columnsToMove > 0 ? Vector3Int.right : Vector3Int.left;
+            Vector3Int newPosition = currentPiece.position + moveDirection;
+
+            if (board.IsValidPosition(currentPiece, newPosition))
+            {
+                currentPiece.position = newPosition;
+                columnsToMove += (columnsToMove > 0) ? -1 : 1;
+            }
+            else
+            {
+                Debug.LogWarning($"Cannot move further. Target: {targetColumn}, Current: {currentPiece.position.x}");
+                break;
             }
 
-            currentPiece.position = newPos;
             board.Set(currentPiece);
             yield return new WaitForSeconds(0.03f);
         }
-
     }
 
     IEnumerator DropPiece()
@@ -276,6 +277,7 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
             }
         }
 
+        Debug.Log($"Piece dropped {dropSteps} steps and landed at {currentPiece.position}");
     }
 
     void FinalizePlacement()
@@ -288,7 +290,6 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
 
         // Calculate reward
         CalculatePlacementReward();
-        SendGameState();
 
         // Mark action as completed
         actionCompleted = true;
@@ -349,6 +350,7 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         curriculumBoardPreset = curriculum.boardPreset;
         allowedTetrominoTypes = curriculum.allowedTetrominoTypes;
 
+        Debug.Log($"Curriculum changed: Height={curriculumBoardHeight}, Preset={curriculumBoardPreset}, Types={allowedTetrominoTypes}");
     }
 
     void ResetGame()
@@ -367,11 +369,8 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
 
     void OnPythonConnected()
     {
-        pythonConnected = true;
         Debug.Log("Python AI connected - Ready for 40-action Tetris (10 columns × 4 rotations)!");
-        gameOver = false;
         SendGameState();
-        lastStateTime = Time.time;
     }
 
     void OnPythonDisconnected()
@@ -383,11 +382,6 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     {
         if (board == null || SocketManager.Instance == null)
             return;
-        if (currentPiece == null)
-        {
-            Debug.LogWarning("SendGameState(): currentPiece is null — skipping state send.");
-            return;
-        }
 
         GameState state = new GameState();
 
@@ -416,11 +410,8 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         state.holesCount = board.CountHoles();
         state.stackHeight = board.CalculateStackHeight();
         state.perfectClear = board.IsPerfectClear();
-        state.linesCleared = board.playerScore / 100; // This should be set when lines are actually cleared
-        state.validActions = currentPiece.validActions;
-        state.bumpiness = board.GetBumpinessScore();
-        state.covered = board.CountCoveredHoles();
-        state.heights = board.GetColumnHeights();
+        state.linesCleared = 0; // This should be set when lines are actually cleared
+
         SocketManager.Instance.SendGameState(state);
 
         // Reset reward after sending
@@ -514,228 +505,17 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     public void SetCurrentPiece(Piece piece)
     {
         currentPiece = piece;
-        if (board == null)
-        {
-            return;
-        }
-        if (currentPiece != null)
-        {
-            currentPiece.ComputeAndStoreValidMoves(board);
-        }
         // Send state when new piece spawns
-
+        if (!isExecutingAction)
+        {
+            SendGameState();
+        }
     }
 
     public void SetBoard(Board gameBoard)
     {
         board = gameBoard;
-        board.inputController = this;
-        SendGameState();
-        lastStateTime = Time.time;   // reset your timer so you don’t immediately resend
     }
-    public static List<int> GenerateValidActionIndices(Board board, TetrominoData data)
-    {
-        var validActions = new List<int>();
-        var bounds = board.Bounds;
-        var kicks = Data.WallKicks[data.tetromino];
-        const int FULL_ROTATIONS = 4;
-
-        // Starting orientation (usually 0)
-        int fromRot = 0;
-
-
-        for (int rot = 0; rot < data.RotationCount; rot++)
-        {
-            var cells = Data.GetCells(data.tetromino, rot);
-
-            // Compute piece footprint
-            int minX = cells.Min(c => c.x);
-            int maxX = cells.Max(c => c.x);
-            int maxYOffset = cells.Max(c => c.y);
-
-
-            // Determine horizontal range in world coordinates
-            int colLo = bounds.xMin - minX;
-            int colHi = bounds.xMax - maxX;
-
-            // Map rotation transition to SRS kick row (0–7)
-            int kickRow;
-            switch ((fromRot, rot))
-            {
-                case (0, 1): kickRow = 0; break;
-                case (1, 2): kickRow = 1; break;
-                case (2, 3): kickRow = 2; break;
-                case (3, 0): kickRow = 3; break;
-
-                case (1, 0): kickRow = 4; break;
-                case (2, 1): kickRow = 5; break;
-                case (3, 2): kickRow = 6; break;
-                case (0, 3): kickRow = 7; break;
-
-                default:
-                    // Fallback to safe index
-                    kickRow = 0;
-                    break;
-            }
-
-            for (int worldX = colLo; worldX <= colHi; worldX++)
-            {
-
-                // Calculate initial spawn position in world coords
-                Vector3Int spawnCell = board.spawnPosition;
-                var spawnPos = new Vector3Int(
-                    worldX,
-                    spawnCell.y - maxYOffset,
-                    0
-                );
-
-
-                // Quick check at spawn
-                if (!IsValidPlacement(board, cells, spawnPos, bounds))
-                {
-                    continue;
-                }
-
-                // Test wall kicks
-                Vector3Int kickPos = default;
-                bool kicked = false;
-                for (int k = 0; k < kicks.GetLength(1); k++)
-                {
-                    var off = kicks[kickRow, k];
-                    var p = spawnPos + new Vector3Int(off.x, off.y, 0);
-
-                    if (IsValidPlacement(board, cells, p, bounds))
-                    {
-                        kickPos = p;
-                        kicked = true;
-                        break;
-                    }
-                    else
-                    {
-                    }
-                }
-
-                if (!kicked)
-                {
-                    continue;
-                }
-
-                // Test sliding
-                int targetCol = kickPos.x - bounds.xMin;
-                if (!CanSlideTo(board, cells, spawnPos, targetCol, bounds))
-                {
-                    continue;
-                }
-
-                // Test drop
-                var dropPos = kickPos;
-                int dropSteps = 0;
-                while (dropPos.y > bounds.yMin &&
-                       IsValidPlacement(board, cells, dropPos + Vector3Int.down, bounds))
-                {
-                    dropPos += Vector3Int.down;
-                    dropSteps++;
-                }
-
-                if (IsValidPlacement(board, cells, dropPos, bounds))
-                {
-                    int actionIndex = (kickPos.x - bounds.xMin) * data.RotationCount + rot;
-                    validActions.Add(actionIndex);
-                }
-                else
-                {
-                }
-            }
-
-            // Update fromRot for next transition
-            fromRot = rot;
-        }
-
-        return validActions;
-    }
-
-    private static bool CanSlideTo(Board board, Vector2Int[] cells, Vector3Int startPos, int targetCol, RectInt bounds)
-    {
-        int currentCol = startPos.x - bounds.xMin;
-        int dx = targetCol - currentCol;
-        int step = Math.Sign(dx);
-
-        var pos = startPos;
-        for (int i = 0; i < Math.Abs(dx); i++)
-        {
-            pos += new Vector3Int(step, 0, 0);
-            if (!IsValidPlacement(board, cells, pos, bounds))
-                return false;
-        }
-        return true;
-    }
-
-
-
-    private static bool IsValidPlacement(Board board, Vector2Int[] cells, Vector3Int position, RectInt bounds)
-    {
-        foreach (Vector2Int cell in cells)
-        {
-            // Calculate absolute position of this cell
-            Vector3Int tilePosition = new Vector3Int(position.x + cell.x, position.y + cell.y, 0);
-
-            // Check if position is within bounds
-            Vector2Int tilePos2D = new Vector2Int(tilePosition.x, tilePosition.y);
-            if (!bounds.Contains(tilePos2D))
-            {
-                return false;
-            }
-
-            // Check if position is already occupied
-            if (board.tilemap.HasTile(tilePosition))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-
-    public void ResetAgent()
-    {
-        gameOver = false;
-        lastReward = 0f;
-        isExecutingAction = false;
-        waitingForNewPiece = false;
-        actionCompleted = false;
-        // ...any other state fields you need to clear...
-    }
-    private void DebugValidMoves()
-    {
-        List<int> validActions = GenerateValidActionIndices(board, currentPiece.data);
-
-        Debug.Log("=== VALID ACTIONS FOR CURRENT PIECE ===");
-        foreach (int action in validActions)
-        {
-            int column = action / 4;
-            int rotation = action % 4;
-            Debug.Log($"ActionIndex: {action} → Column: {column}, Rotation: {rotation}");
-        }
-
-        Debug.Log("Press Enter to continue...");
-        StartCoroutine(WaitForEnterKey());
-    }
-
-    private IEnumerator WaitForEnterKey()
-    {
-        Time.timeScale = 0f; // Pause the game
-
-        while (!Input.GetKeyDown(KeyCode.Return))
-        {
-            yield return null;
-        }
-
-        Time.timeScale = 1f; // Resume
-        Debug.Log("Resuming...");
-    }
-
-
 
     public void OnGameOver()
     {
@@ -746,9 +526,27 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         // Send game over state BEFORE resetting
         SendGameState();
 
-
+        // Wait a moment to ensure the message is sent
+        StartCoroutine(DelayedReset());
     }
+    private IEnumerator DelayedReset()
+    {
+        // Give time for the game over state to be sent and processed
+        yield return new WaitForSeconds(0.5f);
 
+        // Now reset the game
+        gameOver = false;
+        lastReward = 0f;
+        isExecutingAction = false;
+        waitingForNewPiece = false;
+        actionCompleted = false;
+        board.playerScore = 0;
+
+        if (board != null)
+        {
+            board.ApplyCurriculumBoardPreset();
+        }
+    }
 
     public void OnLinesCleared(int lines)
     {

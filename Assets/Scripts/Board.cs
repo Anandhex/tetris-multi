@@ -11,7 +11,6 @@ public class Board : MonoBehaviour
     public Piece activePiece { get; private set; }
     public TetrominoData nextPieceData { get; private set; }
     public string playerTag;
-    private bool gameOverTriggered = false;
     public TetrominoData[] tetrominoes;
     // public FireBorderController fireBorderController;
     [SerializeField] private GameObject debrisPrefab;
@@ -118,10 +117,8 @@ public class Board : MonoBehaviour
         this.playerScore = 0;
         this.gameStartTime = Time.time;
 
-        if (inputController is SocketTetrisAgent socketAgent)
-        {
-            socketAgent.SetBoard(this);
-        }
+        Debug.Log($"[Board] Starting with input controller: {inputController?.GetType().Name}");
+
         UpdateGridVisualization();
 
         // Apply initial curriculum
@@ -134,6 +131,7 @@ public class Board : MonoBehaviour
         }
         else
         {
+            Debug.LogError("Cannot spawn piece: Required components not initialized");
         }
 
         if (playerTagHolder != null)
@@ -156,12 +154,14 @@ public class Board : MonoBehaviour
             boardHeight = (int)socketAgent.curriculumBoardHeight;
         }
 
+        Debug.Log($"[Board] Applying curriculum: preset={preset}, height={boardHeight}");
 
         ClearBoard(); // Always start clean
         UpdateGridVisualization(); // Update grid visualization after clearing
         ApplyBoardPreset(preset, boardHeight);
 
 
+        Debug.Log($"[Board] Applied board_preset {preset} with height {boardHeight}");
     }
 
     private void ApplyBoardPreset(int preset, int boardHeight)
@@ -184,7 +184,7 @@ public class Board : MonoBehaviour
                 {
                     // For small boards (6-8 height), use bottom row
                     // For larger boards, place higher to avoid immediate danger
-                    int targetRow = bounds.yMin;
+                    int targetRow = boardHeight <= 8 ? bounds.yMin : bounds.yMin + 1;
 
                     // Create I-piece gap (4 spaces) - NEVER fill completely
                     int gapStart = Random.Range(bounds.xMin, bounds.xMax - 3);
@@ -362,6 +362,7 @@ public class Board : MonoBehaviour
                             break;
                     }
 
+                    Debug.Log($"[Board] Applied guided_stacking pattern {patternChoice}");
                 }
                 break;
 
@@ -450,6 +451,7 @@ public class Board : MonoBehaviour
                 break;
 
             default:
+                Debug.LogWarning($"[Board] Unknown board_preset {preset}, using empty board");
                 break;
         }
 
@@ -529,6 +531,7 @@ public class Board : MonoBehaviour
 
         if (currentHeight != lastBoardHeight)
         {
+            Debug.Log($"[Board] Board height changed from {lastBoardHeight} to {currentHeight}");
             lastBoardHeight = currentHeight;
 
             UpdateGridVisualization();
@@ -548,6 +551,7 @@ public class Board : MonoBehaviour
 
     public void ForceCurriculumUpdate()
     {
+        Debug.Log("[Board] Forcing curriculum update");
         lastBoardHeight = -1; // Force update on next check
         CheckForBoardHeightChange();
     }
@@ -602,73 +606,11 @@ public class Board : MonoBehaviour
         {
             Set(this.activePiece);
         }
-        else if (activePiece.validActions.Count == 0)
-        {
-            Data.PlayerScore = this.playerScore;
-            GameOver();
-        }
         else
         {
             Data.PlayerScore = this.playerScore;
             GameOver();
         }
-    }
-    // In Board.cs
-
-    public int[] GetColumnHeights()
-    {
-        RectInt bounds = this.Bounds;
-        int[] heights = new int[bounds.width];
-
-        for (int x = bounds.xMin; x < bounds.xMax; x++)
-        {
-            int columnIndex = x - bounds.xMin;
-            heights[columnIndex] = 0;
-            for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
-            {
-                if (tilemap.HasTile(new Vector3Int(x, y, 0)))
-                {
-                    heights[columnIndex] = bounds.yMax - y;
-                    break;
-                }
-            }
-        }
-        return heights;
-    }
-
-    public int CountCoveredHoles()
-    {
-        RectInt bounds = this.Bounds;
-        int covered = 0;
-
-        for (int x = bounds.xMin; x < bounds.xMax; x++)
-        {
-            bool foundBlock = false;
-            for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
-            {
-                Vector3Int pos = new Vector3Int(x, y, 0);
-                if (tilemap.HasTile(pos))
-                {
-                    foundBlock = true;
-                }
-                else if (foundBlock)
-                {
-                    covered++;
-                }
-            }
-        }
-        return covered;
-    }
-
-    public int GetBumpinessScore()
-    {
-        int[] heights = GetColumnHeights();
-        int bumpiness = 0;
-        for (int i = 0; i < heights.Length - 1; i++)
-        {
-            bumpiness += Mathf.Abs(heights[i] - heights[i + 1]);
-        }
-        return bumpiness;
     }
 
     public float CalculateStackHeight()
@@ -817,24 +759,14 @@ public class Board : MonoBehaviour
 
     private void GameOver()
     {
-        if (gameOverTriggered) return;
-        gameOverTriggered = true;
         // Notify ML agent if this is an ML agent-controlled board
         SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
-        // new: clear *first*, then notify and reset
         if (socketAgent != null)
         {
-
-            // 1) immediately clear any existing tiles
-            ClearBoard();
-            // 2) let Python know the game is over on an empty board
             socketAgent.OnGameOver();
-
-            // 3) schedule the curriculum reset + spawn
-            StartCoroutine(ResetGameAfterSocketGameOver());
+            // Don't immediately reset - let the agent handle it
             return;
         }
-
 
         TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
         if (mlAgent != null)
@@ -849,24 +781,6 @@ public class Board : MonoBehaviour
 
         // Load game over scene only if not in ML training
         SceneManager.LoadScene(2);
-    }
-    private IEnumerator ResetGameAfterSocketGameOver()
-    {
-        yield return new WaitForSeconds(0.1f);
-
-        // reset flags & score/timer
-        // 1) reset board state
-        gameOverTriggered = false;
-        playerScore = 0;
-        gameStartTime = Time.time;
-
-        // 2) reset the agent’s gameOver flag so sendGameState() reports false
-        if (inputController is SocketTetrisAgent socketAgent)
-        {
-            socketAgent.ResetAgent();
-        }
-        ApplyCurriculumBoardPreset();
-        SpawnPiece();
     }
 
     private IEnumerator ResetGameForMLTraining()
