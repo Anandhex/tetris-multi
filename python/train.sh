@@ -29,7 +29,7 @@ read -p "Enter choice (1-4): " choice
 case $choice in
     1)
         echo "Starting new training session..."
-        episodes=2000
+        episodes=10000000
         model_path="models/tetris_model_$timestamp.pth"
         tensorboard_dir="runs/training_$timestamp"
         python3 train_tetris.py --mode train --episodes $episodes --model_path "$model_path" --tensorboard_dir "$tensorboard_dir"
@@ -40,19 +40,19 @@ case $choice in
             echo ""
             read -p "Enter model filename (without path): " model_name
             if [ -f "models/$model_name" ]; then
-                episodes=1000
+                episodes=10000000
                 tensorboard_dir="runs/continue_$timestamp"
                 python3 train_tetris.py --mode continue --episodes $episodes --model_path "models/$model_name" --tensorboard_dir "$tensorboard_dir"
             else
                 echo "Model not found! Starting new training..."
-                episodes=2000
+                episodes=10000000
                 model_path="models/tetris_model_$timestamp.pth"
                 tensorboard_dir="runs/training_$timestamp"
                 python3 train_tetris.py --mode train --episodes $episodes --model_path "$model_path" --tensorboard_dir "$tensorboard_dir"
             fi
         else
             echo "No existing models found. Starting new training..."
-            episodes=2000
+            episodes=10000000
             model_path="models/tetris_model_$timestamp.pth"
             tensorboard_dir="runs/training_$timestamp"
             python3 train_tetris.py --mode train --episodes $episodes --model_path "$model_path" --tensorboard_dir "$tensorboard_dir"

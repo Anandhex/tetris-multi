@@ -13,49 +13,47 @@ class TetrisDQN(nn.Module):
     def __init__(self, input_size, hidden_size=512, output_size=40):
         super(TetrisDQN, self).__init__()
         
-        # Convolutional layers for board state
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        # Use the new QNetwork architecture
+        standard_height = 20  # Define this constant
         
-        # Use adaptive pooling to handle variable board sizes
-        self.pool = nn.AdaptiveAvgPool2d((5, 5))
+        # Board CNN encoder
+        self.board_cnn = nn.Sequential(
+            nn.Conv2d(1, 16, kernel_size=3, padding=1), nn.ReLU(),
+            nn.Conv2d(16, 32, kernel_size=3, padding=1), nn.ReLU(),
+            nn.Flatten(),
+            nn.Linear(32 * standard_height * 10, 128), nn.ReLU()
+        )
         
-        # Fixed conv output size after adaptive pooling
-        conv_output_size = 64 * 5 * 5  # Always 1600 after adaptive pooling
+        # MLPs for other inputs
+        self.piece_mlp = nn.Sequential(nn.Linear(4, 32), nn.ReLU())
+        self.metrics_mlp = nn.Sequential(nn.Linear(5, 32), nn.ReLU()) 
+        self.heights_mlp = nn.Sequential(nn.Linear(10, 32), nn.ReLU())
+        self.next_piece_mlp = nn.Sequential(nn.Linear(7, 32), nn.ReLU())
+        self.curriculum_mlp = nn.Sequential(nn.Linear(9, 32), nn.ReLU())
         
-        # Fully connected layers
-        self.fc1 = nn.Linear(conv_output_size + 8, hidden_size)  # +8 for piece info and metrics
-        self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.fc3 = nn.Linear(hidden_size, hidden_size // 2)
-        self.fc4 = nn.Linear(hidden_size // 2, output_size)
+        # Final fusion & head
+        total_size = 128 + 32*5  # 288
+        self.fc_out = nn.Sequential(
+            nn.Linear(total_size, 128), nn.ReLU(),
+            nn.Linear(128, output_size)
+        )
+    
+    def forward(self, board, piece_info, metrics, heights, next_piece, curriculum):
+        # Process each input through its dedicated pathway
+        board_features = self.board_cnn(board)
+        piece_features = self.piece_mlp(piece_info)
+        metrics_features = self.metrics_mlp(metrics)
+        heights_features = self.heights_mlp(heights)
+        next_piece_features = self.next_piece_mlp(next_piece)
+        curriculum_features = self.curriculum_mlp(curriculum)
         
-        self.dropout = nn.Dropout(0.3)
-        self.layer_norm1 = nn.LayerNorm(hidden_size)
-        self.layer_norm2 = nn.LayerNorm(hidden_size)
+        # Fuse all features
+        combined = torch.cat([
+            board_features, piece_features, metrics_features,
+            heights_features, next_piece_features, curriculum_features
+        ], dim=1)
         
-    def forward(self, board, piece_info, metrics):
-        # Process board through conv layers
-        x = F.relu(self.conv1(board))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
-        x = self.pool(x)  # Always outputs batch_size x 64 x 5 x 5
-        
-        # Flatten conv output
-        x = x.view(x.size(0), -1)  # Should always be batch_size x 1600
-        
-        # Concatenate with piece info and metrics
-        x = torch.cat([x, piece_info, metrics], dim=1)
-        
-        # Fully connected layers with layer norm
-        x = F.relu(self.layer_norm1(self.fc1(x)))
-        x = self.dropout(x)
-        x = F.relu(self.layer_norm2(self.fc2(x)))
-        x = self.dropout(x)
-        x = F.relu(self.fc3(x))
-        x = self.fc4(x)
-        
-        return x
+        return self.fc_out(combined)
 
 class DQNAgent:
     def __init__(self, state_size, action_size=40, lr=0.001, device='cuda' if torch.cuda.is_available() else 'cpu', 
@@ -105,8 +103,22 @@ class DQNAgent:
     
     def normalize_board_size(self, board, current_height, current_width):
         """Normalize board to standard size for consistent processing"""
+        # Ensure parameters are integers
+        current_height = int(current_height)
+        current_width = int(current_width)
+        
         if current_height == self.standard_height and current_width == self.standard_width:
             return board
+        
+        # Ensure board is the right size for reshaping
+        expected_size = current_height * current_width
+        if len(board) != expected_size:
+            print(f"Warning: Board size mismatch. Expected {expected_size}, got {len(board)}")
+            # Pad or truncate as needed
+            if len(board) < expected_size:
+                board = np.pad(board, (0, expected_size - len(board)), 'constant')
+            else:
+                board = board[:expected_size]
         
         # Reshape to 2D for processing
         board_2d = board.reshape(current_height, current_width)
@@ -114,131 +126,137 @@ class DQNAgent:
         # Create standard size board (20x10)
         normalized_board = np.zeros((self.standard_height, self.standard_width), dtype=np.float32)
         
-        # Copy existing board data
+        # Copy existing board data - place smaller boards at the bottom (gravity effect)
         copy_height = min(current_height, self.standard_height)
         copy_width = min(current_width, self.standard_width)
         
-        # Place the smaller board at the bottom (gravity effect)
         start_row = self.standard_height - copy_height
         normalized_board[start_row:start_row + copy_height, :copy_width] = board_2d[:copy_height, :copy_width]
         
         return normalized_board.flatten()
     
     def preprocess_state(self, game_state):
-        """Convert game state to neural network input with board size normalization"""
+        """Convert game state to neural network input with extended features"""
+
         if not isinstance(game_state, dict) or 'board' not in game_state:
             print("Warning: preprocess_state received invalid game_state.")
             return {
                 'board': torch.zeros((1, 1, self.standard_height, self.standard_width), dtype=torch.float32).to(self.device),
                 'piece_info': torch.zeros((1, 4), dtype=torch.float32).to(self.device),
-                'metrics': torch.zeros((1, 4), dtype=torch.float32).to(self.device)
+                'metrics': torch.zeros((1, 5), dtype=torch.float32).to(self.device),
+                'heights': torch.zeros((1, 10), dtype=torch.float32).to(self.device),
+                'next_piece': torch.zeros((1, 7), dtype=torch.float32).to(self.device),
+                'curriculum': torch.zeros((1, 9), dtype=torch.float32).to(self.device)
             }
-        
-        # Get board data with better error handling
+
         board_data = game_state.get('board', [])
-        
-        # Handle different types of board data
-        if board_data is None or (hasattr(board_data, '__len__') and len(board_data) == 0):
-            board = np.zeros(self.standard_height * self.standard_width)
-            current_height = self.standard_height
-            current_width = self.standard_width
-        elif isinstance(board_data, (int, float)):
-            board = np.zeros(self.standard_height * self.standard_width)
-            current_height = self.standard_height
-            current_width = self.standard_width
-        elif hasattr(board_data, '__len__'):
-            try:
-                board = np.array(board_data, dtype=np.float32)
-                if board.size == 0:
-                    board = np.zeros(self.standard_height * self.standard_width)
-                    current_height = self.standard_height
-                    current_width = self.standard_width
-                else:
-                    # Calculate current board dimensions from curriculum
-                    current_width = 10  # Always 10
-                    current_height = max(1, len(board) // current_width)
-                    
-                    # Ensure board is the right size
-                    expected_size = current_height * current_width
-                    if len(board) != expected_size:
-                        if len(board) < expected_size:
-                            board = np.pad(board, (0, expected_size - len(board)), mode='constant')
-                        else:
-                            board = board[:expected_size]
-            except (ValueError, TypeError) as e:
-                print(f"Warning: Could not convert board data to array: {e}")
-                board = np.zeros(self.standard_height * self.standard_width)
-                current_height = self.standard_height
-                current_width = self.standard_width
+        if not board_data or len(board_data) == 0:
+            board_array = np.zeros(self.standard_height * self.standard_width, dtype=np.float32)
         else:
-            print(f"Warning: Unknown board data type: {type(board_data)}")
-            board = np.zeros(self.standard_height * self.standard_width)
-            current_height = self.standard_height
-            current_width = self.standard_width
-        
-        # Normalize board to standard size
-        board = self.normalize_board_size(board, current_height, current_width)
-        
-        # Reshape to standard dimensions
-        board = board.reshape(1, 1, self.standard_height, self.standard_width).astype(np.float32)
-        
-        # Piece information
-        piece_info = game_state.get('currentPiece', [0, 0, 0, 0])
-        if not isinstance(piece_info, (list, tuple, np.ndarray)):
-            piece_info = [0, 0, 0, 0]
-        
-        piece_info = list(piece_info) if hasattr(piece_info, '__iter__') else [0, 0, 0, 0]
-        piece_features = (piece_info + [0, 0, 0, 0])[:4]
-        piece_features = np.array(piece_features, dtype=np.float32).reshape(1, -1)
-        
-        # Game metrics (normalized)
-        try:
-            score = float(game_state.get('score', 0))
-            holes = float(game_state.get('holesCount', 0))
-            height = float(game_state.get('stackHeight', 0))
-            perfect_clear = bool(game_state.get('perfectClear', False))
+            board_array = np.array(board_data, dtype=np.float32)
             
-            metrics = np.array([
-                min(score / 10000.0, 1.0),
-                min(holes / 20.0, 1.0),
-                min(height / 20.0, 1.0),
-                1.0 if perfect_clear else 0.0
-            ], dtype=np.float32).reshape(1, -1)
-        except (ValueError, TypeError) as e:
-            print(f"Warning: Could not process game metrics: {e}")
-            metrics = np.zeros((1, 4), dtype=np.float32)
+            # CRITICAL FIX: Always normalize board to standard size
+            current_height = int(game_state.get('curriculumBoardHeight', self.standard_height))
+            current_width = self.standard_width  # Always 10 for Tetris
+            
+            # Normalize the board size
+            board_array = self.normalize_board_size(board_array, current_height, current_width)
+
+        # Always reshape to standard dimensions (20x10)
+        board_tensor = torch.tensor(
+            board_array.reshape(1, 1, self.standard_height, self.standard_width), 
+            dtype=torch.float32
+        ).to(self.device)
+
+        # Current piece
+        piece = game_state.get('currentPiece', [0, 0, 0, 0])
+        piece_info_tensor = torch.tensor([piece], dtype=torch.float32).to(self.device)
+
+        # Metrics
+        holes = float(game_state.get('holesCount', 0))
+        stack_height = float(game_state.get('stackHeight', 0))
+        perfect_clear = float(game_state.get('perfectClear', False))
+        bumpiness = float(game_state.get('bumpiness', 0))
+        covered = float(game_state.get('covered', 0))
         
+        metrics_tensor = torch.tensor([[holes, stack_height, perfect_clear, bumpiness, covered]], 
+                                    dtype=torch.float32).to(self.device)
+
+        # Heights - normalize to standard width (10)
+        heights = game_state.get('heights', [0]*10)
+        if len(heights) != 10:
+            # Pad or truncate to 10 columns
+            normalized_heights = [0] * 10
+            for i in range(min(len(heights), 10)):
+                normalized_heights[i] = heights[i]
+            heights = normalized_heights
+        
+        heights = np.array(heights, dtype=np.float32)
+        heights_tensor = torch.tensor(heights, dtype=torch.float32).unsqueeze(0).to(self.device)
+
+        # Next piece (one-hot)
+        next_piece_index = game_state.get('nextPiece', [0])[0]
+        next_piece_one_hot = np.zeros(7, dtype=np.float32)
+        if 0 <= next_piece_index < 7:
+            next_piece_one_hot[next_piece_index] = 1.0
+        next_piece_tensor = torch.tensor(next_piece_one_hot, dtype=torch.float32).unsqueeze(0).to(self.device)
+
+        # Curriculum
+        allowed_count = int(game_state.get('allowedTetrominoTypes', 7))
+        allowed_mask = np.zeros(7, dtype=np.float32)
+        allowed_mask[:allowed_count] = 1.0
+        board_h = float(game_state.get('curriculumBoardHeight', 20))
+        preset = float(game_state.get('curriculumBoardPreset', 0))
+        curriculum_vector = np.concatenate([[board_h / 20.0], [preset / 5.0], allowed_mask])
+        curriculum_tensor = torch.tensor(curriculum_vector, dtype=torch.float32).unsqueeze(0).to(self.device)
+
         return {
-            'board': torch.FloatTensor(board).to(self.device),
-            'piece_info': torch.FloatTensor(piece_features).to(self.device),
-            'metrics': torch.FloatTensor(metrics).to(self.device)
+            'board': board_tensor,
+            'piece_info': piece_info_tensor,
+            'metrics': metrics_tensor,
+            'heights': heights_tensor,
+            'next_piece': next_piece_tensor,
+            'curriculum': curriculum_tensor
         }
     
     def act(self, state, training=True):
-        """Choose action using epsilon-greedy policy"""
+        """Choose action using epsilon-greedy policy over valid actions only"""
+        valid_actions = state['validActions']
+        if not valid_actions:
+            print("❌ No valid actions available — returning fallback or skipping step.")
+            return 0
+
         if training and random.random() <= self.epsilon:
-            action = random.randrange(self.action_size)
+            action = random.choice(valid_actions)
             self.writer.add_scalar('Agent/Random_Action_Taken', 1, self.steps)
             return action
-        
+
         processed_state = self.preprocess_state(state)
         
         with torch.no_grad():
+            # Update to pass all features to the network
             q_values = self.q_network(
                 processed_state['board'],
                 processed_state['piece_info'],
-                processed_state['metrics']
+                processed_state['metrics'],
+                processed_state['heights'],      # Add this
+                processed_state['next_piece'],   # Add this
+                processed_state['curriculum']    # Add this
             )
+
+            # Rest remains the same...
+            masked_q_values = torch.full_like(q_values, float('-inf'))
+            masked_q_values[0, valid_actions] = q_values[0, valid_actions]
+            best_action = masked_q_values.argmax().item()
+            self.writer.add_scalar('Agent/Random_Action_Taken', 0, self.steps)
             
             if training and self.steps % 100 == 0:
-                self.writer.add_scalar('Agent/Q_Values_Mean', q_values.mean().item(), self.steps)
-                self.writer.add_scalar('Agent/Q_Values_Max', q_values.max().item(), self.steps)
-                self.writer.add_scalar('Agent/Q_Values_Min', q_values.min().item(), self.steps)
-                self.writer.add_scalar('Agent/Q_Values_Std', q_values.std().item(), self.steps)
-            
-            action = q_values.argmax().item()
-            self.writer.add_scalar('Agent/Random_Action_Taken', 0, self.steps)
-            return action
+                self.writer.add_scalar('Agent/Q_Values_Mean', q_values[0, valid_actions].mean().item(), self.steps)
+                self.writer.add_scalar('Agent/Q_Values_Max', q_values[0, valid_actions].max().item(), self.steps)
+                self.writer.add_scalar('Agent/Q_Values_Min', q_values[0, valid_actions].min().item(), self.steps)
+                self.writer.add_scalar('Agent/Q_Values_Std', q_values[0, valid_actions].std().item(), self.steps)
+
+            return best_action
     
     def remember(self, state, action, reward, next_state, done):
         """Store experience in replay buffer"""
@@ -258,13 +276,20 @@ class DQNAgent:
         
         batch = random.sample(self.memory, actual_batch_size)
         
-        # Process each experience individually to handle different board sizes
+        # Process each experience - ADD the new tensor lists
         board_tensors = []
         piece_tensors = []
         metrics_tensors = []
+        heights_tensors = []        # Add this
+        next_piece_tensors = []     # Add this
+        curriculum_tensors = []     # Add this
+        
         next_board_tensors = []
-        next_piece_tensors = []
+        next_piece_tensors_state = []
         next_metrics_tensors = []
+        next_heights_tensors = []        # Add this
+        next_next_piece_tensors = []     # Add this
+        next_curriculum_tensors = []     # Add this
         
         actions = []
         rewards = []
@@ -276,46 +301,70 @@ class DQNAgent:
             board_tensors.append(processed_state['board'])
             piece_tensors.append(processed_state['piece_info'])
             metrics_tensors.append(processed_state['metrics'])
+            heights_tensors.append(processed_state['heights'])          # Add this
+            next_piece_tensors.append(processed_state['next_piece'])    # Add this
+            curriculum_tensors.append(processed_state['curriculum'])    # Add this
             
             # Process next state
             if next_state is not None:
                 processed_next_state = self.preprocess_state(next_state)
                 next_board_tensors.append(processed_next_state['board'])
-                next_piece_tensors.append(processed_next_state['piece_info'])
+                next_piece_tensors_state.append(processed_next_state['piece_info'])
                 next_metrics_tensors.append(processed_next_state['metrics'])
+                next_heights_tensors.append(processed_next_state['heights'])          # Add this
+                next_next_piece_tensors.append(processed_next_state['next_piece'])    # Add this
+                next_curriculum_tensors.append(processed_next_state['curriculum'])    # Add this
             else:
                 # Terminal state - use zeros with standard dimensions
                 next_board_tensors.append(torch.zeros((1, 1, self.standard_height, self.standard_width), dtype=torch.float32).to(self.device))
-                next_piece_tensors.append(torch.zeros((1, 4), dtype=torch.float32).to(self.device))
-                next_metrics_tensors.append(torch.zeros((1, 4), dtype=torch.float32).to(self.device))
+                next_piece_tensors_state.append(torch.zeros((1, 4), dtype=torch.float32).to(self.device))
+                next_metrics_tensors.append(torch.zeros((1, 5), dtype=torch.float32).to(self.device))  # Fixed: was 4, should be 5
+                next_heights_tensors.append(torch.zeros((1, 10), dtype=torch.float32).to(self.device))     # Add this
+                next_next_piece_tensors.append(torch.zeros((1, 7), dtype=torch.float32).to(self.device))   # Add this
+                next_curriculum_tensors.append(torch.zeros((1, 9), dtype=torch.float32).to(self.device))   # Add this
             
             actions.append(action)
             rewards.append(reward)
             dones.append(done)
         
-        # Now all tensors should have the same dimensions and can be concatenated
+        # Concatenate all tensors - ADD the new ones
         try:
             board_batch = torch.cat(board_tensors, dim=0)
             piece_batch = torch.cat(piece_tensors, dim=0)
             metrics_batch = torch.cat(metrics_tensors, dim=0)
+            heights_batch = torch.cat(heights_tensors, dim=0)          # Add this
+            next_piece_batch = torch.cat(next_piece_tensors, dim=0)    # Add this
+            curriculum_batch = torch.cat(curriculum_tensors, dim=0)    # Add this
             
             next_board_batch = torch.cat(next_board_tensors, dim=0)
-            next_piece_batch = torch.cat(next_piece_tensors, dim=0)
+            next_piece_state_batch = torch.cat(next_piece_tensors_state, dim=0)
             next_metrics_batch = torch.cat(next_metrics_tensors, dim=0)
+            next_heights_batch = torch.cat(next_heights_tensors, dim=0)          # Add this
+            next_next_piece_batch = torch.cat(next_next_piece_tensors, dim=0)    # Add this
+            next_curriculum_batch = torch.cat(next_curriculum_tensors, dim=0)    # Add this
         except RuntimeError as e:
             print(f"Error concatenating tensors: {e}")
             return None
         
-        # Current Q values
-        current_q_values = self.q_network(board_batch, piece_batch, metrics_batch)
+        # Current Q values - UPDATE to pass all features
+        current_q_values = self.q_network(
+            board_batch, piece_batch, metrics_batch, 
+            heights_batch, next_piece_batch, curriculum_batch
+        )
         current_q_values = current_q_values.gather(1, torch.LongTensor(actions).unsqueeze(1).to(self.device))
         
-        # Next Q values from target network (Double DQN)
+        # Next Q values - UPDATE to pass all features
         with torch.no_grad():
-            next_q_values_online = self.q_network(next_board_batch, next_piece_batch, next_metrics_batch)
+            next_q_values_online = self.q_network(
+                next_board_batch, next_piece_state_batch, next_metrics_batch,
+                next_heights_batch, next_next_piece_batch, next_curriculum_batch
+            )
             next_actions = next_q_values_online.argmax(1)
             
-            next_q_values_target = self.target_network(next_board_batch, next_piece_batch, next_metrics_batch)
+            next_q_values_target = self.target_network(
+                next_board_batch, next_piece_state_batch, next_metrics_batch,
+                next_heights_batch, next_next_piece_batch, next_curriculum_batch
+            )
             max_next_q_values = next_q_values_target.gather(1, next_actions.unsqueeze(1)).squeeze(1)
         
         # Calculate target Q values

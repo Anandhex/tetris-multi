@@ -79,6 +79,7 @@ MonoBehaviour:
   gridSpriteRenderer: {fileID: 1036416070660855848}
   baseSpawnPosition: {x: 0, y: 0, z: 0}
   boardSize: {x: 10, y: 20}
+  playerScore: 0
   playerScoreToDisplay: {fileID: 8639489407357629593}
   playerTagHolder: {fileID: 3256479484690809420}
   nextPieceDisplay: {fileID: 4290897403608542731}
@@ -99,9 +100,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2cb8c2b3da2aa4ac5a7e4aaddab7da19, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  position: {x: 0, y: 0, z: 0}
+  rotationIndex: 0
   stepDelay: 1
   moveDelay: 0.1
   lockDelay: 0.5
+  validMoves: 
 --- !u!1 &646191590067879835
 GameObject:
   m_ObjectHideFlags: 0

@@ -1,13 +1,14 @@
 # train_tetris.py
 import argparse
 import os
+import sys
 from tetris_trainer import TetrisTrainer
 
 def main():
     parser = argparse.ArgumentParser(description='Train Tetris AI Agent')
     parser.add_argument('--mode', choices=['train', 'continue', 'evaluate'], default='train',
                        help='Training mode')
-    parser.add_argument('--episodes', type=int, default=2000,
+    parser.add_argument('--episodes', type=int, default=10000000,
                        help='Number of episodes to train')
     parser.add_argument('--model_path', type=str, default='tetris_model.pth',
                        help='Path to save/load model')
@@ -35,7 +36,7 @@ def main():
             model_path=args.model_path,
             tensorboard_log_dir=args.tensorboard_dir
         )
-        trainer.train(episodes=args.episodes)
+        trainer.train(episodes=sys.maxsize)
         
     elif args.mode == 'continue':
         if not os.path.exists(args.model_path):
