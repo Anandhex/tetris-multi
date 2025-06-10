@@ -18,6 +18,7 @@ class TetrisTrainer:
         self.client = UnityTetrisClient()
         self.agent_type = agent_type
         self.model_path = model_path
+        self.total_steps = 0 
         
         # Create tensorboard log directory
         if tensorboard_log_dir is None:
@@ -98,23 +99,23 @@ class TetrisTrainer:
         
         # Reward structure parameters
         self.reward_config = {
-            'survival_bonus': 0.1,
-            'lines_multiplier': 75,  # Increased for better line clearing incentive
-            'height_reward_threshold': 8,
-            'height_reward_multiplier': 0.7,
-            'height_penalty_threshold': 15,
-            'height_penalty_multiplier': 4,
-            'holes_creation_penalty': 15,
-            'existing_holes_penalty': 0.2,
-            'bumpiness_penalty': 0.4,
-            'covered_holes_penalty': 2.0,
-            'perfect_clear_bonus': 300,
-            'death_penalty': 250,
-            'score_multiplier': 0.02,
-            # New rewards
-            'efficiency_bonus_multiplier': 5,  # Reward for lines/pieces ratio
-            'combo_bonus_base': 10,  # Bonus for consecutive line clears
-            'placement_speed_bonus': 2,  # Bonus for quick decisions
+            'survival_bonus': 0.1,                      # flat survival incentive
+            'lines_multiplier': 1.0,                    # Tetris score multiplier
+            'combo_bonus_base': 5,                      # combo bonus per streak
+            'efficiency_threshold': 0.15,               # lines/piece threshold
+            'efficiency_bonus_multiplier': 3.0,         # bonus for efficient placement
+            'height_reward_threshold': 10,              # reward for staying below this height
+            'height_reward_multiplier': 0.5,            # reward per row under threshold
+            'height_penalty_threshold': 16,             # stack height danger zone
+            'height_penalty_multiplier': 3.0,           # exponential penalty above danger
+            'holes_creation_penalty': 10,               # penalty for creating holes
+            'existing_holes_penalty': 0.5,              # penalty for existing holes
+            'bumpiness_penalty': 0.3,                   # penalty for surface unevenness
+            'well_penalty': 0.2,                        # quadratic penalty for wells
+            'skyscraper_height_threshold': 4,           # when a column is “too tall”
+            'skyscraper_penalty': 0.1,                  # quadratic penalty for spikes
+            'perfect_clear_bonus': 200,                 # bonus for perfect clears
+            'death_penalty': 100    
         }
         
         # Setup logging
@@ -127,7 +128,73 @@ class TetrisTrainer:
         # Performance tracking for curriculum
         self.last_piece_count = 0
         self.combo_count = 0
-        
+        self.BOARD_HEIGHT = 20
+        self.BOARD_WIDTH = 10
+
+    def _reshape_board(self, flat_board):
+        return np.array(flat_board, dtype=np.uint8).reshape((self.BOARD_HEIGHT, self.BOARD_WIDTH))
+
+    def _column_heights(self, board):
+        heights = []
+        for x in range(self.BOARD_WIDTH):
+            col = board[:, x]
+            filled = np.where(col == 1)[0]
+            heights.append(self.BOARD_HEIGHT - filled.min() if filled.size else 0)
+        return np.array(heights)
+
+    def _count_holes(self, board, heights):
+        holes = 0
+        for x, h in enumerate(heights):
+            if h > 0:
+                col = board[-h:, x]
+                holes += (col == 0).sum()
+        return int(holes)
+
+    def _bumpiness(self, heights):
+        return int(np.abs(np.diff(heights)).sum())
+
+    def _wells_depth(self, heights):
+        total = 0
+        for i, h in enumerate(heights):
+            left = heights[i - 1] if i > 0 else self.BOARD_HEIGHT
+            right = heights[i + 1] if i < self.BOARD_WIDTH - 1 else self.BOARD_HEIGHT
+            d = min(left, right) - h
+            if d > 0:
+                total += d
+        return int(total)
+
+    def extract_features(self, flat_board):
+        try:
+            if (flat_board is None
+                    or not isinstance(flat_board, list)
+                    or len(flat_board) != 200
+                    or any(v is None for v in flat_board)):
+                raise ValueError("Malformed board")
+
+            board = self._reshape_board(flat_board)
+            heights = self._column_heights(board)
+
+            max_height = int(np.max(heights)) if heights.size > 0 else 0
+
+            return {
+                'column_heights': heights,
+                'holes': self._count_holes(board, heights),
+                'bumpiness': self._bumpiness(heights),
+                'wells': self._wells_depth(heights),
+                'stack_height': max_height,
+            }
+
+        except Exception as e:
+            print(f"[ERROR] Feature extraction failed: {e}")
+            return {
+                'column_heights': np.zeros(10, dtype=int),
+                'holes': 0,
+                'bumpiness': 0,
+                'wells': 0,
+                'stack_height': 0,
+            }
+
+
     def setup_logging(self):
         """Setup logging for training progress"""
         log_filename = f"tetris_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -144,244 +211,188 @@ class TetrisTrainer:
         
         logging.info("Training session started")
     
+    
     def check_curriculum_advancement(self, episode, episode_score):
-        """Check if agent should advance to next curriculum stage based on performance"""
+        """Simple curriculum advancement based on score threshold"""
         if self.current_curriculum_stage >= len(self.curriculum_stages) - 1:
             return False  # Already at final stage
         
+        # Use the advancement threshold from current curriculum stage
         current_stage = self.curriculum_stages[self.current_curriculum_stage]
         threshold = current_stage['advancement_threshold']
-        required_consecutive = current_stage['consecutive_required']
         
-        # Add score to recent tracking
-        self.recent_scores.append(episode_score)
-        
-        # Check if current episode meets threshold
+        # If we consistently hit the score threshold, advance
         if episode_score >= threshold:
             self.consecutive_good_episodes += 1
         else:
             self.consecutive_good_episodes = 0
         
-        # Check if we have enough consecutive good episodes
-        should_advance = self.consecutive_good_episodes >= required_consecutive
-        
-        if should_advance:
-            print(f"\n🎯 CURRICULUM ADVANCEMENT TRIGGERED!")
-            print(f"   Episodes above {threshold}: {self.consecutive_good_episodes}/{required_consecutive}")
-            print(f"   Recent scores: {list(self.recent_scores)[-5:]}")  # Show last 5
+        # Advance after 3 consecutive episodes hitting the threshold
+        if self.consecutive_good_episodes >= 3:
+            print(f"\n🎯 ADVANCING CURRICULUM! Episode {episode}, Score: {episode_score} >= {threshold}")
             return True
-        
-        # Log progress toward advancement
-        if episode % 25 == 0 and self.consecutive_good_episodes > 0:
-            print(f"📈 Curriculum progress: {self.consecutive_good_episodes}/{required_consecutive} "
-                  f"episodes above {threshold} (current: {episode_score})")
         
         return False
     
-    def apply_curriculum(self, episode, force_change=False):
-        """Apply curriculum learning parameters with performance-based progression"""
-        if not force_change and self.current_curriculum_stage < len(self.curriculum_stages) - 1:
-            # Check if we should advance based on performance
-            if len(self.recent_scores) > 0:
-                latest_score = self.recent_scores[-1]
-                if self.check_curriculum_advancement(episode, latest_score):
-                    force_change = True
+    def apply_curriculum_with_reconnect(self, episode, episode_score, force_change=False):
+        """Apply curriculum change with connection recovery"""
+        # Skip curriculum check on first episode (no previous score)
+        if episode == 0:
+            if force_change:
+                # Initialize first stage
+                pass
+            else:
+                return True
+        else:
+            # Check advancement using previous episode's score
+            if not force_change:
+                if self.check_curriculum_advancement(episode, episode_score):
                     self.current_curriculum_stage += 1
-                    self.consecutive_good_episodes = 0  # Reset counter
+                    self.consecutive_good_episodes = 0
+                    force_change = True
         
         if not force_change:
-            return
+            return True  # No change needed, connection is fine
         
         stage = self.curriculum_stages[self.current_curriculum_stage]
+        print(f"🚀 New Stage: {stage['name']} - Height: {stage['height']}, Pieces: {stage['pieces']}")
         
-        print(f"\n{'='*70}")
-        print(f"🚀 CURRICULUM CHANGE - Episode {episode}")
-        if self.current_curriculum_stage > 0:
-            prev_stage = self.curriculum_stages[self.current_curriculum_stage - 1]
-            print(f"Previous Stage: {prev_stage['name']}")
-        print(f"New Stage: {stage['name']}")
-        print(f"Height: {stage['height']}, Preset: {stage['preset']}, Pieces: {stage['pieces']}")
-        print(f"Next advancement at: {stage['advancement_threshold']} score for {stage['consecutive_required']} episodes")
-        print(f"{'='*70}\n")
-        
-        # Reset exploration for new curriculum stage
-      
-        self.last_curriculum_change_episode = episode
-        
-        # Send curriculum change to Unity
-        success = self.client.send_curriculum_change(
-            board_height=stage['height'],
-            board_preset=stage['preset'],
-            tetromino_types=stage['pieces'],
-            stage_name=stage['name']
-        )
-        
-        if success:
-            confirmation = self.client.get_curriculum_confirmation(timeout=5.0)
-            if confirmation:
-                actual_curriculum = self.client.get_curriculum_info(confirmation)
-                print(f"✓ Curriculum confirmed: {actual_curriculum}")
+        # Try curriculum change with connection recovery
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # Send curriculum change
+                success = self.client.send_curriculum_change(
+                    board_height=stage['height'],
+                    board_preset=stage['preset'],
+                    tetromino_types=stage['pieces'],
+                    stage_name=stage['name']
+                )
                 
-                logging.info(f"Curriculum updated for episode {episode}: "
-                        f"Stage={stage['name']}, Height={stage['height']}, "
-                        f"Preset={stage['preset']}, Pieces={stage['pieces']}")
+                if success:
+                    # Wait longer for Unity to process and stabilize
+                    import time
+                    time.sleep(3.0)  # Increased wait time
+                    
+                    # Send reset to ensure clean state
+                    self.client.send_reset()
+                    time.sleep(1.0)
+                    
+                    # Test connection by waiting for game ready
+                    test_state = self.client.wait_for_game_ready(timeout=10.0)
+                    if test_state is not None:
+                        print(f"✅ Curriculum change successful on attempt {attempt + 1}")
+                        return True
                 
-                self.agent.log_curriculum_change(episode, stage)
-                self.agent.writer.add_text('Curriculum/Stage_Change', 
-                                        f"Episode {episode}: Advanced to {stage['name']}", episode)
-            else:
-                print(f"⚠ Warning: Curriculum change not confirmed by Unity")
-        else:
-            print(f"✗ Error: Failed to send curriculum change to Unity")
+                print(f"⚠️ Curriculum change failed, attempt {attempt + 1}/{max_retries}")
+                
+            except Exception as e:
+                print(f"❌ Connection error during curriculum change: {e}")
+            
+            # Reconnect if not the last attempt
+            if attempt < max_retries - 1:
+                print("🔄 Reconnecting to Unity...")
+                self.client.disconnect()
+                import time
+                time.sleep(3.0)  # Give Unity more time to reset
+                
+                # Try to reconnect with retries
+                reconnect_success = False
+                for reconnect_attempt in range(3):
+                    if self.client.connect():
+                        reconnect_success = True
+                        break
+                    time.sleep(2.0)
+                
+                if not reconnect_success:
+                    print(f"❌ Reconnection failed on attempt {attempt + 1}")
+                    continue
+                print("✅ Reconnected successfully")
+        
+        print("❌ Failed to apply curriculum change after all retries")
+        return False
+
+    def ensure_connection_ready(self):
+        """Ensure connection is ready before starting episode"""
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            try:
+                # Try to get initial state
+                state = self.client.wait_for_game_ready(timeout=5.0)
+                if state is not None:
+                    return state
+                
+                print(f"⚠️ No initial state, attempt {attempt + 1}/{max_attempts}")
+                
+                # Try reset
+                self.client.send_reset()
+                import time
+                time.sleep(2.0)
+                
+            except Exception as e:
+                print(f"❌ Connection issue: {e}")
+                
+                # Reconnect if not last attempt
+                if attempt < max_attempts - 1:
+                    self.client.disconnect()
+                    import time
+                    time.sleep(2.0)
+                    if not self.client.connect():
+                        continue
+        
+        return None
     
     def calculate_reward(self, prev_state, current_state, action, step):
-        """Enhanced reward function with better shaping and efficiency bonuses"""
-        
-        # Base reward from Unity
-        base_reward = current_state.get('reward', 0.0)
-        total_reward = base_reward
-        
-        # Update action counter
-        self.action_counter[action] += 1
-        
-        # Calculate deltas
-        lines_cleared = 0
-        holes_created = 0
-        score_gained = 0
-        
-        if prev_state is not None:
-            lines_cleared = (current_state.get('linesCleared', 0) or 0) - (prev_state.get('linesCleared', 0) or 0)
-            holes_created = (current_state.get('holesCount', 0) or 0) - (prev_state.get('holesCount', 0) or 0)
-            score_gained = (current_state.get('score', 0) or 0) - (prev_state.get('score', 0) or 0)
-        
-        # Read current state metrics
-        stack_height = current_state.get('stackHeight', 0) or 0
-        holes_count = current_state.get('holesCount', 0) or 0
-        bumpiness = current_state.get('bumpiness', 0) or 0
-        covered_holes = current_state.get('covered', 0) or 0
-        perfect_clear = current_state.get('perfectClear', False) or False
-        pieces_placed = current_state.get('piecesPlaced', 0) or 0
-        
-        # Enhanced reward components
-        cfg = self.reward_config
-        
-        # 1. Survival bonus
-        survival_bonus = cfg['survival_bonus']
-        
-        # 2. Lines cleared reward (exponential scaling)
-        lines_reward = 0.0
-        if lines_cleared > 0:
-            lines_reward = (lines_cleared ** 2) * cfg['lines_multiplier']
-            
-            # Combo bonus for consecutive line clears
-            if hasattr(self, 'last_lines_cleared') and self.last_lines_cleared > 0:
-                self.combo_count += 1
-                combo_bonus = self.combo_count * cfg['combo_bonus_base']
-                lines_reward += combo_bonus
-            else:
-                self.combo_count = 0
-        else:
-            self.combo_count = 0
-        
-        self.last_lines_cleared = lines_cleared
-        
-        # 3. Efficiency bonus (lines per piece ratio)
-        efficiency_bonus = 0.0
-        if pieces_placed > 0:
-            total_lines = current_state.get('linesCleared', 0)
-            efficiency_ratio = total_lines / pieces_placed
-            if efficiency_ratio > 0.15:  # Above 15% efficiency
-                efficiency_bonus = efficiency_ratio * cfg['efficiency_bonus_multiplier']
-        
-        # 4. Height management (refined)
-        height_reward = 0.0
-        if stack_height <= cfg['height_reward_threshold']:
-            height_reward = (cfg['height_reward_threshold'] - stack_height) * cfg['height_reward_multiplier']
-        elif stack_height >= cfg['height_penalty_threshold']:
-            # Exponential penalty for dangerous heights
-            danger_level = stack_height - cfg['height_penalty_threshold']
-            height_reward = -(danger_level ** 1.5) * cfg['height_penalty_multiplier']
-        
-        # 5. Perfect clear bonus
-        perfect_clear_bonus = cfg['perfect_clear_bonus'] if perfect_clear else 0
-        
-        # 6. Hole penalties (refined)
-        holes_penalty = holes_created * cfg['holes_creation_penalty']
-        existing_holes_penalty = holes_count * cfg['existing_holes_penalty']
-        
-        # 7. Board quality penalties
-        bumpiness_penalty = bumpiness * cfg['bumpiness_penalty']
-        covered_penalty = covered_holes * cfg['covered_holes_penalty']
-        
-        # 8. Score-based reward
-        score_reward = score_gained * cfg['score_multiplier']
-        
-        # 9. Placement speed bonus (reward quick decisions)
-        speed_bonus = cfg['placement_speed_bonus'] if step % 10 < 3 else 0
-        
-        # Combine all rewards
-        shaped_reward = (
-            survival_bonus +
-            lines_reward +
-            efficiency_bonus +
-            score_reward +
-            height_reward +
-            perfect_clear_bonus +
-            speed_bonus -
-            holes_penalty -
-            existing_holes_penalty -
-            bumpiness_penalty -
-            covered_penalty
-        )
-        
-        total_reward += shaped_reward
-        
-        # Enhanced TensorBoard logging
-        w = self.agent.writer
-        
-        # Log reward components
-        w.add_scalar('Reward/Total', total_reward, step)
-        w.add_scalar('Reward/Base', base_reward, step)
-        w.add_scalar('Reward/Shaped', shaped_reward, step)
-        w.add_scalar('Reward/Lines', lines_reward, step)
-        w.add_scalar('Reward/Efficiency', efficiency_bonus, step)
-        w.add_scalar('Reward/Height', height_reward, step)
-        w.add_scalar('Reward/PerfectClear', perfect_clear_bonus, step)
-        w.add_scalar('Reward/Speed', speed_bonus, step)
-        w.add_scalar('Reward/Combo', self.combo_count, step)
-        
-        # Log penalties
-        w.add_scalar('Penalty/Holes', holes_penalty, step)
-        w.add_scalar('Penalty/ExistingHoles', existing_holes_penalty, step)
-        w.add_scalar('Penalty/Bumpiness', bumpiness_penalty, step)
-        w.add_scalar('Penalty/Covered', covered_penalty, step)
-        
-        # Log state metrics
-        w.add_scalar('State/StackHeight', stack_height, step)
-        w.add_scalar('State/HolesCount', holes_count, step)
-        w.add_scalar('State/Bumpiness', bumpiness, step)
-        w.add_scalar('State/CoveredHoles', covered_holes, step)
-        w.add_scalar('State/LinesCleared', current_state.get('linesCleared', 0), step)
-        w.add_scalar('State/Score', current_state.get('score', 0), step)
-        w.add_scalar('State/PiecesPlaced', pieces_placed, step)
-        
-        # Performance metrics
-        if pieces_placed > 0:
-            w.add_scalar('Performance/EfficiencyRatio', 
-                        current_state.get('linesCleared', 0) / pieces_placed, step)
-        
-        # Curriculum tracking
-        w.add_scalar('Curriculum/CurrentStage', self.current_curriculum_stage, step)
-        w.add_scalar('Curriculum/ConsecutiveGoodEpisodes', self.consecutive_good_episodes, step)
-        
-        # Action distribution histogram every 100 steps
-        if step % 100 == 0:
-            counts = [self.action_counter[i] for i in range(40)]
-            w.add_histogram('Policy/ActionDistribution',
-                          torch.tensor(counts, dtype=torch.float32), step)
-        
-        w.flush()
-        return total_reward
+        board_data = current_state['board']
+        if board_data is None or not isinstance(board_data, list) or len(board_data) != 200:
+            print(f"[WARN] Invalid board at step {step}, defaulting reward to -1.0")
+            self.agent.writer.add_scalar('reward/default_case_triggered', 1, step)
+            return -1.0
+         # Extract board features
+        f_curr = self.extract_features(current_state['board'])
+        f_prev = self.extract_features(prev_state['board']) if prev_state else f_curr
+
+        # Heuristic reward function (CS231n-style)
+        def heuristic(f, lines_cleared):
+            return (-0.51 * f['stack_height']
+                    + 5 * lines_cleared ** 2
+                    - 0.36 * f['holes']
+                    - 0.18 * f['bumpiness'])
+
+        # Line clear delta and fitness scores
+        lines = max(0, current_state.get('linesCleared', 0) - prev_state.get('linesCleared', 0) if prev_state else 0)
+        fitness_prev = heuristic(f_prev, prev_state.get('linesCleared', 0) if prev_state else 0)
+        fitness_curr = heuristic(f_curr, current_state.get('linesCleared', 0))
+        heuristic_reward = fitness_curr - fitness_prev
+
+        # Squared-line reward
+        score_reward = lines ** 2
+        if current_state.get('gameOver', False):
+            score_reward -= 5  # death penalty
+        score_reward -= 0.01  # small time penalty
+
+        # Transition blending (adjust warmup_steps to control switch speed)
+        if self.current_curriculum_stage == 0:
+            alpha = 0.0  # Heuristic only
+        elif self.current_curriculum_stage == 1:
+            alpha = 0.3
+        elif self.current_curriculum_stage == 2:
+            alpha = 0.6
+        elif self.current_curriculum_stage >= 3:
+            alpha = 1.0  # Fully rely on score-based rewar
+        reward = (1 - alpha) * heuristic_reward + alpha * score_reward
+
+        # TensorBoard logs
+
+        self.agent.writer.add_scalar('reward/total', reward, step)
+        self.agent.writer.add_scalar('reward/score_based', score_reward, step)
+        self.agent.writer.add_scalar('reward/heuristic_based', heuristic_reward, step)
+        self.agent.writer.add_scalar('feature/holes', f_curr['holes'], step)
+        self.agent.writer.add_scalar('feature/bumpiness', f_curr['bumpiness'], step)
+        self.agent.writer.add_scalar('feature/stack_height', f_curr['stack_height'], step)
+        self.agent.writer.add_scalar('feature/lines', lines, step)
+
+        return float(reward)
     
     def train(self, episodes=sys.maxsize, save_interval=100, eval_interval=200):
         """Main training loop with enhanced curriculum management"""
@@ -401,22 +412,20 @@ class TetrisTrainer:
         }
         self.agent.writer.add_hparams(hparams, {'hparam/placeholder': 0})
         print(f"Memory size: {len(self.agent.memory)}, Batch size: {self.agent.batch_size}")
+        prev_episode_score = 0
         
         try:
             for episode in range(episodes):
 
-                # Apply curriculum (will check for advancement automatically)
                 if episode == 0:
-                    self.apply_curriculum(episode, force_change=True)  # Initialize first stage
+                    # Initialize first curriculum stage
+                    connection_ok = self.apply_curriculum_with_reconnect(episode, 0, force_change=True)
                 else:
-                    self.apply_curriculum(episode)
+                    # Use previous episode's score for curriculum decision
+                    connection_ok = self.apply_curriculum_with_reconnect(episode, prev_episode_score)
                 
-                # Reset environment and wait for game ready
-                state = self.client.wait_for_game_ready(timeout=10.0)
-                if state is None:
-                    print(f"Episode {episode}: Failed to get initial state")
-                    continue
-                
+                if not connection_ok:
+                    print("⚠️ Curriculum change failed, but continuing...")
                 
                 # Enhanced episode logging
                 if episode % 1 == 0:
@@ -427,6 +436,12 @@ class TetrisTrainer:
                           f"above {current_stage['advancement_threshold']}")
                     if len(self.recent_scores) > 0:
                         print(f"  Recent avg score: {np.mean(list(self.recent_scores)[-5:]):.1f}")
+                
+                # GET INITIAL STATE - This was missing in the original code!
+                state = self.ensure_connection_ready()
+                if state is None:
+                    print(f"Episode {episode}: Failed to get initial game state, skipping episode")
+                    continue
                 
                 # Training loop continues as before...
                 episode_reward = 0
@@ -449,7 +464,8 @@ class TetrisTrainer:
                     done = self.client.is_game_over(next_state)
                     
                     # Calculate custom reward
-                    reward = self.calculate_reward(prev_state, next_state, action, steps)
+                    self.total_steps += 1
+                    reward = self.calculate_reward(prev_state, next_state, action, self.total_steps)
                     if done:
                         reward -= self.reward_config['death_penalty']
                     
@@ -510,8 +526,11 @@ class TetrisTrainer:
                     self.save_model()
                     self.save_metrics()
                 
-                if episode % eval_interval == 0 and episode > 0:
-                    self.evaluate(episodes=5, episode_offset=episode)
+                # if episode % eval_interval == 0 and episode > 0:
+                #     self.evaluate(episodes=5, episode_offset=episode)
+
+                prev_episode_score = episode_score
+                    
         
         except KeyboardInterrupt:
             print("\nTraining interrupted by user")
@@ -598,8 +617,11 @@ class TetrisTrainer:
                     break
                 
                 # Calculate reward
-                reward = self.calculate_reward(prev_state, next_state, action, steps)
-                episode_reward += reward
+                try:
+                    reward = self.calculate_reward(prev_state, next_state, action, self.total_steps)
+                    episode_reward += reward
+                except Exception as e:
+                    print("Debug:"+e);    
                 
                 done = next_state.get('gameOver', False)
                 episode_score = next_state.get('score', 0)
