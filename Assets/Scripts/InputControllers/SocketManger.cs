@@ -25,6 +25,11 @@ public class SocketManager : MonoBehaviour
 
     void Awake()
     {
+        var args = Environment.GetCommandLineArgs();
+        port = int.TryParse(GetArg(args, "-port", port.ToString()), out var p) ? p : port;
+        host = GetArg(args, "-host", host);
+
+        Debug.Log($"[SocketManager] Listening on {host}:{port}");
         if (Instance == null)
         {
             Instance = this;
@@ -179,5 +184,16 @@ public class SocketManager : MonoBehaviour
         {
             tcpListenerThread.Abort();
         }
+
+
+    }
+    public static string GetArg(string[] args, string name, string defaultVal = null)
+    {
+        for (int i = 0; i < args.Length; i++)
+        {
+            if (args[i] == name && i + 1 < args.Length)
+                return args[i + 1];
+        }
+        return defaultVal;
     }
 }

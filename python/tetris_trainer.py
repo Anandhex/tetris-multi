@@ -50,42 +50,42 @@ class TetrisTrainer:
         # Enhanced curriculum parameters
         self.current_curriculum_stage = 0
         self.curriculum_stages = [
-            {
-                'episodes': float('inf'),  # Performance-based progression
-                'height': 20, 
-                'preset': 1, 
-                'pieces': 1, 
-                'name': 'Very Easy',
-                'advancement_threshold': 900,
-                'consecutive_required': 8
-            },
-            {
-                'episodes': float('inf'),
-                'height': 20, 
-                'preset': 2, 
-                'pieces': 2, 
-                'name': 'Easy',
-                'advancement_threshold': 1100,
-                'consecutive_required': 10
-            },
-            {
-                'episodes': float('inf'),
-                'height': 20, 
-                'preset': 3, 
-                'pieces': 3, 
-                'name': 'Medium',
-                'advancement_threshold': 1200,
-                'consecutive_required': 12
-            },
-            {
-                'episodes': float('inf'),
-                'height': 20, 
-                'preset': 0, 
-                'pieces': 5, 
-                'name': 'Hard',
-                'advancement_threshold': 2000,
-                'consecutive_required': 15
-            },
+            # {
+            #     'episodes': float('inf'),  # Performance-based progression
+            #     'height': 20, 
+            #     'preset': 1, 
+            #     'pieces': 1, 
+            #     'name': 'Very Easy',
+            #     'advancement_threshold': 900,
+            #     'consecutive_required': 8
+            # },
+            # {
+            #     'episodes': float('inf'),
+            #     'height': 20, 
+            #     'preset': 2, 
+            #     'pieces': 2, 
+            #     'name': 'Easy',
+            #     'advancement_threshold': 1100,
+            #     'consecutive_required': 10
+            # },
+            # {
+            #     'episodes': float('inf'),
+            #     'height': 20, 
+            #     'preset': 3, 
+            #     'pieces': 3, 
+            #     'name': 'Medium',
+            #     'advancement_threshold': 1200,
+            #     'consecutive_required': 12
+            # },
+            # {
+            #     'episodes': float('inf'),
+            #     'height': 20, 
+            #     'preset': 0, 
+            #     'pieces': 5, 
+            #     'name': 'Hard',
+            #     'advancement_threshold': 2000,
+            #     'consecutive_required': 15
+            # },
             {
                 'episodes': float('inf'),
                 'height': 20, 
@@ -228,7 +228,7 @@ class TetrisTrainer:
             self.consecutive_good_episodes = 0
         
         # Advance after 3 consecutive episodes hitting the threshold
-        if self.consecutive_good_episodes >= 3:
+        if self.consecutive_good_episodes >= current_stage['consecutive_required']:
             print(f"\n🎯 ADVANCING CURRICULUM! Episode {episode}, Score: {episode_score} >= {threshold}")
             return True
         
@@ -343,57 +343,68 @@ class TetrisTrainer:
         return None
     
     def calculate_reward(self, prev_state, current_state, action, step):
-        board_data = current_state['board']
-        if board_data is None or not isinstance(board_data, list) or len(board_data) != 200:
-            print(f"[WARN] Invalid board at step {step}, defaulting reward to -1.0")
-            self.agent.writer.add_scalar('reward/default_case_triggered', 1, step)
-            return -1.0
-         # Extract board features
-        f_curr = self.extract_features(current_state['board'])
-        f_prev = self.extract_features(prev_state['board']) if prev_state else f_curr
+        # 1) Validate board
+        board = current_state.get('board')
+        if not isinstance(board, list) or len(board) != self.BOARD_HEIGHT * self.BOARD_WIDTH:
+            self.agent.writer.add_scalar('reward/invalid_board', 1, step)
+            return -0.5
 
-        # Heuristic reward function (CS231n-style)
-        def heuristic(f, lines_cleared):
-            return (-0.51 * f['stack_height']
-                    + 5 * lines_cleared ** 2
-                    - 0.36 * f['holes']
-                    - 0.18 * f['bumpiness'])
+        f_curr = self.extract_features(board)
+        print(f_curr)
+        lines_prev = prev_state.get('linesCleared', 0) if prev_state else 0
+        lines = max(0, current_state.get('linesCleared', 0) - lines_prev)
 
-        # Line clear delta and fitness scores
-        lines = max(0, current_state.get('linesCleared', 0) - prev_state.get('linesCleared', 0) if prev_state else 0)
-        fitness_prev = heuristic(f_prev, prev_state.get('linesCleared', 0) if prev_state else 0)
-        fitness_curr = heuristic(f_curr, current_state.get('linesCleared', 0))
-        heuristic_reward = fitness_curr - fitness_prev
+        # Heuristic component
+        heuristic = (
+            -0.51 * f_curr['stack_height']
+            + 5.0 * (lines ** 2)
+            - 0.36 * f_curr['holes']
+            - 0.18 * f_curr['bumpiness']
+        )
 
-        # Squared-line reward
-        score_reward = lines ** 2
+        # Score‐based component with a single death penalty
+        score_comp = lines ** 2
         if current_state.get('gameOver', False):
-            score_reward -= 5  # death penalty
-        score_reward -= 0.01  # small time penalty
+            score_comp -= 20
 
-        # Transition blending (adjust warmup_steps to control switch speed)
-        if self.current_curriculum_stage == 0:
-            alpha = 0.0  # Heuristic only
-        elif self.current_curriculum_stage == 1:
-            alpha = 0.3
-        elif self.current_curriculum_stage == 2:
-            alpha = 0.6
-        elif self.current_curriculum_stage >= 3:
-            alpha = 1.0  # Fully rely on score-based rewar
-        reward = (1 - alpha) * heuristic_reward + alpha * score_reward
+        # Shaping terms (tuned softly)
+        shaped = (
+            0.2
+            + lines * self.reward_config['lines_multiplier']
+            - f_curr['holes'] * 0.25
+            - f_curr['bumpiness'] * 0.1
+            - f_curr['wells'] * 0.1
+        )
+        h = f_curr['stack_height']
+        if h < self.reward_config['height_reward_threshold']:
+            shaped += (self.reward_config['height_reward_threshold'] - h) * self.reward_config['height_reward_multiplier']
+        if h > self.reward_config['height_penalty_threshold']:
+            shaped -= ((h - self.reward_config['height_penalty_threshold']) ** 2) * self.reward_config['height_penalty_multiplier']
 
-        # TensorBoard logs
+        # Blend heuristic → score
+        alpha = min(1.0, step / 10_000)
+        raw_reward = (1 - alpha) * heuristic + alpha * score_comp + shaped
 
-        self.agent.writer.add_scalar('reward/total', reward, step)
-        self.agent.writer.add_scalar('reward/score_based', score_reward, step)
-        self.agent.writer.add_scalar('reward/heuristic_based', heuristic_reward, step)
-        self.agent.writer.add_scalar('feature/holes', f_curr['holes'], step)
-        self.agent.writer.add_scalar('feature/bumpiness', f_curr['bumpiness'], step)
-        self.agent.writer.add_scalar('feature/stack_height', f_curr['stack_height'], step)
-        self.agent.writer.add_scalar('feature/lines', lines, step)
+        # --- FORCE normalization & clipping ---
+        divided = raw_reward / 50.0
+        clipped = np.clip(divided, -1.0, 1.0)
+        reward = float(clipped)
 
-        return float(reward)
-    
+        # Log each step so you can see the numbers
+        w = self.agent.writer
+        w.add_scalar('debug/raw_reward', raw_reward, step)
+        w.add_scalar('debug/divided_reward', divided, step)
+        w.add_scalar('debug/clipped_reward', reward, step)
+
+        # And the normal logs
+        w.add_scalar('reward/total',       reward,        step)
+        w.add_scalar('reward/heuristic',   heuristic,     step)
+        w.add_scalar('reward/score',       score_comp,    step)
+        w.add_scalar('reward/shaped',      shaped,        step)
+        w.add_scalar('reward/blend_alpha', alpha,         step)
+
+        return reward
+
     def train(self, episodes=sys.maxsize, save_interval=100, eval_interval=200):
         """Main training loop with enhanced curriculum management"""
         if not self.client.connect():
@@ -466,8 +477,7 @@ class TetrisTrainer:
                     # Calculate custom reward
                     self.total_steps += 1
                     reward = self.calculate_reward(prev_state, next_state, action, self.total_steps)
-                    if done:
-                        reward -= self.reward_config['death_penalty']
+                    
                     
                     episode_reward += reward
                     episode_score = next_state.get('score', 0)
@@ -539,6 +549,8 @@ class TetrisTrainer:
         except Exception as e:
             print(f"Training error: {e}")
             logging.error(f"Training error: {e}")
+            import traceback
+            traceback.print_exc()
         
         finally:
             # Save final model and metrics

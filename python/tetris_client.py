@@ -9,9 +9,9 @@ import random
 from collections import deque
 import pickle
 import os
-
+#12347 without noise
 class UnityTetrisClient:
-    def __init__(self, host='127.0.0.1', port=12345):
+    def __init__(self, host='127.0.0.1', port=12348):
         self.host = host
         self.port = port
         self.socket = None

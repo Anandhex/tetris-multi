@@ -65,7 +65,7 @@ public class GameState
     public bool curriculumConfirmed = false;
 
     public List<int> validActions;
-    public int bumpiness;
+    public float bumpiness;
     public int covered;
     public int[] heights;
 }

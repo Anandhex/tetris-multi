@@ -206,7 +206,6 @@ class DQNAgent:
     
     def preprocess_state(self, game_state):
         """Convert game state to neural network input with extended features"""
-
         # Comprehensive null checking at the beginning
         if game_state is None:
             print("Warning: preprocess_state received None game_state.")
@@ -323,11 +322,9 @@ class DQNAgent:
     def act(self, state, training=True):
         """Choose action using epsilon-greedy policy over valid actions only"""
         # FIX 3: Reset noise periodically instead of every forward pass
-        if self.steps - self.last_noise_reset >= self.noise_reset_frequency:
+        if training:
             self.q_network.reset_noise()
-            self.target_network.reset_noise()
-            self.last_noise_reset = self.steps
-        
+
         valid_actions = state['validActions']
         if not valid_actions:
             print("❌ No valid actions available — returning fallback or skipping step.")
@@ -376,6 +373,8 @@ class DQNAgent:
         actual_batch_size = min(self.batch_size, len(self.memory))
         if actual_batch_size < 2:
             return 0.0  # Instead of None
+        self.q_network.reset_noise()
+        self.target_network.reset_noise()
         
         batch = random.sample(self.memory, actual_batch_size)
         

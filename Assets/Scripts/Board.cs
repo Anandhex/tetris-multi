@@ -635,6 +635,17 @@ public class Board : MonoBehaviour
         }
         return heights;
     }
+    public float[] GetGroundBoardState()
+    {
+        var bounds = Bounds;
+        var arr = new float[bounds.width * bounds.height];
+        int idx = 0;
+        for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
+            for (int x = bounds.xMin; x < bounds.xMax; x++)
+                arr[idx++] = tilemap.HasTile(new Vector3Int(x, y, 0)) ? 1f : 0f;
+        return arr;
+    }
+
 
     public int CountCoveredHoles()
     {

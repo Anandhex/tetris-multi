@@ -14,8 +14,8 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
 
     [Header("Curriculum Parameters")]
     public int curriculumBoardHeight = 20;
-    public int curriculumBoardPreset = 1;
-    public int allowedTetrominoTypes = 1;
+    public int curriculumBoardPreset = 0;
+    public int allowedTetrominoTypes = 7;
 
     // Timing
     private float lastStateTime = 0f;
@@ -383,19 +383,33 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     {
         if (board == null || SocketManager.Instance == null)
             return;
-        if (currentPiece == null)
+
+        if (currentPiece == null || currentPiece.cells == null)
         {
             Debug.LogWarning("SendGameState(): currentPiece is null — skipping state send.");
             return;
         }
 
+        // Get ground state and metrics without modifying the actual board
+        var groundData = GetGroundStateAndMetrics();
+
         GameState state = new GameState();
 
-        // Get board state
-        state.board = GetBoardState();
+        // Use the calculated ground state data
+        state.board = groundData.board;
+        state.heights = groundData.heights;
+        state.holesCount = groundData.holesCount;
+        state.covered = groundData.covered;
+        state.bumpiness = groundData.bumpiness;
+        state.stackHeight = groundData.stackHeight;
+        state.perfectClear = groundData.perfectClear;
+
+        // Get piece information
         state.currentPiece = GetCurrentPieceState();
         state.nextPiece = GetNextPieceState();
-        state.piecePosition = currentPiece != null ? (Vector2Int)currentPiece.position : Vector2Int.zero;
+        state.piecePosition = (Vector2Int)currentPiece.position;
+
+        // Game metrics
         state.score = board.playerScore;
         state.gameOver = gameOver;
         state.reward = lastReward;
@@ -407,20 +421,16 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         state.isExecutingAction = isExecutingAction;
         state.waitingForAction = !isExecutingAction && !waitingForNewPiece && currentPiece != null;
 
-        // Curriculum information - FIXED PROPERTY NAMES
+        // Curriculum information
         state.curriculumBoardHeight = curriculumBoardHeight;
         state.curriculumBoardPreset = curriculumBoardPreset;
         state.allowedTetrominoTypes = allowedTetrominoTypes;
 
-        // Additional metrics
-        state.holesCount = board.CountHoles();
-        state.stackHeight = board.CalculateStackHeight();
-        state.perfectClear = board.IsPerfectClear();
-        state.linesCleared = board.playerScore / 100; // This should be set when lines are actually cleared
-        state.validActions = currentPiece.validActions;
-        state.bumpiness = board.GetBumpinessScore();
-        state.covered = board.CountCoveredHoles();
-        state.heights = board.GetColumnHeights();
+        // Other metrics
+        state.linesCleared = board.playerScore / 100;
+        state.validActions = currentPiece.validActions ?? new List<int>();
+
+        // Send the game state
         SocketManager.Instance.SendGameState(state);
 
         // Reset reward after sending
@@ -773,4 +783,140 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
             SocketManager.Instance.OnPythonDisconnected -= OnPythonDisconnected;
         }
     }
+
+    // Add this method to your SocketTetrisAgent class
+    private GameState GetGroundStateAndMetrics()
+    {
+        var bounds = board.Bounds;
+        var stateData = new GameState();
+
+        // Create a copy of the board state WITHOUT the active piece
+        bool[,] groundBoard = new bool[bounds.width, bounds.height];
+        float[] boardArray = new float[bounds.width * bounds.height];
+        int[] heights = new int[bounds.width];
+        print(currentPiece);
+        // Copy only the locked tiles (not the active piece)
+        int arrayIndex = 0;
+        for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
+        {
+            for (int x = bounds.xMin; x < bounds.xMax; x++)
+            {
+                Vector3Int pos = new Vector3Int(x, y, 0);
+                bool hasTile = board.tilemap.HasTile(pos);
+
+                // Check if this position is occupied by the current piece
+                bool isActivePiece = false;
+                if (currentPiece != null)
+                {
+                    foreach (Vector2Int cell in currentPiece.cells)
+                    {
+                        Vector3Int piecePos = new Vector3Int(
+                            currentPiece.position.x + cell.x,
+                            currentPiece.position.y + cell.y,
+                            0
+                        );
+                        if (piecePos.x == x && piecePos.y == y)
+                        {
+                            isActivePiece = true;
+                            break;
+                        }
+                    }
+                }
+
+                // Only count as filled if it's a tile AND not part of active piece
+                bool isGroundTile = hasTile && !isActivePiece;
+
+                int boardX = x - bounds.xMin;
+                int boardY = y - bounds.yMin;
+                groundBoard[boardX, boardY] = isGroundTile;
+                boardArray[arrayIndex++] = isGroundTile ? 1f : 0f;
+            }
+        }
+
+        // Calculate heights
+        for (int x = 0; x < bounds.width; x++)
+        {
+            heights[x] = 0;
+            for (int y = bounds.height - 1; y >= 0; y--)
+            {
+                if (groundBoard[x, y])
+                {
+                    heights[x] = y + 1;
+                    break;
+                }
+            }
+        }
+
+        // Calculate holes
+        int holes = 0;
+        for (int x = 0; x < bounds.width; x++)
+        {
+            bool foundTop = false;
+            for (int y = bounds.height - 1; y >= 0; y--)
+            {
+                if (groundBoard[x, y])
+                {
+                    foundTop = true;
+                }
+                else if (foundTop)
+                {
+                    holes++;
+                }
+            }
+        }
+
+        // Calculate covered holes
+        int coveredHoles = 0;
+        for (int x = 0; x < bounds.width; x++)
+        {
+            for (int y = 0; y < bounds.height - 1; y++)
+            {
+                if (!groundBoard[x, y] && groundBoard[x, y + 1])
+                {
+                    coveredHoles++;
+                }
+            }
+        }
+
+        // Calculate bumpiness
+        float bumpiness = 0f;
+        for (int x = 0; x < bounds.width - 1; x++)
+        {
+            bumpiness += Mathf.Abs(heights[x] - heights[x + 1]);
+        }
+
+        // Calculate stack height (max height)
+        float stackHeight = 0f;
+        foreach (int height in heights)
+        {
+            if (height > stackHeight)
+                stackHeight = height;
+        }
+
+        // Check if perfect clear
+        bool perfectClear = true;
+        for (int x = 0; x < bounds.width && perfectClear; x++)
+        {
+            for (int y = 0; y < bounds.height && perfectClear; y++)
+            {
+                if (groundBoard[x, y])
+                {
+                    perfectClear = false;
+                }
+            }
+        }
+
+        // Fill the state data
+        stateData.board = boardArray;
+        stateData.heights = heights;
+        stateData.holesCount = holes;
+        stateData.covered = coveredHoles;
+        stateData.bumpiness = bumpiness;
+        stateData.stackHeight = stackHeight;
+        stateData.perfectClear = perfectClear;
+
+        return stateData;
+    }
 }
+
+
