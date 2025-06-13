@@ -527,7 +527,8 @@ class EnhancedDQNAgent:
     def best_state(self,states):
         max_value =None
         best_state =None
-
+        if states is None:
+            return None
         if random.random() <= self.epsilon:
             return random.choice(list(states))
         

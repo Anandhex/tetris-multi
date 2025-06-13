@@ -145,17 +145,21 @@ class TetrisTrainer:
                         tuple(features): action
                     for action, features in next_states
                     }
+                    if list(state_to_action.keys()).__len__ == 0:
+                        # no valid next‐states → skip learning a transition or pick a safe fallback
+                        done = self.client.is_game_over(state)
+                    else:
+                        # Agent selects best state
+                        best_state = self.agent.best_state(list(state_to_action.keys()))
+                        
+                        action = state_to_action[tuple(best_state)]
 
-                    # Agent selects best state
-                    best_state = self.agent.best_state(list(state_to_action.keys()))
-                    action = state_to_action[tuple(best_state)]
-
-                    # Play the chosen action
-                    next_state= self.client.send_action_and_wait(action,timeout=10.0)
-                    if next_state is None:
-                        print(f"Episode {episode}: Timeout waiting for next state")
-                        break
-                    done = self.client.is_game_over(next_state)
+                        # Play the chosen action
+                        next_state= self.client.send_action_and_wait(action,timeout=10.0)
+                        if next_state is None:
+                            print(f"Episode {episode}: Timeout waiting for next state")
+                            break
+                        done = self.client.is_game_over(next_state)
                     self.total_steps+=1
 
                     reward = self.calculate_reward(prev_state=prev_state,current_state=next_state,action=action,step=self.total_steps)
