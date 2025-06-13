@@ -11,7 +11,7 @@ import pickle
 import os
 #12347 without noise
 class UnityTetrisClient:
-    def __init__(self, host='127.0.0.1', port=12348):
+    def __init__(self, host='127.0.0.1', port=12345):
         self.host = host
         self.port = port
         self.socket = None

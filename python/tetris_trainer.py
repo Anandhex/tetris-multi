@@ -7,7 +7,7 @@ import logging
 import numpy as np
 import os
 from tetris_client import UnityTetrisClient
-from dqn_agent import DQNAgent
+from simplified_dqn_network import EnhancedDQNAgent
 import torch
 from collections import Counter
 from collections import deque
@@ -26,7 +26,7 @@ class TetrisTrainer:
         
         # Initialize agent
         if agent_type == 'dqn':
-            self.agent = DQNAgent(state_size=208, tensorboard_log_dir=tensorboard_log_dir)
+            self.agent = EnhancedDQNAgent(tensorboard_log_dir=tensorboard_log_dir)
             if load_model:
                 self.agent.load(model_path)
         
