@@ -27,6 +27,7 @@ class TetrisTrainer:
         self.model_path = model_path
         self.BOARD_HEIGHT = 20
         self.BOARD_WIDTH = 10
+        self.log_every = 50
 
         # Neural net architecture
         hidden_layers = [32, 32, 32]
@@ -50,31 +51,40 @@ class TetrisTrainer:
 
     def ensure_connection_ready(self):
         """Ensure connection is ready before starting episode"""
-        max_attempts = 5
-        for attempt in range(max_attempts):
-            try:
-                # Try to get initial state
-                state = self.client.wait_for_game_ready(timeout=5.0)
-                if state is not None:
-                    return state
+        state = self.client.wait_for_game_ready(timeout=5.0)
+        if state is not None:
+            return state
+        self.client.disconnect()
+        import time
+        time.sleep(10.0)
+        self.client.connect()
+
+        
+        # max_attempts = 5
+        # for attempt in range(max_attempts):
+        #     try:
+        #         # Try to get initial state
+        #         state = self.client.wait_for_game_ready(timeout=5.0)
+        #         if state is not None:
+        #             return state
                 
-                print(f"⚠️ No initial state, attempt {attempt + 1}/{max_attempts}")
+        #         print(f"⚠️ No initial state, attempt {attempt + 1}/{max_attempts}")
                 
-                # Try reset
-                self.client.send_reset()
-                import time
-                time.sleep(2.0)
+        #         # Try reset
+        #         self.client.send_reset()
+        #         import time
+        #         time.sleep(2.0)
                 
-            except Exception as e:
-                print(f"❌ Connection issue: {e}")
+        #     except Exception as e:
+        #         print(f"❌ Connection issue: {e}")
                 
-                # Reconnect if not last attempt
-                if attempt < max_attempts - 1:
-                    self.client.disconnect()
-                    import time
-                    time.sleep(2.0)
-                    if not self.client.connect():
-                        continue
+        #         # Reconnect if not last attempt
+        #         if attempt < max_attempts - 1:
+        #             self.client.disconnect()
+        #             import time
+        #             time.sleep(2.0)
+        #             if not self.client.connect():
+        #                 continue
         
         return None 
     def calculate_reward(self, prev_state, current_state, action, step):
@@ -105,7 +115,6 @@ class TetrisTrainer:
        
 
         # And the normal logs
-        w.add_scalar('reward/total',       reward,        step)
 
         return reward
 
@@ -121,8 +130,8 @@ class TetrisTrainer:
         try:
             # Main training loop
             for episode in tqdm(range(1, self.episodes + 1), desc="Training Episodes"):
-                state = self.ensure_connection_ready()
-                if state is None:
+                current_state_meta = self.ensure_connection_ready()
+                if current_state_meta is None:
                     print(f"Episode {episode}: Failed to get initial game state, skipping episode")
                     continue
 
@@ -132,69 +141,79 @@ class TetrisTrainer:
                 episode_lines = 0
 
                 steps = 0
-                prev_state = None
+                current_state = [0,0,0,0]
                 
                 # Determine whether to render this episode
 
                 # Episode rollout
                 while not done and (self.max_steps is None or steps < self.max_steps):
                     # Get mapping of next states to actions
-                    next_states = self.agent.get_possible_states(state)  # returns dict: action->state
+                    next_states = self.agent.get_possible_states(current_state_meta)  # returns dict: action->state
                     # Flip mapping to choose best state
                     state_to_action = {
                         tuple(features): action
                     for action, features in next_states
                     }
-                    if list(state_to_action.keys()).__len__ == 0:
+                    if list(state_to_action.keys()).__len__() == 0:
                         # no valid next‐states → skip learning a transition or pick a safe fallback
-                        done = self.client.is_game_over(state)
-                    else:
-                        # Agent selects best state
-                        best_state = self.agent.best_state(list(state_to_action.keys()))
-                        
-                        action = state_to_action[tuple(best_state)]
+                        next_state= self.client.send_action_and_wait(0,timeout=10.0)
+                        reward =-2
+                        break
 
+
+                    # Agent selects best state
+                    best_state = self.agent.best_state(list(state_to_action.keys()),episode)
+                    action = state_to_action[tuple(best_state)]
                         # Play the chosen action
-                        next_state= self.client.send_action_and_wait(action,timeout=10.0)
-                        if next_state is None:
-                            print(f"Episode {episode}: Timeout waiting for next state")
-                            break
-                        done = self.client.is_game_over(next_state)
-                    self.total_steps+=1
-
-                    reward = self.calculate_reward(prev_state=prev_state,current_state=next_state,action=action,step=self.total_steps)
-                    # Store transition
-                    
-                    state = best_state
-                    steps += 1
-                    episode_reward += reward
+                    next_state= self.client.send_action_and_wait(action,timeout=30.0)
+                    if next_state is None:
+                        print(f"Episode {episode}: Timeout waiting for next state")
+                        break
+                    done = self.client.is_game_over(next_state)
+                    reward = self.calculate_reward(prev_state=current_state_meta,current_state=next_state,action=action,step=self.total_steps)
+                    self.agent.add_to_memory(
+                        current_state, best_state, reward, done
+                    )
                     episode_score = next_state.get('score', 0)
                     episode_lines = next_state.get('linesCleared', 0)
+                          
+                    self.total_steps+=1
 
-                    self.agent.add_to_memory(
-                        state, best_state, reward, done
-                    )
+                    # Store transition
+                    
+                    steps += 1
+                    episode_reward += reward
+                    
+
+                    
                     if done:
-                            # Enhanced game over logging
-                            board_metrics = self.client.get_board_metrics(next_state)
-                            pieces_placed = next_state.get('piecesPlaced', 0)
-                            efficiency = episode_lines / pieces_placed if pieces_placed > 0 else 0
                             
                             if episode % 1 == 0:
                                 print(f"Episode {episode}: Score={episode_score}, "
                                     f"Reward={episode_reward:.1f}, Lines={episode_lines}, "
-                                    f"Steps={steps}, Efficiency={efficiency:.3f}, "
-                                    f"Height={board_metrics.get('stack_height', 0)}")
-                    prev_state = next_state
-                    state = next_state            
+                                    f"Steps={steps}, ")
+                            break    
+                    current_state = best_state
+                    current_state_meta = next_state
 
                 # End of episode
                 
-                scores.append(episode_score)
+                scores.append(episode_reward)
+
+                self.agent.writer.add_scalar("score/score",episode_reward,episode)
 
                 # Training step
                 if episode % self.train_every == 0:
                     self.agent.train(batch_size=self.batch_size, epochs=1)
+
+                if self.log_every and episode and episode % self.log_every == 0:
+                    avg_score = mean(scores[-self.log_every:])
+                    min_score = min(scores[-self.log_every:])
+                    max_score = max(scores[-self.log_every:])
+
+                    self.agent.writer.add_scalar("score/avg_score",avg_score,episode) 
+                    self.agent.writer.add_scalar("score/min_score",min_score,episode) 
+                    self.agent.writer.add_scalar("score/max_score",max_score,episode) 
 
                 
 

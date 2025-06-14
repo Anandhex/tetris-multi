@@ -602,11 +602,7 @@ public class Board : MonoBehaviour
         {
             Set(this.activePiece);
         }
-        else if (activePiece.validActions.Count == 0)
-        {
-            Data.PlayerScore = this.playerScore;
-            GameOver();
-        }
+
         else
         {
             Data.PlayerScore = this.playerScore;

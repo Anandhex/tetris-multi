@@ -63,63 +63,82 @@ class EnhancedTetrisEnvironment:
     def __init__(self):
         self.piece_types = ['I', 'O', 'T', 'J', 'L', 'S', 'Z']
     
-    def decode_action(self, action, board_width=10):
-        """
-        Decode action into position and rotation
-        Assuming action encoding: action = position + rotation * board_width
-        """
-        position = action % board_width
+    def decode_action(self, action, piece_type,board_width=10):
         rotation = action // board_width
+        left_target_col = action % board_width
+
+        piece_shape = TetrisPiece.get_piece_shape(piece_type, rotation)
+
+    # Find column index of leftmost '1' in the shape
+        leftmost_offset = min([
+            col for row in piece_shape for col, val in enumerate(row) if val == 1
+        ])
+
+        # Adjust so the piece’s leftmost block aligns with the desired column
+        position = left_target_col - leftmost_offset
+
         return position, rotation
     
     def can_place_piece(self, board, piece_shape, position, board_height, board_width):
-        """Check if a piece can be placed at the given position"""
+        """
+        Check if a piece can be placed at the given position and simulate gravity.
+        Returns (can_place, final_row) where final_row is where the piece lands.
+        """
         piece_height = len(piece_shape)
         piece_width = len(piece_shape[0]) if piece_shape else 0
-        
-        # Check bounds
+
+        # Convert board to 2D
+        board_2d = np.array(board).reshape(board_height, board_width)
+
+        # Check horizontal bounds
         if position < 0 or position + piece_width > board_width:
             return False, -1
-        
-        # Convert 1D board to 2D
-        board_2d = np.array(board).reshape(board_height, board_width)
-        
-        # Find the lowest valid row for this piece
-        for row in range(board_height - piece_height + 1):
-            valid = True
+
+        # Check if piece would go out of bounds vertically
+        if piece_height > board_height:
+            return False, -1
+
+        # Try dropping from the top, row by row
+        for drop_row in range(board_height - piece_height + 1):
+            collision = False
+            
+            # Check if piece collides at this drop_row position
             for p_row in range(piece_height):
                 for p_col in range(piece_width):
-                    if piece_shape[p_row][p_col] == 1:
-                        board_row = row + p_row
-                        board_col = position + p_col
-                        if board_2d[board_row, board_col] != 0:
-                            valid = False
+                    if piece_shape[p_row][p_col] == 1:  # Only check filled cells
+                        b_row = drop_row + p_row
+                        b_col = position + p_col
+                        
+                        # Check bounds (shouldn't happen due to earlier checks, but safety)
+                        if b_row >= board_height or b_col >= board_width:
+                            collision = True
                             break
-                if not valid:
-                    break
-            
-            if valid:
-                # Check if piece would "fall" further
-                can_fall = False
-                if row + piece_height < board_height:
-                    for p_row in range(piece_height):
-                        for p_col in range(piece_width):
-                            if piece_shape[p_row][p_col] == 1:
-                                board_row = row + piece_height
-                                board_col = position + p_col
-                                if board_row < board_height and board_2d[board_row, board_col] == 0:
-                                    can_fall = True
-                                    break
-                        if can_fall:
+                        
+                        # Check collision with existing blocks
+                        if board_2d[b_row, b_col] != 0:
+                            collision = True
                             break
                 
-                if not can_fall:
-                    return True, row
+                if collision:
+                    break
+            
+            if collision:
+                # If we collide on the first row (top), piece can't be placed at all
+                if drop_row == 0:
+                    return False, -1
+                else:
+                    # Piece lands at the previous valid row
+                    return True, drop_row - 1
         
-        return False, -1
-    
+        # If no collision occurred during the entire drop, piece lands at the bottom
+        return True, board_height - piece_height
+
+
     def place_piece(self, board, piece_shape, position, row, board_height, board_width):
-        """Place a piece on the board and return the new board"""
+        """
+        Place a piece on the board at the specified position and row.
+        Returns the new board state.
+        """
         board_2d = np.array(board).reshape(board_height, board_width)
         new_board = board_2d.copy()
         
@@ -129,9 +148,11 @@ class EnhancedTetrisEnvironment:
         # Place the piece
         for p_row in range(piece_height):
             for p_col in range(piece_width):
-                if piece_shape[p_row][p_col] == 1:
+                if piece_shape[p_row][p_col] == 1:  # Only place filled cells
                     board_row = row + p_row
                     board_col = position + p_col
+                    
+                    # Double-check bounds (should be guaranteed by can_place_piece)
                     if 0 <= board_row < board_height and 0 <= board_col < board_width:
                         new_board[board_row, board_col] = 1
         
@@ -206,88 +227,88 @@ class EnhancedTetrisEnvironment:
         
         return bumpiness
     
-    def calculate_additional_features(self, board, heights, board_height, board_width):
-        """Calculate additional features for better evaluation"""
-        board_2d = np.array(board).reshape(board_height, board_width)
+    # def calculate_additional_features(self, board, heights, board_height, board_width):
+    #     """Calculate additional features for better evaluation"""
+    #     board_2d = np.array(board).reshape(board_height, board_width)
         
-        # Wells (deep holes)
-        wells = 0
-        for col in range(board_width):
-            left_height = heights[col - 1] if col > 0 else 0
-            right_height = heights[col + 1] if col < board_width - 1 else 0
-            current_height = heights[col]
+    #     # Wells (deep holes)
+    #     wells = 0
+    #     for col in range(board_width):
+    #         left_height = heights[col - 1] if col > 0 else 0
+    #         right_height = heights[col + 1] if col < board_width - 1 else 0
+    #         current_height = heights[col]
             
-            if current_height < left_height and current_height < right_height:
-                wells += min(left_height, right_height) - current_height
+    #         if current_height < left_height and current_height < right_height:
+    #             wells += min(left_height, right_height) - current_height
         
-        # Row transitions (horizontal discontinuities)
-        row_transitions = 0
-        for row in range(board_height):
-            for col in range(board_width - 1):
-                if (board_2d[row, col] == 0) != (board_2d[row, col + 1] == 0):
-                    row_transitions += 1
+    #     # Row transitions (horizontal discontinuities)
+    #     row_transitions = 0
+    #     for row in range(board_height):
+    #         for col in range(board_width - 1):
+    #             if (board_2d[row, col] == 0) != (board_2d[row, col + 1] == 0):
+    #                 row_transitions += 1
         
-        # Column transitions (vertical discontinuities)
-        col_transitions = 0
-        for col in range(board_width):
-            for row in range(board_height - 1):
-                if (board_2d[row, col] == 0) != (board_2d[row + 1, col] == 0):
-                    col_transitions += 1
+    #     # Column transitions (vertical discontinuities)
+    #     col_transitions = 0
+    #     for col in range(board_width):
+    #         for row in range(board_height - 1):
+    #             if (board_2d[row, col] == 0) != (board_2d[row + 1, col] == 0):
+    #                 col_transitions += 1
         
-        return wells, row_transitions, col_transitions
+    #     return wells, row_transitions, col_transitions
     
-    def extract_features(self, game_state):
-        """Extract enhanced features from game state"""
-        board_height = int(game_state.get('curriculumBoardHeight', 20))
-        board_width = 10
+    # def extract_features(self, game_state):
+    #     """Extract enhanced features from game state"""
+    #     board_height = int(game_state.get('curriculumBoardHeight', 20))
+    #     board_width = 10
         
-        board = game_state.get('board', [])
-        if not board:
-            board = [0] * (board_height * board_width)
+    #     board = game_state.get('board', [])
+    #     if not board:
+    #         board = [0] * (board_height * board_width)
         
-        # Ensure board is the right size
-        expected_size = board_height * board_width
-        if len(board) != expected_size:
-            if len(board) < expected_size:
-                board = board + [0] * (expected_size - len(board))
-            else:
-                board = board[:expected_size]
+    #     # Ensure board is the right size
+    #     expected_size = board_height * board_width
+    #     if len(board) != expected_size:
+    #         if len(board) < expected_size:
+    #             board = board + [0] * (expected_size - len(board))
+    #         else:
+    #             board = board[:expected_size]
         
-        # Calculate or get heights
-        if 'heights' in game_state and game_state['heights']:
-            heights = game_state['heights'][:board_width]
-            while len(heights) < board_width:
-                heights.append(0)
-        else:
-            heights = self.calculate_column_heights(board, board_height, board_width)
+    #     # Calculate or get heights
+    #     if 'heights' in game_state and game_state['heights']:
+    #         heights = game_state['heights'][:board_width]
+    #         while len(heights) < board_width:
+    #             heights.append(0)
+    #     else:
+    #         heights = self.calculate_column_heights(board, board_height, board_width)
         
-        # Calculate basic features
-        lines_cleared = game_state.get('linesCleared', 0)
-        holes = game_state.get('holesCount', self.calculate_holes(board, board_height, board_width))
-        bumpiness = game_state.get('bumpiness', self.calculate_bumpiness(heights))
-        total_height = sum(heights)
+    #     # Calculate basic features
+    #     lines_cleared = game_state.get('linesCleared', 0)
+    #     holes = game_state.get('holesCount', self.calculate_holes(board, board_height, board_width))
+    #     bumpiness = game_state.get('bumpiness', self.calculate_bumpiness(heights))
+    #     total_height = sum(heights)
         
-        # Calculate additional features
-        wells, row_transitions, col_transitions = self.calculate_additional_features(
-            board, heights, board_height, board_width
-        )
+    #     # Calculate additional features
+    #     wells, row_transitions, col_transitions = self.calculate_additional_features(
+    #         board, heights, board_height, board_width
+    #     )
         
-        # Max height
-        max_height = max(heights) if heights else 0
+    #     # Max height
+    #     max_height = max(heights) if heights else 0
         
-        # Normalize features
-        normalized_features = [
-            lines_cleared / 4.0,                           # Lines cleared
-            holes / 20.0,                                  # Holes
-            bumpiness / 50.0,                              # Bumpiness
-            total_height / (board_height * board_width),   # Total height
-            wells / 10.0,                                  # Wells
-            row_transitions / (board_height * board_width), # Row transitions
-            col_transitions / (board_height * board_width), # Column transitions
-            max_height / board_height                       # Max height
-        ]
+    #     # Normalize features
+    #     normalized_features = [
+    #         lines_cleared / 4.0,                           # Lines cleared
+    #         holes / 20.0,                                  # Holes
+    #         bumpiness / 50.0,                              # Bumpiness
+    #         total_height / (board_height * board_width),   # Total height
+    #         wells / 10.0,                                  # Wells
+    #         row_transitions / (board_height * board_width), # Row transitions
+    #         col_transitions / (board_height * board_width), # Column transitions
+    #         max_height / board_height                       # Max height
+    #     ]
         
-        return np.array(normalized_features, dtype=np.float32)
+    #     return np.array(normalized_features, dtype=np.float32)
 
 
 
@@ -366,7 +387,7 @@ class EnhancedDQNAgent:
             current_piece = 'T'
 
         # decode the raw action id → (position, rotation)
-        position, rotation = self.env.decode_action(action, board_width)
+        position, rotation = self.env.decode_action(action, current_piece,board_width)
 
         # get the shape at that rotation
         piece_shape = TetrisPiece.get_piece_shape(current_piece, rotation)
@@ -459,7 +480,7 @@ class EnhancedDQNAgent:
         sim = self.simulate_action(state, action)
 
         if sim.get('invalid_action', False):
-            return [0, 0, 0, 0]
+            return None
 
         lines_cleared  = sim.get('linesCleared', 0)
         holes          = sim.get('holesCount', 0)
@@ -471,7 +492,36 @@ class EnhancedDQNAgent:
     
     def get_possible_states(self, current_state):
         """Generate all possible next states for valid actions"""
-        valid_actions = current_state.get('validActions', [])
+        piece_index = int(current_state['currentPiece'][0])
+        piece_type = self.piece_types[piece_index]
+
+        board_width = 10
+        valid_actions = []
+
+        for rotation in range(4):
+            shape = TetrisPiece.get_piece_shape(piece_type, rotation)
+            piece_width = len(shape[0])
+
+            # Where is the first actual block from the left?
+            leftmost_offset = min([
+                col for row in shape for col, val in enumerate(row) if val == 1
+            ])
+            rightmost_offset = max([
+                col for row in shape for col, val in enumerate(row) if val == 1
+            ])
+
+            min_col = 0
+            max_col = board_width - 1
+
+            # Compute all positions where leftmost block aligns with column c
+            for left_col in range(min_col, max_col + 1):
+                position = left_col - leftmost_offset
+                if position < 0 or (position + piece_width) > board_width:
+                    continue  # would overflow the board
+
+                action = rotation * board_width + left_col
+                valid_actions.append(action)
+
         possible_states = []
         
         for action in valid_actions:
@@ -480,8 +530,8 @@ class EnhancedDQNAgent:
 
         # you could choose to skip “illegal” moves by checking if features == [0,0,0,0]
         # or change evaluate_action to return None on illegal, but:
-            possible_states.append((action, features))
-        
+            if features:
+                possible_states.append((action, features))
         return possible_states
     
     def calculate_reward(self, old_state, new_state):
@@ -524,21 +574,22 @@ class EnhancedDQNAgent:
     def predict_value(self,state):
         return self.model.predict(state,verbose=0)[0]
     
-    def best_state(self,states):
+    def best_state(self,states,steps):
         max_value =None
         best_state =None
+        self.writer.add_scalar("score/epsilon",self.epsilon,steps)
         if states is None:
             return None
         if random.random() <= self.epsilon:
             return random.choice(list(states))
-        
         else:
+            print(states)
             for state in states:
                 value = self.predict_value(np.reshape(state,[1,self.state_size]))
                 if not max_value or value> max_value:
                     max_value = value
                     best_state = state
-
+        print(best_state)
         return best_state       
     def add_to_memory(self, current_state, next_state, reward, done):
         '''Adds a play to the replay memory buffer'''
@@ -556,15 +607,15 @@ class EnhancedDQNAgent:
         else:
             return self.predict_value(state)
 
-    def remember(self, state, action, reward, next_state, done):
-        """Store experience in replay buffer"""
-        state_features = self.env.extract_features(state)
-        next_state_features = self.env.extract_features(next_state) if next_state else None
+    # def remember(self, state, action, reward, next_state, done):
+    #     """Store experience in replay buffer"""
+    #     state_features = self.env.extract_features(state)
+    #     next_state_features = self.env.extract_features(next_state) if next_state else None
         
-        self.memory.append((state_features, action, reward, next_state_features, done))
+    #     self.memory.append((state_features, action, reward, next_state_features, done))
         
-        if len(self.memory) % 1000 == 0:
-            self.writer.add_scalar('Agent/Memory_Size', len(self.memory), self.steps)
+    #     if len(self.memory) % 1000 == 0:
+    #         self.writer.add_scalar('Agent/Memory_Size', len(self.memory), self.steps)
     
 
     def train(self, batch_size=32, epochs=3):
@@ -598,7 +649,6 @@ class EnhancedDQNAgent:
 
             # Fit the model to the given values
             self.model.fit(np.array(x), np.array(y), batch_size=batch_size, epochs=epochs, verbose=0)
-
             # Update the exploration variable
             if self.epsilon > self.epsilon_min:
                 self.epsilon -= self.epsilon_decay    
