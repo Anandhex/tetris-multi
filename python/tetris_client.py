@@ -27,7 +27,7 @@ class UnityTetrisClient:
         return {
             'board_height': game_state.get('curriculumBoardHeight', 20),
             'board_preset': game_state.get('curriculumBoardPreset', 0),
-            'allowed_tetromino_types': game_state.get('allowedTetrominoTypes', 7)
+            'allowed_tetromino_types': game_state.get('allowedTetr ominoTypes', 7)
         }
     
     def is_game_over(self, game_state):
@@ -66,9 +66,9 @@ class UnityTetrisClient:
         
         return None
     
-    def send_action_and_wait(self, action_index, timeout=5.0):
+    def send_action_and_wait(self, action, timeout=5.0):
         """Send action and wait for the result state"""
-        if not self.send_action(action_index):
+        if not self.send_action(action):
             return None
         
         # Wait for the action to complete and get the resulting state
@@ -76,10 +76,7 @@ class UnityTetrisClient:
         while time.time() - start_time < timeout:
             state = self.get_game_state(timeout=0.1)
             if state:
-                action_info = self.get_action_space_info(state)
-                # Return state when action is complete
-                if not action_info['is_executing_action']:
-                    return state
+                return state
         
         return None
     def connect(self, max_retries=5, retry_delay=2.0):
@@ -134,16 +131,14 @@ class UnityTetrisClient:
                 
         self.connected = False
     
-    def send_action(self, action_index):
+    def send_action(self, action):
         if not self.connected:
             return False
             
-        if action_index < 0 or action_index >= self.action_space_size:
-            return False
         
         command = {
             "type": "action",
-            "action": {"actionIndex": action_index}
+            "action": {"col": action["col"],"rot":action["rot"]}
         }
         
         return self._send_command(command)
@@ -172,7 +167,7 @@ class UnityTetrisClient:
         start_time = time.time()
         while time.time() - start_time < timeout:
             state = self.get_game_state(timeout=0.1)
-            if state and 'curriculumConfirmed' in state:
+        if state and 'curriculumConfirmed' in state:
                 return state
         return None
     def send_reset(self):
@@ -227,3 +222,55 @@ class UnityTetrisClient:
         self.connected = False
         if self.socket:
             self.socket.close()
+
+    def send_reset(self):
+        """Send reset command to Unity to reset the board"""
+        if not self.connected:
+            return False
+        command = {"type": "reset", "reset": {"resetBoard": True}}
+        return self._send_command(command)
+    
+    def get_possible_states(self, timeout=2.0, poll_interval=0.05):
+        """
+        Ask Unity for all valid (col,rot) placements and their [lines, holes, bumpiness, height].
+        Blocks until it receives a message of type 'possible_states' or times out.
+        Returns a dict { 'col:rot': [lines, holes, bumpiness, height], ... }
+        """
+        # 1) send the request
+        cmd = { "type": "request_states" }
+        if not self._send_command(cmd):
+            return {}
+
+        # 2) drain queue until we find the response
+        start = time.time()
+        while time.time() - start < timeout:
+            msg = self.get_game_state(timeout=poll_interval)
+            if not msg:
+                continue
+            # we expect Unity to send back {"type":"possible_states","payload":{...}}
+            if msg.get("type") == "possible_states" and "payload" in msg:
+                return msg["payload"]
+        # timed out
+        return {}
+    
+
+    def env_reset(self, timeout=10.0, check_interval=0.1):
+        """
+        Resets the game board in Unity and waits until the environment is ready for actions.
+        Returns the initial game state dict.
+        """
+        # Send reset signal
+        if not self.send_reset():
+            raise RuntimeError("Failed to send reset command to Unity.")
+        # Wait for Unity to finish resetting and be ready
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            state = self.get_game_state(timeout=check_interval)
+            if state:
+                # Check if ready for new action
+                action_info = state.get('waitingForAction', False)
+                executing = state.get('isExecutingAction', False)
+                if action_info and not executing:
+                    return state
+            time.sleep(check_interval)
+        raise TimeoutError("Timeout waiting for game reset and ready state.")        

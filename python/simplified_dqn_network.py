@@ -227,126 +227,38 @@ class EnhancedTetrisEnvironment:
         
         return bumpiness
     
-    # def calculate_additional_features(self, board, heights, board_height, board_width):
-    #     """Calculate additional features for better evaluation"""
-    #     board_2d = np.array(board).reshape(board_height, board_width)
-        
-    #     # Wells (deep holes)
-    #     wells = 0
-    #     for col in range(board_width):
-    #         left_height = heights[col - 1] if col > 0 else 0
-    #         right_height = heights[col + 1] if col < board_width - 1 else 0
-    #         current_height = heights[col]
-            
-    #         if current_height < left_height and current_height < right_height:
-    #             wells += min(left_height, right_height) - current_height
-        
-    #     # Row transitions (horizontal discontinuities)
-    #     row_transitions = 0
-    #     for row in range(board_height):
-    #         for col in range(board_width - 1):
-    #             if (board_2d[row, col] == 0) != (board_2d[row, col + 1] == 0):
-    #                 row_transitions += 1
-        
-    #     # Column transitions (vertical discontinuities)
-    #     col_transitions = 0
-    #     for col in range(board_width):
-    #         for row in range(board_height - 1):
-    #             if (board_2d[row, col] == 0) != (board_2d[row + 1, col] == 0):
-    #                 col_transitions += 1
-        
-    #     return wells, row_transitions, col_transitions
-    
-    # def extract_features(self, game_state):
-    #     """Extract enhanced features from game state"""
-    #     board_height = int(game_state.get('curriculumBoardHeight', 20))
-    #     board_width = 10
-        
-    #     board = game_state.get('board', [])
-    #     if not board:
-    #         board = [0] * (board_height * board_width)
-        
-    #     # Ensure board is the right size
-    #     expected_size = board_height * board_width
-    #     if len(board) != expected_size:
-    #         if len(board) < expected_size:
-    #             board = board + [0] * (expected_size - len(board))
-    #         else:
-    #             board = board[:expected_size]
-        
-    #     # Calculate or get heights
-    #     if 'heights' in game_state and game_state['heights']:
-    #         heights = game_state['heights'][:board_width]
-    #         while len(heights) < board_width:
-    #             heights.append(0)
-    #     else:
-    #         heights = self.calculate_column_heights(board, board_height, board_width)
-        
-    #     # Calculate basic features
-    #     lines_cleared = game_state.get('linesCleared', 0)
-    #     holes = game_state.get('holesCount', self.calculate_holes(board, board_height, board_width))
-    #     bumpiness = game_state.get('bumpiness', self.calculate_bumpiness(heights))
-    #     total_height = sum(heights)
-        
-    #     # Calculate additional features
-    #     wells, row_transitions, col_transitions = self.calculate_additional_features(
-    #         board, heights, board_height, board_width
-    #     )
-        
-    #     # Max height
-    #     max_height = max(heights) if heights else 0
-        
-    #     # Normalize features
-    #     normalized_features = [
-    #         lines_cleared / 4.0,                           # Lines cleared
-    #         holes / 20.0,                                  # Holes
-    #         bumpiness / 50.0,                              # Bumpiness
-    #         total_height / (board_height * board_width),   # Total height
-    #         wells / 10.0,                                  # Wells
-    #         row_transitions / (board_height * board_width), # Row transitions
-    #         col_transitions / (board_height * board_width), # Column transitions
-    #         max_height / board_height                       # Max height
-    #     ]
-        
-    #     return np.array(normalized_features, dtype=np.float32)
-
-
-
+   
 class EnhancedDQNAgent:
     """Enhanced DQN Agent with proper action simulation"""
     
-    def __init__(self, lr=0.001, device='cuda' if torch.cuda.is_available() else 'cpu', 
-                 tensorboard_log_dir=None,state_size=4,n_neurons=[32,32], activations=["relu","relu","linear"],loss="mse",optimizer="adam",replay_start_size=None,mem_size=10000,discount=0.95
-                 ,epsilon_stop_episode=0,epsilon=1,epsilon_min=0):
+    def __init__(self, device='cuda' if torch.cuda.is_available() else 'cpu', 
+                 state_size=4, mem_size=10000, discount=0.95,
+                 epsilon=1, epsilon_min=0, epsilon_stop_episode=0,
+                 n_neurons=[32, 32], activations=['relu', 'relu', 'linear'],
+                 loss='mse', optimizer='adam', replay_start_size=None,tensorboard_log_dir=None, modelFile=None):
         self.device = device
-        self.memory = deque(maxlen=20000)
-        self.learning_rate = lr
-        self.batch_size = 512
-        self.gamma = 0.95
-        self.epsilon = epsilon
-        self.epsilon_min = epsilon_min
-        self.epsilon_decay_episodes = 1500
-        self.steps = 0
-        self.episodes = 0
-        self.target_update_freq = 0
-        self.episode_rewards = []
-        self.episode_lengths = []
-        self.training_episodes = 0
-        self.piece_types = ['I', 'O', 'T', 'J', 'L', 'S', 'Z']
         self.state_size = state_size
+        self.mem_size = mem_size
+        self.memory = deque(maxlen=self.mem_size)
+        self.discount=discount
+        if epsilon_stop_episode > 0:
+            self.epsilon = epsilon
+            self.epsilon_min = epsilon_min
+            self.epsilon_decay = (self.epsilon - self.epsilon_min) / (epsilon_stop_episode)
+        else:
+            self.epsilon = 0
+
         self.n_neurons = n_neurons
         self.activations = activations
         self.loss = loss
         self.optimizer = optimizer
         if not replay_start_size:
-            replay_start_size = mem_size / 2
+            self.replay_start_size = self.mem_size / 2
         self.replay_start_size = replay_start_size
-        self.mem_size = mem_size
-        self.discount = discount
-        if epsilon_stop_episode > 0:
-            self.epsilon = epsilon
-            self.epsilon_min = epsilon_min
-            self.epsilon_decay = (self.epsilon - self.epsilon_min) / (epsilon_stop_episode)
+        
+  
+       
+        self.piece_types = ['I', 'O', 'T', 'J', 'L', 'S', 'Z']
 
        
         # create a new model
@@ -491,85 +403,63 @@ class EnhancedDQNAgent:
         return [lines_cleared, holes, total_bumpiness, sum_heights]
     
     def get_possible_states(self, current_state):
-        """Generate all possible next states for valid actions"""
+        """Generate all possible next states for valid actions (rotation-aware)."""
         piece_index = int(current_state['currentPiece'][0])
         piece_type = self.piece_types[piece_index]
 
         board_width = 10
+        board_height = int(current_state.get('curriculumBoardHeight', 20))
+        board = current_state.get('board', [0] * (board_height * board_width))
+        
         valid_actions = []
-
-        for rotation in range(4):
-            shape = TetrisPiece.get_piece_shape(piece_type, rotation)
-            piece_width = len(shape[0])
-
-            # Where is the first actual block from the left?
-            leftmost_offset = min([
-                col for row in shape for col, val in enumerate(row) if val == 1
-            ])
-            rightmost_offset = max([
-                col for row in shape for col, val in enumerate(row) if val == 1
-            ])
-
-            min_col = 0
-            max_col = board_width - 1
-
-            # Compute all positions where leftmost block aligns with column c
-            for left_col in range(min_col, max_col + 1):
-                position = left_col - leftmost_offset
-                if position < 0 or (position + piece_width) > board_width:
-                    continue  # would overflow the board
-
-                action = rotation * board_width + left_col
-                valid_actions.append(action)
-
         possible_states = []
-        
-        for action in valid_actions:
-            # Simulate the action
-            features = self.evaluate_action(current_state, action)
 
-        # you could choose to skip “illegal” moves by checking if features == [0,0,0,0]
-        # or change evaluate_action to return None on illegal, but:
-            if features:
-                possible_states.append((action, features))
+        # Use correct number of rotations from TetrisPiece.PIECES
+        rotation_range = len(TetrisPiece.PIECES[piece_type])
+
+        for rotation in range(rotation_range):
+            shape = TetrisPiece.get_piece_shape(piece_type, rotation)
+            piece_width = len(shape[0]) if shape else 0
+            piece_height = len(shape)
+
+            # Find the leftmost block offset in the piece
+            leftmost_offset = float('inf')
+            for row in shape:
+                for col, val in enumerate(row):
+                    if val == 1:
+                        leftmost_offset = min(leftmost_offset, col)
+            
+            # If no blocks found (shouldn't happen), skip
+            if leftmost_offset == float('inf'):
+                continue
+
+            # Generate actions for each possible left target column
+            for left_target_col in range(board_width):
+                # Calculate actual position where piece will be placed
+                position = left_target_col - leftmost_offset
+                
+                # Check if piece fits horizontally
+                if position < 0 or (position + piece_width) > board_width:
+                    continue
+                
+                # Check if piece can be placed (including gravity simulation)
+                can_place, drop_row = self.env.can_place_piece(
+                    board, shape, position, board_height, board_width
+                )
+                
+                if not can_place:
+                    continue
+                
+                # Generate action ID: rotation * board_width + left_target_col
+                action = rotation * board_width + left_target_col
+                valid_actions.append(action)
+                
+                # Evaluate the action to get features
+                features = self.evaluate_action(current_state, action)
+                if features is not None:  # Only add if action is valid
+                    possible_states.append((action, features))
+
         return possible_states
-    
-    def calculate_reward(self, old_state, new_state):
-        """Calculate reward based on state transition"""
-        reward = 0
-        
-        # Reward for clearing lines
-        lines_cleared = new_state.get('linesCleared', 0)
-        if lines_cleared > 0:
-            # Exponential reward for more lines cleared at once
-            line_rewards = {1: 40, 2: 100, 3: 300, 4: 1200}
-            reward += line_rewards.get(lines_cleared, lines_cleared * 40)
-        
-        # Get heights
-        old_heights = old_state.get('heights', [0] * 10)
-        new_heights = new_state.get('heights', [0] * 10)
-        
-        # Penalty for increasing height
-        height_diff = sum(new_heights) - sum(old_heights)
-        reward -= height_diff * 0.5
-        
-        # Penalty for creating holes
-        old_holes = old_state.get('holesCount', 0)
-        new_holes = new_state.get('holesCount', 0)
-        holes_created = new_holes - old_holes
-        reward -= holes_created * 2
-        
-        # Penalty for increasing bumpiness
-        old_bumpiness = old_state.get('bumpiness', 0)
-        new_bumpiness = new_state.get('bumpiness', 0)
-        bumpiness_diff = new_bumpiness - old_bumpiness
-        reward -= bumpiness_diff * 0.1
-        
-        # Penalty for invalid action
-        if new_state.get('invalid_action', False):
-            reward -= 10
-        
-        return reward
     
     def predict_value(self,state):
         return self.model.predict(state,verbose=0)[0]
@@ -583,13 +473,11 @@ class EnhancedDQNAgent:
         if random.random() <= self.epsilon:
             return random.choice(list(states))
         else:
-            print(states)
             for state in states:
                 value = self.predict_value(np.reshape(state,[1,self.state_size]))
                 if not max_value or value> max_value:
                     max_value = value
                     best_state = state
-        print(best_state)
         return best_state       
     def add_to_memory(self, current_state, next_state, reward, done):
         '''Adds a play to the replay memory buffer'''
@@ -607,16 +495,7 @@ class EnhancedDQNAgent:
         else:
             return self.predict_value(state)
 
-    # def remember(self, state, action, reward, next_state, done):
-    #     """Store experience in replay buffer"""
-    #     state_features = self.env.extract_features(state)
-    #     next_state_features = self.env.extract_features(next_state) if next_state else None
-        
-    #     self.memory.append((state_features, action, reward, next_state_features, done))
-        
-    #     if len(self.memory) % 1000 == 0:
-    #         self.writer.add_scalar('Agent/Memory_Size', len(self.memory), self.steps)
-    
+ 
 
     def train(self, batch_size=32, epochs=3):
         '''Trains the agent'''
@@ -718,33 +597,4 @@ class EnhancedDQNAgent:
             self.writer.add_scalar('Episode/Avg_Reward_10', avg_reward_10, episode)
             self.writer.add_scalar('Episode/Avg_Length_10', avg_length_10, episode)        
 
-# Example usage
-if __name__ == "__main__":
-    # Create enhanced agent
-    agent = EnhancedDQNAgent()
-    
-    # Example game state with more realistic data
-    example_state = {
-        'board': [0] * 200,  # 20x10 board
-        'curriculumBoardHeight': 20,
-        'heights': [0, 1, 2, 0, 0, 3, 1, 0, 0, 0],
-        'validActions': [0, 1, 2, 3, 4, 10, 11, 12, 13, 14, 20, 21, 22, 23, 24],  # pos + rot*10
-        'linesCleared': 0,
-        'holesCount': 0,
-        'bumpiness': 3,
-        'currentPiece': 'T'
-    }
-    
-    # Test action simulation
-    action = 12  # Position 2, Rotation 1
-    simulated_state = agent.simulate_action(example_state, action)
-    print(f"Original heights: {example_state['heights']}")
-    print(f"Simulated heights: {simulated_state['heights']}")
-    print(f"Lines cleared: {simulated_state['linesCleared']}")
-    
-    # Choose action
-    best_action = agent.act(example_state)
-    print(f"Chosen action: {best_action}")
-    
-    agent.close()
 
