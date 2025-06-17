@@ -37,7 +37,8 @@ public class SocketBoardManager : MonoBehaviour
             var socketAgent = container.AddComponent<SocketTetrisAgent>();
             inputController = socketAgent;
             socketAgent.SetBoard(activeBoard);
-            socketAgent.SetCurrentPiece(activeBoard.activePiece);
+            activeBoard.isMLTraining = true;
+            // socketAgent.SetCurrentPiece(activeBoard.activePiece);
         }
         else
         {

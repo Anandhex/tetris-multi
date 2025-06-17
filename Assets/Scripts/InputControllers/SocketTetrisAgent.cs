@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System;
+using UnityEngine.InputSystem;
 
 public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
 {
@@ -44,20 +45,7 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         }
     }
 
-    void Update()
-    {
-        // Send game state periodically, but only when not executing an action
-        // if (!isExecutingAction && Time.time - lastStateTime > stateUpdateInterval)
-        // {
-        //     SendGameState();   // fires every 0.1 s even while waiting for next piece
-        //     lastStateTime = Time.time;
-        // }
-        // if (pythonConnected && !isExecutingAction && Time.time - lastStateTime > stateUpdateInterval)
-        // {
-        //     SendGameState();
-        //     lastStateTime = Time.time;
-        // }
-    }
+
 
     void HandleCommand(GameCommand command)
     {
@@ -66,288 +54,160 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
             case "action":
                 if (command.action != null && !isExecutingAction)
                 {
-                    ExecuteAction(command.action.actionIndex);
+                    if (command.action.col != -1 || command.action.rot != -1)
+                    {
+                        ExecuteAction(command.action.col, command.action.rot);
+                    }
+                    else
+                    {
+                        board.DumpTilemap(board.Bounds);
+                        Debug.Log("Triggered" + command.action.col + ":" + command.action.rot);
+                        TriggerGameOver();
+                    }
                 }
                 break;
 
-            case "curriculum_change":
-                if (command.curriculum != null)
-                {
-                    ApplyCurriculumChange(command.curriculum);
-                    SendCurriculumConfirmation();
-                }
+
+            case "reset":
+                // Reset the board + agent flags
+                ResetGame();
+                // Immediately send the new initial state back to Python
                 break;
 
-            case "curriculum_status_request":
-                SendGameState(); // Will include current curriculum info
+            case "request_states":
+                RequestStates();
+
                 break;
 
 
         }
     }
 
-    void SendCurriculumConfirmation()
+    void RequestStates()
     {
-        // Send confirmation that curriculum was applied
-        if (SocketManager.Instance != null)
+        // Prepare the piece for spawn but don't actually spawn it yet
+        // Clear any existing piece from the board to ensure clean state calculation
+        if (currentPiece != null)
         {
-            GameState confirmationState = new GameState();
-            confirmationState.curriculumBoardHeight = curriculumBoardHeight;
-            confirmationState.curriculumBoardPreset = curriculumBoardPreset;
-            confirmationState.allowedTetrominoTypes = allowedTetrominoTypes;
-            confirmationState.curriculumConfirmed = true;
-
-            SocketManager.Instance.SendGameState(confirmationState);
+            board.Clear(currentPiece);
         }
+
+        // Set the current piece reference
+        SetCurrentPiece(board.activePiece);
+
+        // Calculate all possible moves without placing the piece on the board
+        var metrics = GetMoveMetricsForCurrentPiece();
+
+        // Convert to the format expected by Python
+        var dict = metrics.ToDictionary(
+            kv => $"{kv.Key.Item1}:{kv.Key.Item2}",
+            kv => kv.Value
+        );
+
+        // Debug.Log($"Sending {dict.Count} possible states to Python");
+        SocketManager.Instance.SendEvent("possible_states", dict);
     }
-    void ExecuteAction(int actionIndex)
+
+    void ExecuteAction(int colIdx, int rotation)
     {
-        if (actionIndex < 0 || actionIndex >= 40)
+        if (currentPiece == null || board == null)
+        {
+            Debug.LogError("Cannot execute action: piece or board is null");
             return;
-        if (currentPiece == null || isExecutingAction)
-            return;
-
-        int boardWidth = 10;
-
-        // ✅ Decode like Python: action = rotation * boardWidth + column
-        int rotation = actionIndex / boardWidth;
-        int columnIdx = actionIndex % boardWidth;
-
-        // Clamp to safe bounds
-        rotation = Mathf.Clamp(rotation, 0, currentPiece.data.RotationCount - 1);
-        columnIdx = Mathf.Clamp(columnIdx, 0, board.boardSize.x - 1);
-
-        // Map board column index (0..9) to Tetris grid X (e.g., -5 to +4)
-        int halfWidth = board.Bounds.width / 2;
-        int boardColumn = columnIdx - halfWidth;
-
-        targetColumn = boardColumn;
-        targetRotation = rotation;
-
-        Debug.Log($"Action {actionIndex}: col={columnIdx}, x={boardColumn}, rot={rotation}");
-
+        }
+        board.Clear(currentPiece);
         isExecutingAction = true;
-        actionCompleted = false;
-        waitingForNewPiece = false;
+        // Validate the action before executing
+        ExecuteDirectPlacementSync(colIdx, rotation);
 
-        StartCoroutine(ExecuteDirectPlacement());
     }
-    int GetBoardColumnFromIndex(int columnIndex)
+
+
+
+    public void ExecuteDirectPlacementSync(int col, int rot)
     {
-        Vector3Int spawnCell = board.spawnPosition;
-        int halfWidth = board.Bounds.width / 2;
-        int leftmostX = spawnCell.x - halfWidth;
-        int boardColumn = leftmostX + columnIndex;
-        return Mathf.Clamp(boardColumn, board.Bounds.xMin, board.Bounds.xMax - 1);
-    }
-    IEnumerator ExecuteDirectPlacement()
-    {
+        // Debug.Log($"Executing: col={col} rot={rot}");
+
         if (currentPiece == null)
         {
+            Debug.LogError("No current piece to execute action on");
             isExecutingAction = false;
-            yield break;
+            return;
         }
 
-        // Store original state for debugging
-        Vector3Int originalPosition = currentPiece.position;
-        int originalRotation = currentPiece.rotationIndex;
 
+        // 1) Rotate to target
+        int curRot = currentPiece.rotationIndex;
+        int needed = (rot - curRot + 4) % 4;
 
-        // Step 1: Apply target rotation
-        yield return StartCoroutine(RotatePiece());
-
-        // Step 2: Move to target column  
-        yield return StartCoroutine(MovePieceToColumn());
-
-        // Step 3: Drop piece
-        yield return StartCoroutine(DropPiece());
-
-        // Step 4: Finalize placement
-        FinalizePlacement();
-    }
-    IEnumerator RotatePiece()
-    {
-        int currentRotation = currentPiece.rotationIndex;
-        int rotationsNeeded = (targetRotation - currentRotation + 4) % 4;
-
-        for (int i = 0; i < rotationsNeeded; i++)
+        for (int i = 0; i < needed; i++)
         {
-            board.Clear(currentPiece);
-
-            // Store current state for potential revert
-            Vector3Int positionBeforeRotation = currentPiece.position;
-            int rotationBeforeAttempt = currentPiece.rotationIndex;
-
             currentPiece.Rotate(1);
 
-            // Try current position first
-            if (board.IsValidPosition(currentPiece, currentPiece.position))
-            {
-                board.Set(currentPiece);
-                yield return new WaitForSeconds(0.03f);
-                continue;
-            }
-
-            // Try wall kicks
-            Vector3Int[] kickOffsets = {
-            Vector3Int.left, Vector3Int.right, Vector3Int.up,
-            Vector3Int.left * 2, Vector3Int.right * 2,
-            new Vector3Int(-1, 1, 0), new Vector3Int(1, 1, 0) // diagonal kicks
-        };
-
-            bool kickSuccessful = false;
-            foreach (var offset in kickOffsets)
-            {
-                Vector3Int testPosition = positionBeforeRotation + offset;
-                if (board.IsValidPosition(currentPiece, testPosition))
-                {
-                    currentPiece.position = testPosition;
-                    kickSuccessful = true;
-                    break;
-                }
-            }
-
-            if (!kickSuccessful)
-            {
-                // Revert rotation
-                currentPiece.Rotate(-1);
-                currentPiece.position = positionBeforeRotation;
-                break;
-            }
-
-            board.Set(currentPiece);
-            yield return new WaitForSeconds(0.03f);
         }
-    }
 
-    IEnumerator MovePieceToColumn()
-    {
-        // 1. Get leftmost X of current piece on the board
-        int currentLeftX = currentPiece.cells.Min(c => currentPiece.position.x + c.x);
+        // 2) Move horizontally
+        int leftX = currentPiece.cells.Min(c => currentPiece.position.x + c.x);
+        int halfW = board.Bounds.width / 2;
+        int targetX = col - halfW;
+        int offset = targetX - leftX;
+        var dir = offset > 0 ? Vector3Int.right : Vector3Int.left;
 
-        // 2. Compute how much to shift
-        int offset = targetColumn - currentLeftX;
-
-        Debug.Log("Current left X: " + currentLeftX);
-        Debug.Log("Desired left X: " + targetColumn);
-        Debug.Log("Offset: " + offset);
-
-        // 3. Move one step at a time
-        int steps = Mathf.Abs(offset);
-        Vector3Int dir = (offset > 0) ? Vector3Int.right : Vector3Int.left;
-
-        for (int i = 0; i < steps; i++)
+        for (int i = 0; i < Mathf.Abs(offset); i++)
         {
-            Vector3Int newPos = currentPiece.position + dir;
-
-            board.Clear(currentPiece);
-            if (!board.IsValidPosition(currentPiece, newPos))
-            {
-                board.Set(currentPiece);
-                yield break;
-            }
+            var newPos = currentPiece.position + dir;
 
             currentPiece.position = newPos;
-            board.Set(currentPiece);
-            yield return new WaitForSeconds(0.03f);
         }
-    }
 
-    IEnumerator DropPiece()
-    {
-        int dropSteps = 0;
+        // 3) Hard drop
         while (true)
         {
-            board.Clear(currentPiece);
-            Vector3Int newPosition = currentPiece.position + Vector3Int.down;
-
-            if (board.IsValidPosition(currentPiece, newPosition))
+            var downPos = currentPiece.position + Vector3Int.down;
+            if (!board.IsValidPosition2(currentPiece, downPos))
             {
-                currentPiece.position = newPosition;
-                board.Set(currentPiece);
-                dropSteps++;
-                yield return new WaitForSeconds(0.01f); // Fast drop
+                break; // Hit bottom or piece
             }
-            else
-            {
-                board.Set(currentPiece);
-                break;
-            }
+            currentPiece.position = downPos;
         }
 
+        // 4) Final placement
+        FinalizePlacement();
     }
 
+    public void TriggerGameOver()
+    {
+        gameOver = true;
+        SendGameState();
+        gameOver = false;
+        isExecutingAction = false;
+
+    }
     void FinalizePlacement()
     {
-        // Lock the piece in place
+
         board.Set(currentPiece);
 
-        // Clear any completed lines
-        board.ClearLines();
 
-        // Calculate reward
+        // Clear any completed lines
         SendGameState();
 
-        // Mark action as completed
+        // Send game state after placement
+
+        // Reset flags
         actionCompleted = true;
         isExecutingAction = false;
-        waitingForNewPiece = true;
+        waitingForNewPiece = false;
 
-        // Spawn new piece
+        // Clear current piece reference
         board.SpawnPiece();
 
-        // Send final state
-        StartCoroutine(SendStateAfterDelay());
-    }
-
-    IEnumerator SendStateAfterDelay()
-    {
-        yield return new WaitForSeconds(0.1f);
-        SendGameState();
-        waitingForNewPiece = false;
-    }
-
-    void CalculatePlacementReward()
-    {
-        // Reset reward
-        lastReward = 0f;
-
-        // Small reward for successful placement
-        lastReward += 1f;
-
-        // Penalty for creating holes
-        int holes = board.CountHoles();
-        lastReward -= holes * 2f;
-
-        // Penalty for high stacks
-        float stackHeight = board.CalculateStackHeight();
-        if (stackHeight > 15)
-        {
-            lastReward -= (stackHeight - 15) * 1f;
-        }
-
-        // Bonus for keeping stack low
-        if (stackHeight < 10)
-        {
-            lastReward += (10 - stackHeight) * 0.5f;
-        }
-
-        // Big bonus for perfect clear
-        if (board.IsPerfectClear())
-        {
-            lastReward += 50f;
-        }
-
-        // Line clear rewards are handled separately in OnLinesCleared
-    }
-
-    void ApplyCurriculumChange(CurriculumData curriculum)
-    {
-        curriculumBoardHeight = curriculum.boardHeight;
-        curriculumBoardPreset = curriculum.boardPreset;
-        allowedTetrominoTypes = curriculum.allowedTetrominoTypes;
 
     }
+
+
+
+
 
     void ResetGame()
     {
@@ -359,7 +219,12 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
 
         if (board != null)
         {
-            board.ApplyCurriculumBoardPreset();
+
+            board.playerScore = 0;
+            board.ClearBoard();
+            StateReset();
+            board.SpawnPiece();
+
         }
     }
 
@@ -368,7 +233,6 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         pythonConnected = true;
         Debug.Log("Python AI connected - Ready for 40-action Tetris (10 columns × 4 rotations)!");
         gameOver = false;
-        SendGameState();
         lastStateTime = Time.time;
     }
 
@@ -376,99 +240,44 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     {
         Debug.Log("Python AI disconnected");
     }
-
+    void StateReset()
+    {
+        GameState state = new GameState();
+        SocketManager.Instance.SendGameState(state);
+    }
     void SendGameState()
     {
         if (board == null || SocketManager.Instance == null)
             return;
 
-        if (currentPiece == null || currentPiece.cells == null)
-        {
-            Debug.LogWarning("SendGameState(): currentPiece is null — skipping state send.");
-            return;
-        }
+        // 1) Compute lines cleared this step by replaying a clear on a copy of the board
+        //    (or you can cache the last lines cleared in your OnLinesCleared callback)
+        // int linesCleared = board.ClearLinesCount();
+        int linesCleared = board.ClearLines();
 
-        // Get ground state and metrics without modifying the actual board
-        var groundData = GetGroundStateAndMetrics();
+        // 2) Shaped reward: +1 per placement, +lines²×width, −2 if game over
+        float reward = 1f + (linesCleared * linesCleared) * board.boardSize.x;
+        if (gameOver)
+            reward -= 2f;
 
-        GameState state = new GameState();
+        // 3) Build minimal payload
+        var payload = new GameState();
+        payload.reward = reward;
+        payload.gameOver = gameOver;
+        // Debug.Log("somethinggg");
 
-        // Use the calculated ground state data
-        state.board = groundData.board;
-        // state.heights = groundData.heights;
-        // state.holesCount = groundData.holesCount;
-        // state.covered = groundData.covered;
-        // state.bumpiness = groundData.bumpiness;
-        // state.stackHeight = groundData.stackHeight;
-        // state.perfectClear = groundData.perfectClear;
+        // 4) Send it over the socket (using our SendEvent helper)
+        SocketManager.Instance.SendGameState(payload);
 
-        // Get piece information
-        state.currentPiece = GetCurrentPieceState();
-        state.nextPiece = GetNextPieceState();
-        state.piecePosition = (Vector2Int)currentPiece.position;
-
-        // Game metrics
-        state.score = board.playerScore;
-        state.gameOver = gameOver;
-        state.reward = lastReward;
-        state.episodeEnd = gameOver;
-
-        // Action space information
-        // state.actionSpaceSize = 40;
-        // state.actionSpaceType = "column_rotation";
-        // state.isExecutingAction = isExecutingAction;
-        // state.waitingForAction = !isExecutingAction && !waitingForNewPiece && currentPiece != null;
-
-        // Curriculum information
-        // state.curriculumBoardHeight = curriculumBoardHeight;
-        // state.curriculumBoardPreset = curriculumBoardPreset;
-        // state.allowedTetrominoTypes = allowedTetrominoTypes;
-
-        // Other metrics
-        state.linesCleared = board.playerScore / 100;
-
-        // Send the game state
-        SocketManager.Instance.SendGameState(state);
-
-        // Reset reward after sending
-        if (!gameOver)
-        {
-            lastReward = 0f;
-        }
+        // 5) Reset lastReward if needed
+        lastReward = 0f;
     }
 
 
-    int[] GetCurrentPieceState()
-    {
-        if (currentPiece == null)
-            return new int[] { 0, 0, 0, 0 }; // type, rotation, x, y
 
-        return new int[]
-        {
-            GetPieceTypeIndex(currentPiece.data),
-            currentPiece.rotationIndex,
-            currentPiece.position.x,
-            currentPiece.position.y
-        };
-    }
 
-    int[] GetNextPieceState()
-    {
-        if (board.nextPieceData.Equals(default))
-            return new int[] { 0 };
 
-        return new int[] { GetPieceTypeIndex(board.nextPieceData) };
-    }
 
-    int GetPieceTypeIndex(TetrominoData data)
-    {
-        for (int i = 0; i < board.tetrominoes.Length; i++)
-        {
-            if (board.tetrominoes[i].Equals(data))
-                return i;
-        }
-        return 0;
-    }
 
     // IPlayerInputController implementation - Updated method names
     public bool GetLeft()
@@ -504,15 +313,6 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     public void SetCurrentPiece(Piece piece)
     {
         currentPiece = piece;
-        if (board == null)
-        {
-            return;
-        }
-        if (currentPiece != null)
-        {
-            // currentPiece.ComputeAndStoreValidMoves(board);
-        }
-        // Send state when new piece spawns
 
     }
 
@@ -520,229 +320,22 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     {
         board = gameBoard;
         board.inputController = this;
-        SendGameState();
         lastStateTime = Time.time;   // reset your timer so you don’t immediately resend
     }
-    public static List<int> GenerateValidActionIndices(Board board, TetrominoData data)
-    {
-        var validActions = new List<int>();
-        var bounds = board.Bounds;
-        var kicks = Data.WallKicks[data.tetromino];
-        const int FULL_ROTATIONS = 4;
-
-        // Starting orientation (usually 0)
-        int fromRot = 0;
-
-
-        for (int rot = 0; rot < data.RotationCount; rot++)
-        {
-            var cells = Data.GetCells(data.tetromino, rot);
-
-            // Compute piece footprint
-            int minX = cells.Min(c => c.x);
-            int maxX = cells.Max(c => c.x);
-            int maxYOffset = cells.Max(c => c.y);
-
-
-            // Determine horizontal range in world coordinates
-            int colLo = bounds.xMin - minX;
-            int colHi = bounds.xMax - maxX;
-
-            // Map rotation transition to SRS kick row (0–7)
-            int kickRow;
-            switch ((fromRot, rot))
-            {
-                case (0, 1): kickRow = 0; break;
-                case (1, 2): kickRow = 1; break;
-                case (2, 3): kickRow = 2; break;
-                case (3, 0): kickRow = 3; break;
-
-                case (1, 0): kickRow = 4; break;
-                case (2, 1): kickRow = 5; break;
-                case (3, 2): kickRow = 6; break;
-                case (0, 3): kickRow = 7; break;
-
-                default:
-                    // Fallback to safe index
-                    kickRow = 0;
-                    break;
-            }
-
-            for (int worldX = colLo; worldX <= colHi; worldX++)
-            {
-
-                // Calculate initial spawn position in world coords
-                Vector3Int spawnCell = board.spawnPosition;
-                var spawnPos = new Vector3Int(
-                    worldX,
-                    spawnCell.y - maxYOffset,
-                    0
-                );
-
-
-                // Quick check at spawn
-                if (!IsValidPlacement(board, cells, spawnPos, bounds))
-                {
-                    continue;
-                }
-
-                // Test wall kicks
-                Vector3Int kickPos = default;
-                bool kicked = false;
-                for (int k = 0; k < kicks.GetLength(1); k++)
-                {
-                    var off = kicks[kickRow, k];
-                    var p = spawnPos + new Vector3Int(off.x, off.y, 0);
-
-                    if (IsValidPlacement(board, cells, p, bounds))
-                    {
-                        kickPos = p;
-                        kicked = true;
-                        break;
-                    }
-                    else
-                    {
-                    }
-                }
-
-                if (!kicked)
-                {
-                    continue;
-                }
-
-                // Test sliding
-                int targetCol = kickPos.x - bounds.xMin;
-                if (!CanSlideTo(board, cells, spawnPos, targetCol, bounds))
-                {
-                    continue;
-                }
-
-                // Test drop
-                var dropPos = kickPos;
-                int dropSteps = 0;
-                while (dropPos.y > bounds.yMin &&
-                       IsValidPlacement(board, cells, dropPos + Vector3Int.down, bounds))
-                {
-                    dropPos += Vector3Int.down;
-                    dropSteps++;
-                }
-
-                if (IsValidPlacement(board, cells, dropPos, bounds))
-                {
-                    int actionIndex = (kickPos.x - bounds.xMin) * data.RotationCount + rot;
-                    validActions.Add(actionIndex);
-                }
-                else
-                {
-                }
-            }
-
-            // Update fromRot for next transition
-            fromRot = rot;
-        }
-
-        return validActions;
-    }
-
-    private static bool CanSlideTo(Board board, Vector2Int[] cells, Vector3Int startPos, int targetCol, RectInt bounds)
-    {
-        int currentCol = startPos.x - bounds.xMin;
-        int dx = targetCol - currentCol;
-        int step = Math.Sign(dx);
-
-        var pos = startPos;
-        for (int i = 0; i < Math.Abs(dx); i++)
-        {
-            pos += new Vector3Int(step, 0, 0);
-            if (!IsValidPlacement(board, cells, pos, bounds))
-                return false;
-        }
-        return true;
-    }
-
-
-
-    private static bool IsValidPlacement(Board board, Vector2Int[] cells, Vector3Int position, RectInt bounds)
-    {
-        foreach (Vector2Int cell in cells)
-        {
-            // Calculate absolute position of this cell
-            Vector3Int tilePosition = new Vector3Int(position.x + cell.x, position.y + cell.y, 0);
-
-            // Check if position is within bounds
-            Vector2Int tilePos2D = new Vector2Int(tilePosition.x, tilePosition.y);
-            if (!bounds.Contains(tilePos2D))
-            {
-                return false;
-            }
-
-            // Check if position is already occupied
-            if (board.tilemap.HasTile(tilePosition))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-
-    public void ResetAgent()
-    {
-        gameOver = false;
-        lastReward = 0f;
-        isExecutingAction = false;
-        waitingForNewPiece = false;
-        actionCompleted = false;
-        // ...any other state fields you need to clear...
-    }
-    private void DebugValidMoves()
-    {
-        List<int> validActions = GenerateValidActionIndices(board, currentPiece.data);
-
-        Debug.Log("=== VALID ACTIONS FOR CURRENT PIECE ===");
-        foreach (int action in validActions)
-        {
-            int column = action / 4;
-            int rotation = action % 4;
-            Debug.Log($"ActionIndex: {action} → Column: {column}, Rotation: {rotation}");
-        }
-
-        Debug.Log("Press Enter to continue...");
-        StartCoroutine(WaitForEnterKey());
-    }
-
-    private IEnumerator WaitForEnterKey()
-    {
-        Time.timeScale = 0f; // Pause the game
-
-        while (!Input.GetKeyDown(KeyCode.Return))
-        {
-            yield return null;
-        }
-
-        Time.timeScale = 1f; // Resume
-        Debug.Log("Resuming...");
-    }
-
-
 
     public void OnGameOver()
     {
         gameOver = true;
         lastReward = -10f; // Penalty for game over
         isExecutingAction = false;
-
         // Send game over state BEFORE resetting
         SendGameState();
-
 
     }
 
 
     public void OnLinesCleared(int lines)
     {
-        // Reward for line clears (exponential for multi-line clears)
         lastReward += lines * lines * 25f; // 25, 100, 225, 400 for 1, 2, 3, 4 lines
 
         if (lines == 4) // Tetris bonus
@@ -750,8 +343,6 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
             lastReward += 100f;
         }
 
-        // Send updated state immediately after line clear
-        SendGameState();
     }
 
     void OnDestroy()
@@ -764,138 +355,119 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         }
     }
 
-    // Add this method to your SocketTetrisAgent class
-    private GameState GetGroundStateAndMetrics()
+
+    /// <summary>
+    /// Enumerate all valid (column, rotation) placements for the current piece,
+    /// simulate each drop on a cloned board, and return metrics.
+    /// </summary>
+    private Dictionary<(int col, int rot), float[]> GetMoveMetricsForCurrentPiece()
     {
-        var bounds = board.Bounds;
-        var stateData = new GameState();
+        var results = new Dictionary<(int, int), float[]>();
 
-        // Create a copy of the board state WITHOUT the active piece
-        bool[,] groundBoard = new bool[bounds.width, bounds.height];
-        float[] boardArray = new float[bounds.width * bounds.height];
-        // int[] heights = new int[bounds.width];
-        // Copy only the locked tiles (not the active piece)
-        int arrayIndex = 0;
-        for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
+        if (currentPiece == null || board == null)
         {
-            for (int x = bounds.xMin; x < bounds.xMax; x++)
-            {
-                Vector3Int pos = new Vector3Int(x, y, 0);
-                bool hasTile = board.tilemap.HasTile(pos);
+            Debug.LogWarning("Cannot calculate move metrics: piece or board is null");
+            return results;
+        }
+        // Create snapshots for simulation
+        var origBoard = new BoardData(board);
+        var origPiece = new PieceState(currentPiece);
+        if (origBoard.IsGameOverCondition())
+        {
+            Debug.Log("Game over condition detected - center columns in top row are blocked");
+            return results; // Return empty dictionary
+        }
 
-                // Check if this position is occupied by the current piece
-                bool isActivePiece = false;
-                if (currentPiece != null)
+        int w = board.boardSize.x;
+        int halfW = board.Bounds.width / 2;
+
+
+        for (int rot = 0; rot < currentPiece.data.RotationCount; rot++)
+        {
+            for (int colIdx = 0; colIdx < w; colIdx++)
+            {
+                try
                 {
-                    foreach (Vector2Int cell in currentPiece.cells)
+
+                    // Create fresh clones for simulation
+                    var simBoard = origBoard.Clone();
+                    var simPiece = origPiece.Clone();
+
+                    int rotCount = simPiece.data.RotationCount;
+                    int steps = (rot - simPiece.rotationIndex + rotCount) % rotCount;
+                    for (int i = 0; i < steps; i++)
                     {
-                        Vector3Int piecePos = new Vector3Int(
-                            currentPiece.position.x + cell.x,
-                            currentPiece.position.y + cell.y,
-                            0
-                        );
-                        if (piecePos.x == x && piecePos.y == y)
+                        simPiece.RotateCW();
+                    }
+
+
+                    // Move horizontally
+                    int leftX = simPiece.Cells.Min(c => simPiece.position.x + c.x);
+                    int targetX = colIdx - halfW;
+                    int offset = targetX - leftX;
+                    var dir = offset > 0 ? Vector2Int.right : Vector2Int.left;
+                    bool couldMoveAllTheWay = true;
+                    for (int s = 0; s < Mathf.Abs(offset); s++)
+                    {
+                        var np = simPiece.position + dir;
+                        if (!simBoard.IsValidPosition(simPiece, np))
                         {
-                            isActivePiece = true;
+                            couldMoveAllTheWay = false;
                             break;
                         }
+                        simPiece.position = np;
                     }
+                    if (!couldMoveAllTheWay)
+                        continue;
+
+                    // Hard drop
+                    while (simBoard.IsValidPosition(simPiece, simPiece.position + Vector2Int.down))
+                    {
+                        simPiece.position += Vector2Int.down;
+                    }
+
+
+                    //     Debug.Log($"Simulated placement @ col={colIdx}, rot={rot}:\n" +
+                    //   simBoard.DumpToString());
+                    // Place piece and calculate metrics
+                    int lines = simBoard.PlaceAndClear(simPiece);
+                    float holes = simBoard.CountHoles();
+                    float bumpiness = simBoard.GetBumpinessScore();
+                    float height = simBoard.CalculateStackHeight();
+                    results[(colIdx, rot)] = new float[] { lines, holes, bumpiness, height
+};
                 }
-
-                // Only count as filled if it's a tile AND not part of active piece
-                bool isGroundTile = hasTile && !isActivePiece;
-
-                int boardX = x - bounds.xMin;
-                int boardY = y - bounds.yMin;
-                groundBoard[boardX, boardY] = isGroundTile;
-                boardArray[arrayIndex++] = isGroundTile ? 1f : 0f;
+                catch (System.Exception e)
+                {
+                    Debug.LogError($"Error calculating metrics for col={colIdx}, rot={rot}: {e.Message}");
+                    continue;
+                }
             }
         }
 
-        // // Calculate heights
-        // for (int x = 0; x < bounds.width; x++)
-        // {
-        //     heights[x] = 0;
-        //     for (int y = bounds.height - 1; y >= 0; y--)
-        //     {
-        //         if (groundBoard[x, y])
-        //         {
-        //             heights[x] = y + 1;
-        //             break;
-        //         }
-        //     }
-        // }
 
-        // Calculate holes
-        // int holes = 0;
-        // for (int x = 0; x < bounds.width; x++)
-        // {
-        //     bool foundTop = false;
-        //     for (int y = bounds.height - 1; y >= 0; y--)
-        //     {
-        //         if (groundBoard[x, y])
-        //         {
-        //             foundTop = true;
-        //         }
-        //         else if (foundTop)
-        //         {
-        //             holes++;
-        //         }
-        //     }
-        // }
+        // now print out every move and its metrics:
+        foreach (var kvp in results)
+        {
+            // deconstruct the tuple key into column index and rotation
+            var (colIdx, rot) = kvp.Key;
+            float[] metrics = kvp.Value;
 
-        // Calculate covered holes
-        // int coveredHoles = 0;
-        // for (int x = 0; x < bounds.width; x++)
-        // {
-        //     for (int y = 0; y < bounds.height - 1; y++)
-        //     {
-        //         if (!groundBoard[x, y] && groundBoard[x, y + 1])
-        //         {
-        //             coveredHoles++;
-        //         }
-        //     }
-        // }
-
-        // Calculate bumpiness
-        // float bumpiness = 0f;
-        // for (int x = 0; x < bounds.width - 1; x++)
-        // {
-        //     bumpiness += Mathf.Abs(heights[x] - heights[x + 1]);
-        // }
-
-        // Calculate stack height (max height)
-        // float stackHeight = 0f;
-        // foreach (int height in heights)
-        // {
-        //     if (height > stackHeight)
-        //         stackHeight = height;
-        // }
-
-        // Check if perfect clear
-        // bool perfectClear = true;
-        // for (int x = 0; x < bounds.width && perfectClear; x++)
-        // {
-        //     for (int y = 0; y < bounds.height && perfectClear; y++)
-        //     {
-        //         if (groundBoard[x, y])
-        //         {
-        //             perfectClear = false;
-        //         }
-        //     }
-        // }
-
-        // Fill the state data
-        stateData.board = boardArray;
-        // stateData.heights = heights;
-        // stateData.holesCount = holes;
-        // stateData.covered = coveredHoles;
-        // stateData.bumpiness = bumpiness;
-        // stateData.stackHeight = stackHeight;
-        // stateData.perfectClear = perfectClear;
-
-        return stateData;
+            // metrics[0] = lines cleared
+            // metrics[1] = holes created
+            // metrics[2] = bumpiness
+            // metrics[3] = resulting height
+            Debug.Log($"Move → Column: {colIdx}, Rotation: {rot} | " +
+                      $"Lines: {metrics[0]}, Holes: {metrics[1]}, " +
+                      $"Bumpiness: {metrics[2]}, Height: {metrics[3]}");
+        }
+        Debug.Log($"Calculated metrics for {results.Count} valid moves");
+        return results;
     }
+    // Inside the BoardData class
+
+
+
 }
 
 

@@ -13,27 +13,27 @@ public class Ghost : MonoBehaviour
 
     private void Awake()
     {
-        this.tilemap = GetComponentInChildren<Tilemap>();
-        this.cells = new Vector3Int[4];
+        // this.tilemap = GetComponentInChildren<Tilemap>();
+        // this.cells = new Vector3Int[4];
     }
 
     private void LateUpdate()
     {
-        // Safety check to make sure everything is initialized
-        if (trackingPiece == null || board == null)
-        {
-            return;
-        }
+        // // Safety check to make sure everything is initialized
+        // if (trackingPiece == null || board == null)
+        // {
+        //     return;
+        // }
 
-        // Ensure the piece has cells initialized
-        if (trackingPiece.cells == null)
-        {
-            return;
-        }
-        Clear();
-        Copy();
-        Drop();
-        Set();
+        // // Ensure the piece has cells initialized
+        // if (trackingPiece.cells == null)
+        // {
+        //     return;
+        // }
+        // Clear();
+        // Copy();
+        // Drop();
+        // Set();
     }
 
 
@@ -71,7 +71,7 @@ public class Ghost : MonoBehaviour
         for (int row = current; row >= bottom; row--)
         {
             position.y = row;
-            if (this.board.IsValidPosition(this.trackingPiece, position))
+            if (this.board.IsValidPosition2(this.trackingPiece, position))
             {
                 this.position = position;
             }

@@ -8,7 +8,7 @@ using System.Collections.Generic;
 public class Board : MonoBehaviour
 {
     public Tilemap tilemap { get; private set; }
-    public Piece activePiece { get; private set; }
+    public Piece activePiece;
     public TetrominoData nextPieceData { get; private set; }
     public string playerTag;
     private bool gameOverTriggered = false;
@@ -57,7 +57,7 @@ public class Board : MonoBehaviour
     public NextPiece nextPieceDisplay;
 
     // Flag to check if we're in ML training mode
-    private bool isMLTraining = false;
+    public bool isMLTraining = false;
 
     public RectInt Bounds
     {
@@ -71,11 +71,11 @@ public class Board : MonoBehaviour
 
             if (mlAgent != null)
             {
-                height = (int)mlAgent.curriculumBoardHeight;
+                height = 20;
             }
             else if (socketAgent != null)
             {
-                height = (int)socketAgent.curriculumBoardHeight;
+                height = 20;
             }
 
             Vector2Int position = new Vector2Int(-this.boardSize.x / 2, -height / 2);
@@ -122,19 +122,19 @@ public class Board : MonoBehaviour
         {
             socketAgent.SetBoard(this);
         }
-        UpdateGridVisualization();
+        // ClearBoard();
 
-        // Apply initial curriculum
-        ApplyCurriculumBoardPreset();
+        // // Apply initial curriculum
+        // // ApplyCurriculumBoardPreset();
 
-        // Only spawn a piece if all components are properly initialized
-        if (activePiece != null && tetrominoes != null && tetrominoes.Length > 0)
-        {
-            SpawnPiece();
-        }
-        else
-        {
-        }
+        // // Only spawn a piece if all components are properly initialized
+        // if (activePiece != null && tetrominoes != null && tetrominoes.Length > 0)
+        // {
+        //     SpawnPiece();
+        // }
+        // else
+        // {
+        // }
 
         if (playerTagHolder != null)
         {
@@ -142,327 +142,7 @@ public class Board : MonoBehaviour
         }
     }
 
-    public void ApplyCurriculumBoardPreset()
-    {
-        int preset = 0; // Default to empty board
-        int boardHeight = 20; // Default board height
 
-        // Check for both types of ML agents
-        SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
-
-        if (socketAgent != null)
-        {
-            preset = socketAgent.curriculumBoardPreset;
-            boardHeight = (int)socketAgent.curriculumBoardHeight;
-        }
-
-
-        ClearBoard(); // Always start clean
-        UpdateGridVisualization(); // Update grid visualization after clearing
-        ApplyBoardPreset(preset, boardHeight);
-
-
-    }
-
-    private void ApplyBoardPreset(int preset, int boardHeight)
-    {
-        // Adjust bounds based on curriculum board height
-        RectInt bounds = this.Bounds; // This will use the updated height
-
-        // Your existing preset logic here...
-        // (Keep all your switch statement code)
-        // Adjust bounds based on curriculum board height
-        int maxY = bounds.yMin + boardHeight - 1;
-
-        switch (preset)
-        {
-            case 0: // empty_board - Full Tetris game
-                // Empty board - no pre-configuration
-                break;
-
-            case 1: // minimal_pre_config - Single obvious I-piece placement
-                {
-                    // For small boards (6-8 height), use bottom row
-                    // For larger boards, place higher to avoid immediate danger
-                    int targetRow = bounds.yMin;
-
-                    // Create I-piece gap (4 spaces) - NEVER fill completely
-                    int gapStart = Random.Range(bounds.xMin, bounds.xMax - 3);
-                    int gapEnd = gapStart + 4;
-
-                    for (int col = bounds.xMin; col < bounds.xMax; col++)
-                    {
-                        if (col < gapStart || col >= gapEnd)
-                        {
-                            SetTile(col, targetRow);
-                        }
-                    }
-
-                    // Ensure we never create a complete line
-                    if (gapEnd - gapStart >= bounds.xMax - bounds.xMin)
-                    {
-                        // If gap would be entire row, add one tile
-                        SetTile(gapStart, targetRow);
-                    }
-                }
-                break;
-
-            case 2: // basic_placement - Two-piece scenarios
-                {
-                    int workingHeight = Mathf.Min(3, boardHeight - 1);
-
-                    // Bottom row: I-piece opportunity (4 gaps)
-                    int iPieceGap = Random.Range(bounds.xMin, bounds.xMax - 3);
-                    for (int col = bounds.xMin; col < bounds.xMax; col++)
-                    {
-                        if (col < iPieceGap || col >= iPieceGap + 4)
-                        {
-                            SetTile(col, bounds.yMin);
-                        }
-                    }
-
-                    if (workingHeight >= 2)
-                    {
-                        // Second row: O-piece opportunity (2 gaps) - different position
-                        int oPieceGap = iPieceGap >= bounds.xMin + 2 ?
-                            Random.Range(bounds.xMin, iPieceGap - 1) :
-                            Random.Range(iPieceGap + 4, bounds.xMax - 1);
-
-                        for (int col = bounds.xMin; col < bounds.xMax; col++)
-                        {
-                            if (col < oPieceGap || col >= oPieceGap + 2)
-                            {
-                                SetTile(col, bounds.yMin + 1);
-                            }
-                        }
-                    }
-                }
-                break;
-
-            case 3: // guided_stacking - Multi-piece practice (I, O, T pieces)
-                {
-                    int workingHeight = Mathf.Min(4, boardHeight - 1);
-
-                    // Create multiple placement opportunities for different piece types
-                    int patternChoice = Random.Range(0, 3);
-
-                    switch (patternChoice)
-                    {
-                        case 0: // T-piece focused pattern
-                            {
-                                int tCenter = Random.Range(bounds.xMin + 1, bounds.xMax - 1);
-
-                                // Bottom row: fill everything except center gap for T-piece stem
-                                for (int col = bounds.xMin; col < bounds.xMax; col++)
-                                {
-                                    if (col != tCenter)
-                                    {
-                                        SetTile(col, bounds.yMin);
-                                    }
-                                }
-
-                                if (workingHeight >= 2)
-                                {
-                                    // Second row: leave 3-wide gap for T-piece arms
-                                    for (int col = bounds.xMin; col < bounds.xMax; col++)
-                                    {
-                                        if (col < tCenter - 1 || col > tCenter + 1)
-                                        {
-                                            SetTile(col, bounds.yMin + 1);
-                                        }
-                                    }
-                                }
-                            }
-                            break;
-
-                        case 1: // I-piece + O-piece pattern
-                            {
-                                // Create both a 4-wide gap (I-piece) and 2x2 area (O-piece)
-                                int iPieceStart = Random.Range(bounds.xMin, bounds.xMax - 3);
-
-                                // Bottom row: I-piece gap
-                                for (int col = bounds.xMin; col < bounds.xMax; col++)
-                                {
-                                    if (col < iPieceStart || col >= iPieceStart + 4)
-                                    {
-                                        SetTile(col, bounds.yMin);
-                                    }
-                                }
-
-                                if (workingHeight >= 3)
-                                {
-                                    // Create O-piece opportunity in a different area
-                                    int oPieceStart = iPieceStart >= bounds.xMin + 2 ?
-                                        Random.Range(bounds.xMin, iPieceStart - 1) :
-                                        Random.Range(iPieceStart + 4, bounds.xMax - 1);
-
-                                    // Rows 1 and 2: create 2x2 gap for O-piece
-                                    for (int row = 1; row <= 2; row++)
-                                    {
-                                        for (int col = bounds.xMin; col < bounds.xMax; col++)
-                                        {
-                                            if (col < oPieceStart || col >= oPieceStart + 2)
-                                            {
-                                                SetTile(col, bounds.yMin + row);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            break;
-
-                        case 2: // Mixed opportunities - all three pieces
-                            {
-                                // Bottom: partial fill with I-piece gap
-                                int iPieceGap = Random.Range(bounds.xMin, bounds.xMax - 3);
-                                for (int col = bounds.xMin; col < bounds.xMax; col++)
-                                {
-                                    if (col < iPieceGap || col >= iPieceGap + 4)
-                                    {
-                                        SetTile(col, bounds.yMin);
-                                    }
-                                }
-
-                                if (workingHeight >= 2)
-                                {
-                                    // Middle: O-piece opportunity
-                                    int oPieceGap = Random.Range(bounds.xMin, bounds.xMax - 1);
-                                    for (int col = bounds.xMin; col < bounds.xMax; col++)
-                                    {
-                                        if (col < oPieceGap || col >= oPieceGap + 2)
-                                        {
-                                            SetTile(col, bounds.yMin + 1);
-                                        }
-                                    }
-                                }
-
-                                if (workingHeight >= 4)
-                                {
-                                    // Top: T-piece opportunity
-                                    int tCenter = Random.Range(bounds.xMin + 1, bounds.xMax - 1);
-
-                                    // Create inverted T cavity
-                                    for (int col = bounds.xMin; col < bounds.xMax; col++)
-                                    {
-                                        if (col != tCenter)
-                                        {
-                                            SetTile(col, bounds.yMin + 2);
-                                        }
-                                    }
-
-                                    for (int col = bounds.xMin; col < bounds.xMax; col++)
-                                    {
-                                        if (col < tCenter - 1 || col > tCenter + 1)
-                                        {
-                                            SetTile(col, bounds.yMin + 3);
-                                        }
-                                    }
-                                }
-                            }
-                            break;
-                    }
-
-                }
-                break;
-
-            case 4: // structured_challenge - Multi-piece strategy
-                {
-                    int workingHeight = Mathf.Min(6, boardHeight - 1);
-
-                    // Create stepped structure with placement opportunities
-                    for (int row = 0; row < workingHeight; row++)
-                    {
-                        int currentRow = bounds.yMin + row;
-                        int blocksToPlace = (bounds.xMax - bounds.xMin) - (row + 2); // Fewer blocks each row up
-
-                        if (blocksToPlace > 0)
-                        {
-                            // Distribute blocks with strategic gaps
-                            int gapSize = Random.Range(2, 4); // Gap for different pieces
-                            int gapStart = Random.Range(bounds.xMin, bounds.xMax - gapSize);
-
-                            for (int col = bounds.xMin; col < bounds.xMax; col++)
-                            {
-                                if (col < gapStart || col >= gapStart + gapSize)
-                                {
-                                    SetTile(col, currentRow);
-                                }
-                            }
-                        }
-                    }
-                }
-                break;
-
-            case 5: // complex_scenario - Advanced multi-level challenge
-                {
-                    int workingHeight = Mathf.Min(8, boardHeight - 2); // Leave room at top
-
-                    // Create complex but solvable structure
-                    // Bottom foundation with wells
-                    for (int col = bounds.xMin; col < bounds.xMax; col++)
-                    {
-                        // Create wells every 5 columns for I-pieces
-                        bool isWell = (col - bounds.xMin) % 5 == 2;
-                        if (!isWell)
-                        {
-                            // Fill bottom 3 rows of non-well columns
-                            for (int wellRow = 0; wellRow < 3 && wellRow < workingHeight; wellRow++)
-                            {
-                                SetTile(col, bounds.yMin + wellRow);
-                            }
-                        }
-                    }
-
-                    // Mid-level irregular pattern
-                    if (workingHeight >= 5)
-                    {
-                        for (int col = bounds.xMin; col < bounds.xMax; col++)
-                        {
-                            int pattern = (col - bounds.xMin) % 4;
-                            if (pattern == 0 || pattern == 3) // Irregular placement
-                            {
-                                SetTile(col, bounds.yMin + 3);
-                                if (pattern == 0 && workingHeight >= 6)
-                                {
-                                    SetTile(col, bounds.yMin + 4);
-                                }
-                            }
-                        }
-                    }
-
-                    // Top level structures
-                    if (workingHeight >= 7)
-                    {
-                        // Create scattered placement opportunities
-                        int structures = Random.Range(2, 4);
-                        for (int s = 0; s < structures; s++)
-                        {
-                            int structStart = Random.Range(bounds.xMin, bounds.xMax - 2);
-                            int structWidth = Random.Range(2, 4);
-
-                            for (int w = 0; w < structWidth && structStart + w < bounds.xMax; w++)
-                            {
-                                SetTile(structStart + w, bounds.yMin + 5 + s);
-                            }
-                        }
-                    }
-                }
-                break;
-
-            default:
-                break;
-        }
-
-
-    }
-
-    private void SetTile(int x, int y)
-    {
-        if (x >= Bounds.xMin && x < Bounds.xMax && y >= Bounds.yMin && y < Bounds.yMax)
-        {
-            tilemap.SetTile(new Vector3Int(x, y, 0), tetrominoes[0].tile);
-        }
-    }
 
     private void Update()
     {
@@ -471,16 +151,12 @@ public class Board : MonoBehaviour
             this.playerScoreToDisplay.text = this.playerScore.ToString();
         }
 
-        CheckForBoardHeightChange();
         // if (fireBorderController != null)
         // {
         //     fireBorderController.SetGameSpeed(1f / CurrentDropRate);
         // }
     }
 
-    [Header("Curriculum Settings")]
-    public int maxTetrominoTypes = 7;
-    public float curriculumBoardHeight = 20f;
 
     public void GenerateNextPiece()
     {
@@ -510,69 +186,31 @@ public class Board : MonoBehaviour
         }
     }
 
-    private void CheckForBoardHeightChange()
+
+    public void ReadyThePieceForSpwan()
     {
-        int currentHeight = 20; // Default
+        TetrominoData pieceToUse;
 
-        // Check for both types of ML agents
-        TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
-        SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
-
-        if (mlAgent != null)
+        if (this.nextPieceData.Equals(default(TetrominoData)))
         {
-            currentHeight = (int)mlAgent.curriculumBoardHeight;
+            // No next piece, generate one
+            GenerateNextPiece();
+            pieceToUse = this.nextPieceData;
         }
-        else if (socketAgent != null)
+        else
         {
-            currentHeight = (int)socketAgent.curriculumBoardHeight;
+            pieceToUse = this.nextPieceData;
         }
 
-        if (currentHeight != lastBoardHeight)
-        {
-            lastBoardHeight = currentHeight;
+        // Initialize the piece but don't place it on the board yet
+        this.activePiece.Initialize(this, this.spawnPosition, pieceToUse, this.inputController);
 
-            UpdateGridVisualization();
-            ClearBoard();
-            ApplyCurriculumBoardPreset();
-
-            // Reset the active piece to reflect curriculum change
-            if (activePiece != null)
-            {
-                Clear(activePiece);
-            }
-
-            // Spawn a new piece using updated curriculum parameters
-            SpawnPiece();
-        }
+        // Generate the next piece for display
+        GenerateNextPiece();
+        Debug.Log($"Piece ready for spawn: {pieceToUse} at {this.spawnPosition}");
     }
 
-    public void ForceCurriculumUpdate()
-    {
-        lastBoardHeight = -1; // Force update on next check
-        CheckForBoardHeightChange();
-    }
 
-    private void UpdateGridVisualization()
-    {
-        if (gridSpriteRenderer == null) return;
-
-        RectInt bounds = this.Bounds;
-
-        // Calculate the scale needed to match the current board size
-        // Assuming the original grid sprite is designed for 10x20
-        float originalWidth = 10f;
-        float originalHeight = 20f;
-
-        float scaleX = boardSize.x / originalWidth;
-        float scaleY = bounds.height / originalHeight;
-
-        // Apply the new scale
-        gridSpriteRenderer.transform.localScale = new Vector3(scaleX, scaleY, 1f);
-
-        // Position the grid to match the board bounds
-        Vector3 gridCenter = new Vector3(bounds.center.x, bounds.center.y, gridSpriteRenderer.transform.position.z);
-        gridSpriteRenderer.transform.position = gridCenter;
-    }
 
     public void SpawnPiece()
     {
@@ -606,226 +244,12 @@ public class Board : MonoBehaviour
         else
         {
             Data.PlayerScore = this.playerScore;
-            GameOver();
         }
-    }
-    // In Board.cs
-
-    public int[] GetColumnHeights()
-    {
-        RectInt bounds = this.Bounds;
-        int[] heights = new int[bounds.width];
-
-        for (int x = bounds.xMin; x < bounds.xMax; x++)
-        {
-            int columnIndex = x - bounds.xMin;
-            heights[columnIndex] = 0;
-            for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
-            {
-                if (tilemap.HasTile(new Vector3Int(x, y, 0)))
-                {
-                    heights[columnIndex] = bounds.yMax - y;
-                    break;
-                }
-            }
-        }
-        return heights;
-    }
-    public float[] GetGroundBoardState()
-    {
-        var bounds = Bounds;
-        var arr = new float[bounds.width * bounds.height];
-        int idx = 0;
-        for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
-            for (int x = bounds.xMin; x < bounds.xMax; x++)
-                arr[idx++] = tilemap.HasTile(new Vector3Int(x, y, 0)) ? 1f : 0f;
-        return arr;
-    }
-
-
-    public int CountCoveredHoles()
-    {
-        RectInt bounds = this.Bounds;
-        int covered = 0;
-
-        for (int x = bounds.xMin; x < bounds.xMax; x++)
-        {
-            bool foundBlock = false;
-            for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
-            {
-                Vector3Int pos = new Vector3Int(x, y, 0);
-                if (tilemap.HasTile(pos))
-                {
-                    foundBlock = true;
-                }
-                else if (foundBlock)
-                {
-                    covered++;
-                }
-            }
-        }
-        return covered;
-    }
-
-    public int GetBumpinessScore()
-    {
-        int[] heights = GetColumnHeights();
-        int bumpiness = 0;
-        for (int i = 0; i < heights.Length - 1; i++)
-        {
-            bumpiness += Mathf.Abs(heights[i] - heights[i + 1]);
-        }
-        return bumpiness;
-    }
-
-    public float CalculateStackHeight()
-    {
-        int maxHeight = 0;
-        for (int x = Bounds.xMin; x < Bounds.xMax; x++)
-        {
-            for (int y = Bounds.yMax - 1; y >= Bounds.yMin; y--)
-            {
-                if (tilemap.HasTile(new Vector3Int(x, y, 0))) // Found a filled cell
-                {
-                    maxHeight = Mathf.Max(maxHeight, Bounds.yMax - y);
-                    break;
-                }
-            }
-        }
-        return maxHeight;
-    }
-
-    public List<Vector2Int> GetHolePositions()
-    {
-        List<Vector2Int> holes = new List<Vector2Int>();
-        RectInt bounds = this.Bounds;
-
-        for (int x = bounds.xMin; x < bounds.xMax; x++)
-        {
-            bool blockAbove = false;
-            for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
-            {
-                if (tilemap.HasTile(new Vector3Int(x, y, 0)))
-                {
-                    blockAbove = true;
-                }
-                else if (blockAbove)
-                {
-                    holes.Add(new Vector2Int(x, y));
-                }
-            }
-        }
-        return holes;
-    }
-
-    public int CountHoles()
-    {
-        int holes = 0;
-        for (int x = Bounds.xMin; x < Bounds.xMax; x++)
-        {
-            bool blockFound = false;
-            for (int y = Bounds.yMax - 1; y >= Bounds.yMin; y--)
-            {
-                if (tilemap.HasTile(new Vector3Int(x, y, 0)))
-                {
-                    blockFound = true;
-                }
-                else if (blockFound)
-                {
-                    // Empty cell below a block is a hole
-                    holes++;
-                }
-            }
-        }
-        return holes;
-    }
-
-    public int[] GetRowFillCounts()
-    {
-        int[] rowFills = new int[Bounds.size.y];
-
-        for (int y = Bounds.yMin; y < Bounds.yMax; y++)
-        {
-            int fillCount = 0;
-            for (int x = Bounds.xMin; x < Bounds.xMax; x++)
-            {
-                if (tilemap.HasTile(new Vector3Int(x, y, 0)))
-                {
-                    fillCount++;
-                }
-            }
-            rowFills[y - Bounds.yMin] = fillCount;
-        }
-
-        return rowFills;
-    }
-
-    public bool IsPerfectClear()
-    {
-        RectInt bounds = this.Bounds;
-
-        for (int x = bounds.xMin; x < bounds.xMax; x++)
-        {
-            for (int y = bounds.yMin; y < bounds.yMax; y++)
-            {
-                if (tilemap.HasTile(new Vector3Int(x, y, 0)))
-                {
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }
-
-    public bool LastRotationWasUseless(Piece piece, Vector3Int originalPosition, Vector3Int[] originalCells)
-    {
-        Vector3Int[] rotatedCells = piece.cells;
-        for (int i = 0; i < originalCells.Length; i++)
-        {
-            if (originalCells[i] + originalPosition != rotatedCells[i] + piece.position)
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    public bool HasDeepWell(int depthThreshold = 4)
-    {
-        RectInt bounds = this.Bounds;
-
-        for (int x = bounds.xMin + 1; x < bounds.xMax - 1; x++)
-        {
-            int currentDepth = 0;
-            for (int y = bounds.yMin; y < bounds.yMax; y++)
-            {
-                bool centerEmpty = !tilemap.HasTile(new Vector3Int(x, y, 0));
-                bool leftFilled = tilemap.HasTile(new Vector3Int(x - 1, y, 0));
-                bool rightFilled = tilemap.HasTile(new Vector3Int(x + 1, y, 0));
-
-                if (centerEmpty && leftFilled && rightFilled)
-                {
-                    currentDepth++;
-                    if (currentDepth >= depthThreshold)
-                    {
-                        return true;
-                    }
-                }
-                else
-                {
-                    currentDepth = 0;
-                }
-            }
-        }
-
-        return false;
     }
 
     private void GameOver()
     {
-        if (gameOverTriggered) return;
-        gameOverTriggered = true;
+
         // Notify ML agent if this is an ML agent-controlled board
         SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
         // new: clear *first*, then notify and reset
@@ -833,12 +257,10 @@ public class Board : MonoBehaviour
         {
 
             // 1) immediately clear any existing tiles
-            ClearBoard();
             // 2) let Python know the game is over on an empty board
             socketAgent.OnGameOver();
 
             // 3) schedule the curriculum reset + spawn
-            StartCoroutine(ResetGameAfterSocketGameOver());
             return;
         }
 
@@ -857,24 +279,7 @@ public class Board : MonoBehaviour
         // Load game over scene only if not in ML training
         SceneManager.LoadScene(2);
     }
-    private IEnumerator ResetGameAfterSocketGameOver()
-    {
-        yield return new WaitForSeconds(0.1f);
 
-        // reset flags & score/timer
-        // 1) reset board state
-        gameOverTriggered = false;
-        playerScore = 0;
-        gameStartTime = Time.time;
-
-        // 2) reset the agent’s gameOver flag so sendGameState() reports false
-        if (inputController is SocketTetrisAgent socketAgent)
-        {
-            socketAgent.ResetAgent();
-        }
-        ApplyCurriculumBoardPreset();
-        SpawnPiece();
-    }
 
     private IEnumerator ResetGameForMLTraining()
     {
@@ -883,7 +288,7 @@ public class Board : MonoBehaviour
 
         // Reset the board
         ClearBoard();
-        ApplyCurriculumBoardPreset();
+        // ApplyCurriculumBoardPreset();
         this.playerScore = 0;
         this.gameStartTime = Time.time;
 
@@ -891,18 +296,19 @@ public class Board : MonoBehaviour
         SpawnPiece();
     }
 
-    private void ClearBoard()
+    public void ClearBoard()
     {
         // Clear the entire tilemap
-        RectInt bounds = this.Bounds;
-        for (int row = bounds.yMin; row < bounds.yMax; row++)
-        {
-            for (int col = bounds.xMin; col < bounds.xMax; col++)
-            {
-                Vector3Int position = new Vector3Int(col, row, 0);
-                this.tilemap.SetTile(position, null);
-            }
-        }
+        // RectInt bounds = this.Bounds;
+        // for (int row = bounds.yMin; row < bounds.yMax; row++)
+        // {
+        //     for (int col = bounds.xMin; col < bounds.xMax; col++)
+        //     {
+        //         Vector3Int position = new Vector3Int(col, row, 0);
+        //         this.tilemap.SetTile(position, null);
+        //     }
+        // }
+        tilemap.ClearAllTiles();
     }
 
     public void Set(Piece piece)
@@ -933,18 +339,63 @@ public class Board : MonoBehaviour
 
             if (!bounds.Contains((Vector2Int)tilePosition))
             {
+                // DumpTilemap(bounds);
+
                 return false;
             }
 
             if (this.tilemap.HasTile(tilePosition))
             {
+                Debug.LogError($"Collision at cell #{i} → {tilePosition}. Dumping map:");
+                // DumpTilemap(bounds);
+                SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
+                if (socketAgent != null)
+                {
+                    socketAgent.TriggerGameOver();
+                }
+                return false;
+            }
+        }
+        return true;
+    }
+    public void DumpTilemap(RectInt bounds)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("=== TILEMAP DUMP ===");
+        for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
+        {
+            for (int x = bounds.xMin; x < bounds.xMax; x++)
+            {
+                var has = tilemap.HasTile(new Vector3Int(x, y, 0)) ? 'X' : '.';
+                sb.Append(has);
+            }
+            sb.AppendLine();
+        }
+        Debug.Log(sb.ToString());
+    }
+    public bool IsValidPosition2(Piece piece, Vector3Int position)
+    {
+        RectInt bounds = this.Bounds;
+
+        for (int i = 0; i < piece.cells.Length; i++)
+        {
+            Vector3Int tilePosition = piece.cells[i] + position;
+
+            if (!bounds.Contains((Vector2Int)tilePosition))
+            {
+                return false;
+            }
+
+            if (this.tilemap.HasTile(tilePosition))
+            {
+
                 return false;
             }
         }
         return true;
     }
 
-    public void ClearLines()
+    public int ClearLines()
     {
         RectInt bounds = this.Bounds;
         int row = bounds.yMin;
@@ -994,6 +445,7 @@ public class Board : MonoBehaviour
         {
             StartCoroutine(ApplyTemporarySpeedBoost(0.1f, 2f));
         }
+        return linesCleared;
     }
 
     private float temporarySpeedBoost = 0f;
@@ -1085,5 +537,57 @@ public class Board : MonoBehaviour
             }
             row++;
         }
+    }
+
+    /// <summary>
+    /// Scans each row, removes any that are full,
+    /// drops everything above down one, and returns the count.
+    /// </summary>
+    public int ClearLinesCount()
+    {
+        int cleared = 0;
+        int width = boardSize.x;
+        int height = boardSize.y;
+
+        // for each row from bottom up
+        for (int y = 0; y < height; y++)
+        {
+            bool full = true;
+            for (int x = 0; x < width; x++)
+            {
+                if (!tilemap.HasTile(new Vector3Int(x + Bounds.xMin, y + Bounds.yMin, 0)))
+                {
+                    full = false;
+                    break;
+                }
+            }
+
+            if (full)
+            {
+                cleared++;
+
+                // remove that row
+                for (int x = 0; x < width; x++)
+                    tilemap.SetTile(new Vector3Int(x + Bounds.xMin, y + Bounds.yMin, 0), null);
+
+                // move everything above down one
+                for (int yy = y + 1; yy < height; yy++)
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        var abovePos = new Vector3Int(x + Bounds.xMin, yy + Bounds.yMin, 0);
+                        var belowPos = new Vector3Int(x + Bounds.xMin, yy - 1 + Bounds.yMin, 0);
+                        var tile = tilemap.GetTile(abovePos);
+                        tilemap.SetTile(belowPos, tile);
+                        tilemap.SetTile(abovePos, null);
+                    }
+                }
+
+                // after collapsing, re‐check this same y (since rows shifted down)
+                y--;
+            }
+        }
+
+        return cleared;
     }
 }

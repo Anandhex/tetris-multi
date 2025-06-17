@@ -174,7 +174,7 @@ public class Piece : MonoBehaviour
         newPosition.x += translation.x;
         newPosition.y += translation.y;
 
-        bool valid = board.IsValidPosition(this, newPosition);
+        bool valid = board.IsValidPosition2(this, newPosition);
 
         if (valid)
         {
@@ -274,17 +274,6 @@ public class Piece : MonoBehaviour
 
     public List<int> validActions { get; private set; }
 
-    public void ComputeAndStoreValidMoves(Board board)
-    {
-        if (board != null)
-        {
-            validActions = SocketTetrisAgent.GenerateValidActionIndices(board, data);
-        }
-        else
-        {
-            validActions = new List<int>();
-            Debug.LogWarning("Piece.ComputeAndStoreValidMoves called before board or data was set.");
-        }
-    }
+
 
 }

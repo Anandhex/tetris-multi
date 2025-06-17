@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading;
 using UnityEngine;
 using Newtonsoft.Json;
+using System.Collections.Generic;
 public class SocketManager : MonoBehaviour
 {
     [Header("Socket Settings")]
@@ -164,6 +165,43 @@ public class SocketManager : MonoBehaviour
     void OnDestroy()
     {
         StopServer();
+    }
+
+    /// <summary>
+    /// Send an arbitrary JSON message of the form:
+    ///   { "event": eventType, "data": payload }
+    /// over the existing Python socket.
+    /// </summary>
+    /// <summary>
+    /// Send an arbitrary JSON message of the form:
+    ///   { "type": eventType, "payload": payload }
+    /// over the existing Python socket.
+    /// </summary>
+    public void SendEvent(string eventType, object payload)
+    {
+        if (connectedTcpClient == null || !connectedTcpClient.Connected)
+            return;
+
+        // Build a simple dictionary to serialize
+        var msg = new Dictionary<string, object>
+        {
+            ["type"] = eventType,
+            ["payload"] = payload
+        };
+
+        string json = JsonConvert.SerializeObject(msg) + "\n";
+        // Debug.Log($"[SocketManager] Sending event '{eventType}' with payload: {JsonConvert.SerializeObject(payload)}");
+        byte[] bytes = Encoding.UTF8.GetBytes(json);
+
+        try
+        {
+            NetworkStream stream = connectedTcpClient.GetStream();
+            stream.Write(bytes, 0, bytes.Length);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[SocketManager] Failed to send event '{eventType}': {e}");
+        }
     }
 
     void StopServer()

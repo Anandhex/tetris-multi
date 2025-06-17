@@ -14,6 +14,8 @@ public class GameCommand
 public class ActionData
 {
     public int actionIndex; // 0-39 for your 40 discrete actions
+    public int col;
+    public int rot;
 }
 
 [System.Serializable]
