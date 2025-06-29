@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 75373432275478895}
   - component: {fileID: 4812752315115307965}
   - component: {fileID: 1840312990462139365}
+  - component: {fileID: 8670629934888384356}
   m_Layer: 0
   m_Name: Board
   m_TagString: Untagged
@@ -59,7 +60,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 54a01dce091f2448096b464202db5be9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  activePiece: {fileID: 0}
   playerTag: 
+  powerUpManagerComponent: {fileID: 4812752315115307965}
   tetrominoes:
   - tetromino: 0
     tile: {fileID: 11400000, guid: b1a7a7557876e426f8ef11c829e05d57, type: 2}
@@ -83,11 +86,10 @@ MonoBehaviour:
   playerScoreToDisplay: {fileID: 8639489407357629593}
   playerTagHolder: {fileID: 3256479484690809420}
   nextPieceDisplay: {fileID: 4290897403608542731}
+  isMLTraining: 0
   initialDropRate: 1
   speedIncreasePerMinute: 0.1
   minimumDropRate: 0.1
-  maxTetrominoTypes: 7
-  curriculumBoardHeight: 20
 --- !u!114 &1840312990462139365
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -106,6 +108,49 @@ MonoBehaviour:
   moveDelay: 0.1
   lockDelay: 0.5
   validMoves: 
+--- !u!114 &8670629934888384356
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 102491360067750926}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4e2c7cd6419be6946972355607652c63, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  availablePowerUps:
+  - type: 5
+    name: Line Clear
+    description: '"Clears random line"'
+    icon: {fileID: 0}
+    spawnWeight: 2
+  - type: 1
+    name: Line Blaster
+    description: Clears bottom line
+    icon: {fileID: 0}
+    spawnWeight: 2
+  - type: 3
+    name: Speed Boost
+    description: Makes pieces fall faster
+    icon: {fileID: 0}
+    spawnWeight: 0.5
+  - type: 8
+    name: Bomb
+    description: 3x3 area around your current piece gets cleared
+    icon: {fileID: 0}
+    spawnWeight: 1.5
+  - type: 9
+    name: Gravity
+    description: ' "Player received Gravity power-up!"'
+    icon: {fileID: 0}
+    spawnWeight: 1
+  powerUpChance: 1
+  powerUpSlotPrefab: {fileID: 0}
+  powerUpInventoryParent: {fileID: 0}
+  powerUpObtainedSound: {fileID: 0}
+  powerUpUsedSound: {fileID: 0}
 --- !u!1 &646191590067879835
 GameObject:
   m_ObjectHideFlags: 0
