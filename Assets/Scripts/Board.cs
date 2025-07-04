@@ -226,12 +226,38 @@ public class Board : MonoBehaviour
         }
         else
         {
-            Data.PlayerScore = this.playerScore;
+            // GAME OVER - Cannot spawn new piece
+            Debug.Log("GAME OVER - Cannot spawn new piece!");
+            GameOver(); // Call the GameOver method instead of just setting score
         }
     }
 
+    // private void GameOver()
+    // {
+    //     SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
+    //     if (socketAgent != null)
+    //     {
+    //         socketAgent.OnGameOver();
+    //         return;
+    //     }
+
+    //     TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
+    //     if (mlAgent != null)
+    //     {
+    //         mlAgent.OnGameOver();
+    //         StartCoroutine(ResetGameForMLTraining());
+    //         return;
+    //     }
+
+    //     Data.PlayerScore = this.playerScore;
+    //     SceneManager.LoadScene(2);
+    // }
+
     private void GameOver()
     {
+        Debug.Log("=== GAME OVER ===");
+        
+        // Notify ML agents first (if applicable)
         SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
         if (socketAgent != null)
         {
@@ -247,8 +273,51 @@ public class Board : MonoBehaviour
             return;
         }
 
+        // For regular game over - simple restart
+        Debug.Log($"FINAL SCORE: {this.playerScore}");
         Data.PlayerScore = this.playerScore;
-        SceneManager.LoadScene(2);
+        
+        StartCoroutine(GameOverSequence());
+    }
+
+    private IEnumerator GameOverSequence()
+    {
+        // Stop new pieces from spawning
+        Time.timeScale = 0f;
+        
+        // Wait for real time (unscaled)
+        yield return new WaitForSecondsRealtime(2f);
+        
+        // Resume time
+        Time.timeScale = 1f;
+        
+        // Reset the game
+        RestartGame();
+    }
+
+    private void RestartGame()
+    {
+        Debug.Log("Restarting game...");
+        
+        // Clear the board
+        ClearBoard();
+        
+        // Reset score and time
+        this.playerScore = 0;
+        this.gameStartTime = Time.time;
+        
+        // Clear power-ups
+        PowerUpManager powerUpMgr = GetComponent<PowerUpManager>();
+        if (powerUpMgr != null)
+        {
+            // Clear the power-up inventory
+            powerUpMgr.ClearAllPowerUps();
+        }
+        
+        // Spawn new piece to restart
+        SpawnPiece();
+        
+        Debug.Log("Game restarted!");
     }
 
     private IEnumerator ResetGameForMLTraining()
@@ -308,12 +377,12 @@ public class Board : MonoBehaviour
 
             if (this.tilemap.HasTile(tilePosition))
             {
-                Debug.LogError($"Collision at cell #{i} → {tilePosition}. Dumping map:");
-                SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
-                if (socketAgent != null)
-                {
-                    socketAgent.TriggerGameOver();
-                }
+                // Debug.LogError($"Collision at cell #{i} → {tilePosition}. Dumping map:");
+                // SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
+                // if (socketAgent != null)
+                // {
+                //     socketAgent.TriggerGameOver();
+                // }
                 return false;
             }
         }

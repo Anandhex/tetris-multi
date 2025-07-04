@@ -2,11 +2,12 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Linq; 
 using UnityEngine.Tilemaps;
+
 public class PowerUpManager : MonoBehaviour
 {
     [Header("Power-up Settings")]
     public PowerUp[] availablePowerUps;
-    public float powerUpChance = 0.3f;
+    public float powerUpChance = 0.8f;
     
     [Header("UI References")]
     public GameObject powerUpSlotPrefab;
@@ -20,50 +21,49 @@ public class PowerUpManager : MonoBehaviour
     private Board ownerBoard;
     private AudioSource audioSource;
     
-    // Active power-up effects
-    private Dictionary<PowerUpType, float> activePowerUps = new Dictionary<PowerUpType, float>();
-    
     private void Start()
     {
         ownerBoard = GetComponent<Board>();
         audioSource = GetComponent<AudioSource>();
     }
 
-private void Update()
-{
-    UpdateActivePowerUps();
-    
-    // MANUAL TESTING - SAFELY EXECUTE power-ups
-    if (Input.GetKeyDown(KeyCode.Alpha1))
+    private void Update()
     {
-        Debug.Log("Manual execute: LineClear");
-        SafeExecutePowerUp(PowerUpType.LineClear);
+        // SINGLE KEY TO USE POWER-UPS FROM INVENTORY
+        if (Input.GetKeyDown(KeyCode.Alpha1))
+        {
+            UseNextPowerUp();
+        }
     }
-    if (Input.GetKeyDown(KeyCode.Alpha2))
+
+    private void UseNextPowerUp()
     {
-        Debug.Log("Manual execute: LineBlaster");
-        SafeExecutePowerUp(PowerUpType.LineBlaster);
+        if (playerPowerUps.Count > 0)
+        {
+            PowerUpInstance powerUpToUse = playerPowerUps[0];
+            Debug.Log($"Using power-up from inventory: {powerUpToUse.type}");
+            
+            playerPowerUps.RemoveAt(0);
+            SafeExecutePowerUp(powerUpToUse.type);
+            UpdatePowerUpUI();
+            PlaySound(powerUpUsedSound);
+        }
+        else
+        {
+            Debug.Log("No power-ups in inventory!");
+        }
     }
-    if (Input.GetKeyDown(KeyCode.Alpha3))
-    {
-        Debug.Log("Manual execute: Bomb");
-        SafeExecutePowerUp(PowerUpType.Bomb);
-    }
-    if (Input.GetKeyDown(KeyCode.Alpha4))
-    {
-        Debug.Log("Manual execute: Gravity");
-        SafeExecutePowerUp(PowerUpType.Gravity);
-    }
-    if (Input.GetKeyDown(KeyCode.Alpha5))
-    {
-        Debug.Log("Manual execute: SpeedBoost");
-        ExecuteSpeedBoost(); // SpeedBoost doesn't affect board, so it's safe
-    }
-}
 
     private void SafeExecutePowerUp(PowerUpType type)
     {
-        // Clear active piece temporarily
+        // For bomb, we need special handling
+        if (type == PowerUpType.Bomb)
+        {
+            ExecuteBombImproved();
+            return;
+        }
+        
+        // For other power-ups, clear active piece temporarily
         if (ownerBoard.activePiece != null)
         {
             ownerBoard.Clear(ownerBoard.activePiece);
@@ -72,14 +72,8 @@ private void Update()
         // Execute the power-up
         switch (type)
         {
-            case PowerUpType.LineClear:
-                ExecuteLineClear();
-                break;
             case PowerUpType.LineBlaster:
                 ExecuteLineBlaster();
-                break;
-            case PowerUpType.Bomb:
-                ExecuteBomb();
                 break;
             case PowerUpType.Gravity:
                 ExecuteGravity();
@@ -89,14 +83,12 @@ private void Update()
         // Put active piece back
         if (ownerBoard.activePiece != null)
         {
-            // Check if position is still valid after power-up
             if (ownerBoard.IsValidPosition(ownerBoard.activePiece, ownerBoard.activePiece.position))
             {
                 ownerBoard.Set(ownerBoard.activePiece);
             }
             else
             {
-                // If not valid, try to move it to a safe position
                 ownerBoard.activePiece.position = new Vector3Int(ownerBoard.activePiece.position.x, ownerBoard.activePiece.position.y + 1, 0);
                 if (ownerBoard.IsValidPosition(ownerBoard.activePiece, ownerBoard.activePiece.position))
                 {
@@ -108,7 +100,6 @@ private void Update()
     
     private void UpdatePowerUpUI()
     {
-        // Clear existing UI
         if (powerUpInventoryParent != null)
         {
             foreach (Transform child in powerUpInventoryParent)
@@ -116,60 +107,81 @@ private void Update()
                 Destroy(child.gameObject);
             }
 
-            // Create UI for each power-up
             foreach (PowerUpInstance powerUp in playerPowerUps)
             {
                 if (powerUpSlotPrefab != null)
                 {
                     GameObject slot = Instantiate(powerUpSlotPrefab, powerUpInventoryParent);
-                    // Basic setup - you can enhance this later
                     slot.name = $"PowerUp_{powerUp.type}";
                 }
             }
+        }
+        
+        Debug.Log($"Power-up inventory: {playerPowerUps.Count} items");
+        if (playerPowerUps.Count > 0)
+        {
+            Debug.Log($"Next power-up to use: {playerPowerUps[0].type}");
         }
     }
     
     public void OnLinesCleared(int lineCount)
     {
         Debug.Log($"PowerUpManager: OnLinesCleared called with {lineCount} lines!");
-        // Increased chance for better line clears
+        
+        // Only give power-ups for 2+ lines cleared
+        if (lineCount < 2)
+        {
+            Debug.Log("Not enough lines cleared for power-up (need 2+)");
+            return;
+        }
+        
+        // RANDOM POWER-UP ASSIGNMENT (not specific to line count)
         float baseChance = powerUpChance;
         float multiplier = lineCount switch
         {
-            1 => 0.5f,
             2 => 1.0f,
             3 => 1.5f,
-            4 => 2.5f, // Tetris bonus
+            4 => 2.0f, // Tetris gets higher chance, but still random power-up
             _ => 0f
         };
 
         float finalChance = baseChance * multiplier;
+        Debug.Log($"Power-up chance: {finalChance * 100}%");
 
         if (Random.Range(0f, 1f) < finalChance)
         {
+            // Generate COMPLETELY RANDOM power-up regardless of line count
             GenerateRandomPowerUp();
         }
     }
-    
+    // Add this method to PowerUpManager.cs
+    public void ClearAllPowerUps()
+    {
+        playerPowerUps.Clear();
+        UpdatePowerUpUI();
+        Debug.Log("All power-ups cleared from inventory");
+    }
+
     private void GenerateRandomPowerUp()
     {
         if (availablePowerUps.Length == 0) return;
-        
-        // Weight-based selection
+
+        // PURE RANDOM SELECTION based on weights only
         float totalWeight = 0f;
         foreach (var powerUp in availablePowerUps)
         {
             totalWeight += powerUp.spawnWeight;
         }
-        
+
         float randomValue = Random.Range(0f, totalWeight);
         float currentWeight = 0f;
-        
+
         foreach (var powerUp in availablePowerUps)
         {
             currentWeight += powerUp.spawnWeight;
             if (randomValue <= currentWeight)
             {
+                Debug.Log($"Randomly selected power-up: {powerUp.type}");
                 AddPowerUp(powerUp.type);
                 break;
             }
@@ -185,73 +197,73 @@ private void Update()
             UpdatePowerUpUI();
             PlaySound(powerUpObtainedSound);
             
-            // Visual feedback
-            ShowPowerUpNotification(powerUpData);
-            
-            Debug.Log($"Player {ownerBoard.playerTag} received {type} power-up!");
+            Debug.Log($"Player {ownerBoard.playerTag} received {type} power-up! (Total: {playerPowerUps.Count})");
         }
     }
     
-    public bool UsePowerUp(PowerUpType type)
+    private void ExecuteBombImproved()
     {
-        var powerUpInstance = playerPowerUps.FirstOrDefault(p => p.type == type);
-        if (powerUpInstance != null)
-        {
-            playerPowerUps.Remove(powerUpInstance);
-            ExecutePowerUp(type);
-            UpdatePowerUpUI();
-            PlaySound(powerUpUsedSound);
-            return true;
-        }
-        return false;
-    }
-    
-    private void ExecutePowerUp(PowerUpType type)
-    {
-        Debug.Log($"=== ExecutePowerUp called with type: {type} ===");
+        Debug.Log("=== ExecuteBombImproved: Clearing 3x3 area ===");
         
-        switch (type)
+        if (ownerBoard.activePiece != null)
         {
-            case PowerUpType.LineClear:
-                Debug.Log("About to call ExecuteLineClear...");
-                ExecuteLineClear();
-                Debug.Log("ExecuteLineClear completed.");
-                break;
-                
-            case PowerUpType.LineBlaster:
-                Debug.Log("About to call ExecuteLineBlaster...");
-                ExecuteLineBlaster();
-                Debug.Log("ExecuteLineBlaster completed.");
-                break;
-                
-            case PowerUpType.Bomb:
-                Debug.Log("About to call ExecuteBomb...");
-                ExecuteBomb();
-                Debug.Log("ExecuteBomb completed.");
-                break;
-                
-            case PowerUpType.Gravity:
-                Debug.Log("About to call ExecuteGravity...");
-                ExecuteGravity();
-                Debug.Log("ExecuteGravity completed.");
-                break;
-                
-            case PowerUpType.SpeedBoost:
-                Debug.Log("About to call ExecuteSpeedBoost...");
-                ExecuteSpeedBoost();
-                Debug.Log("ExecuteSpeedBoost completed.");
-                break;
-                
-            default:
-                Debug.Log($"No implementation for power-up type: {type}");
-                break;
+            Vector3Int center = ownerBoard.activePiece.position;
+            ownerBoard.Clear(ownerBoard.activePiece);
+            
+            int clearedCount = 0;
+            
+            // Clear 3x3 area
+            for (int x = -1; x <= 1; x++)
+            {
+                for (int y = -1; y <= 1; y++)
+                {
+                    Vector3Int pos = center + new Vector3Int(x, y, 0);
+                    if (ownerBoard.tilemap.HasTile(pos))
+                    {
+                        ownerBoard.tilemap.SetTile(pos, null);
+                        clearedCount++;
+                    }
+                }
+            }
+            
+            // Clear falling piece cells
+            foreach (Vector3Int cell in ownerBoard.activePiece.cells)
+            {
+                Vector3Int pos = cell + center;
+                if (ownerBoard.tilemap.HasTile(pos))
+                {
+                    ownerBoard.tilemap.SetTile(pos, null);
+                    clearedCount++;
+                }
+            }
+            
+            Debug.Log($"Bomb cleared {clearedCount} tiles");
+            
+            // Try to place piece back safely
+            bool placed = false;
+            for (int yOffset = 0; yOffset < 5; yOffset++)
+            {
+                Vector3Int newPos = new Vector3Int(center.x, center.y + yOffset, center.z);
+                if (ownerBoard.IsValidPosition(ownerBoard.activePiece, newPos))
+                {
+                    ownerBoard.activePiece.position = newPos;
+                    ownerBoard.Set(ownerBoard.activePiece);
+                    placed = true;
+                    break;
+                }
+            }
+            
+            if (!placed)
+            {
+                Debug.Log("Spawning new piece after bomb");
+                ownerBoard.SpawnPiece();
+            }
         }
     }
     
     private void ExecuteLineBlaster()
     {
-        
-        // Clear the bottom-most line with blocks
+        Debug.Log("=== LineBlaster: Clearing bottom line ===");
         RectInt bounds = ownerBoard.Bounds;
         for (int y = bounds.yMin; y < bounds.yMax; y++)
         {
@@ -268,126 +280,23 @@ private void Update()
             if (hasBlocks)
             {
                 ClearLine(y);
+                Debug.Log($"LineBlaster cleared line {y}");
                 break;
             }
         }
     }
     
-    private void ExecuteFreeze()
-    {
-        activePowerUps[PowerUpType.Freeze] = 5f; // 5 seconds
-        // This would affect the opponent's board - implement multiplayer logic
-    }
-    
-    private void ExecuteSpeedBoost()
-    {
-        activePowerUps[PowerUpType.SpeedBoost] = 10f; // 10 seconds
-    }
-    
-    private void ExecuteGhostMode()
-    {
-        activePowerUps[PowerUpType.GhostMode] = 15f; // 15 seconds
-    }
-    
-    private void ExecuteLineClear()
-    {
-        Debug.Log("=== ExecuteLineClear Starting ===");
-        if (ownerBoard == null)
-           {
-                Debug.LogError("ownerBoard is NULL! Cannot execute LineClear.");
-                return;
-            }
-            
-            Debug.Log($"ownerBoard found: {ownerBoard.name}");
-    
-        if (ownerBoard.tilemap == null)
-        {
-            Debug.LogError("ownerBoard.tilemap is NULL!");
-            return;
-        }
-        
-        Debug.Log("Tilemap found, proceeding with LineClear...");
-        
-        // Find a random line with blocks and clear it
-        RectInt bounds = ownerBoard.Bounds;
-        Debug.Log($"Board bounds: {bounds}");
-        
-        List<int> linesWithBlocks = new List<int>();
-        
-        for (int y = bounds.yMin; y < bounds.yMax; y++)
-        {
-            for (int x = bounds.xMin; x < bounds.xMax; x++)
-            {
-                if (ownerBoard.tilemap.HasTile(new Vector3Int(x, y, 0)))
-                {
-                    linesWithBlocks.Add(y);
-                    break;
-                }
-            }
-        }
-        
-        Debug.Log($"Found {linesWithBlocks.Count} lines with blocks");
-        
-        if (linesWithBlocks.Count > 0)
-        {
-            int randomLine = linesWithBlocks[Random.Range(0, linesWithBlocks.Count)];
-            Debug.Log($"Clearing line: {randomLine}");
-            ClearLine(randomLine);
-        }
-        else
-        {
-            Debug.Log("No lines with blocks found!");
-        }
-    }
-    
-    private void ExecuteBomb()
-    {
-        Debug.Log("=== ExecuteBomb Starting ===");
-        
-        // Clear a 3x3 area around the active piece
-        if (ownerBoard.activePiece != null)
-        {
-            Vector3Int center = ownerBoard.activePiece.position;
-            Debug.Log($"Bomb center position: {center}");
-            
-            int clearedCount = 0;
-            for (int x = -1; x <= 1; x++)
-            {
-                for (int y = -1; y <= 1; y++)
-                {
-                    Vector3Int pos = center + new Vector3Int(x, y, 0);
-                    
-                    if (ownerBoard.tilemap.HasTile(pos))
-                    {
-                        Debug.Log($"Clearing tile at: {pos}");
-                        ownerBoard.tilemap.SetTile(pos, null);
-                        clearedCount++;
-                    }
-                }
-            }
-            Debug.Log($"Bomb cleared {clearedCount} tiles");
-        }
-        else
-        {
-            Debug.LogError("No active piece found for bomb!");
-        }
-    }
-    
     private void ExecuteGravity()
     {
-        Debug.Log("=== ExecuteGravity Starting ===");
+        Debug.Log("=== Gravity: Dropping floating blocks ===");
         
-        // Drop all floating blocks
         RectInt bounds = ownerBoard.Bounds;
-        Debug.Log($"Gravity bounds: {bounds}");
-        
         int totalMoved = 0;
         
         for (int x = bounds.xMin; x < bounds.xMax; x++)
         {
             List<TileBase> column = new List<TileBase>();
             
-            // Collect all tiles in column
             for (int y = bounds.yMin; y < bounds.yMax; y++)
             {
                 Vector3Int pos = new Vector3Int(x, y, 0);
@@ -399,9 +308,6 @@ private void Update()
                 ownerBoard.tilemap.SetTile(pos, null);
             }
             
-            Debug.Log($"Column {x}: Found {column.Count} tiles");
-            
-            // Place them at bottom
             for (int i = 0; i < column.Count; i++)
             {
                 Vector3Int pos = new Vector3Int(x, bounds.yMin + i, 0);
@@ -410,34 +316,9 @@ private void Update()
             }
         }
         
-        Debug.Log($"Gravity moved {totalMoved} total tiles");
-    }
-    private void UpdateActivePowerUps()
-    {
-        var keysToRemove = new List<PowerUpType>();
-        
-        foreach (var kvp in activePowerUps.ToList())
-        {
-            activePowerUps[kvp.Key] -= Time.deltaTime;
-            if (activePowerUps[kvp.Key] <= 0)
-            {
-                keysToRemove.Add(kvp.Key);
-            }
-        }
-        
-        foreach (var key in keysToRemove)
-        {
-            activePowerUps.Remove(key);
-            OnPowerUpExpired(key);
-        }
+        Debug.Log($"Gravity moved {totalMoved} tiles");
     }
     
-    // Public getters for active power-ups
-    public bool IsSpeedBoostActive() => activePowerUps.ContainsKey(PowerUpType.SpeedBoost);
-    public bool IsGhostModeActive() => activePowerUps.ContainsKey(PowerUpType.GhostMode);
-    public bool IsFrozen() => activePowerUps.ContainsKey(PowerUpType.Freeze);
-    
-    // Helper methods
     private PowerUp GetPowerUpData(PowerUpType type)
     {
         return availablePowerUps.FirstOrDefault(p => p.type == type);
@@ -451,7 +332,6 @@ private void Update()
             ownerBoard.tilemap.SetTile(new Vector3Int(x, row, 0), null);
         }
         
-        // Drop everything above
         for (int y = row + 1; y < bounds.yMax; y++)
         {
             for (int x = bounds.xMin; x < bounds.xMax; x++)
@@ -465,12 +345,6 @@ private void Update()
         }
     }
     
-    private void ShowPowerUpNotification(PowerUp powerUp)
-    {
-        // Implement UI notification system
-        // You could create a popup or add to a notification queue
-    }
-    
     private void PlaySound(AudioClip clip)
     {
         if (audioSource != null && clip != null)
@@ -478,11 +352,9 @@ private void Update()
             audioSource.PlayOneShot(clip);
         }
     }
-    
-    private void OnPowerUpExpired(PowerUpType type)
+
+    public int GetPowerUpCount()
     {
-        Debug.Log($"Power-up {type} expired for player {ownerBoard.playerTag}");
-        // Add visual feedback for expiration
+        return playerPowerUps.Count;
     }
 }
-
