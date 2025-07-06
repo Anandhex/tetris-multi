@@ -104,6 +104,10 @@ public class Piece : MonoBehaviour
         {
             // No automatic gravity when controlled via socket
         }
+        if (inputController is TetrisSentisAgent)
+        {
+            // No automatic gravity when controlled via socket
+        }
         else if (Time.time > stepTime)
         {
             Step();

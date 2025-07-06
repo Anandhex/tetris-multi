@@ -68,12 +68,17 @@ public class Board : MonoBehaviour
             // Check for both types of ML agents
             TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
             SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
+            TetrisSentisAgent sentisAgent = this.inputController as TetrisSentisAgent;
 
             if (mlAgent != null)
             {
                 height = 20;
             }
             else if (socketAgent != null)
+            {
+                height = 20;
+            }
+            else if (sentisAgent != null)
             {
                 height = 20;
             }
@@ -122,16 +127,21 @@ public class Board : MonoBehaviour
         {
             socketAgent.SetBoard(this);
         }
+        if (inputController is TetrisSentisAgent sentisAgent)
+        {
+            sentisAgent.SetBoard(this);
+            SpawnPiece();
+        }
         // ClearBoard();
 
         // // Apply initial curriculum
         // // ApplyCurriculumBoardPreset();
 
         // // Only spawn a piece if all components are properly initialized
-        // if (activePiece != null && tetrominoes != null && tetrominoes.Length > 0)
-        // {
-        //     SpawnPiece();
-        // }
+        if (activePiece != null && tetrominoes != null && tetrominoes.Length > 0 && (inputController is SinglePlayerInputController || inputController is PlayerInputController || inputController is Player1InputController || inputController is Player2InputController))
+        {
+            SpawnPiece();
+        }
         // else
         // {
         // }
@@ -165,6 +175,7 @@ public class Board : MonoBehaviour
         // Check for both types of ML agents
         TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
         SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
+        TetrisSentisAgent sentisAgent = this.inputController as TetrisSentisAgent;
 
         if (mlAgent != null)
         {
@@ -173,6 +184,11 @@ public class Board : MonoBehaviour
         else if (socketAgent != null)
         {
             allowedTypes = socketAgent.allowedTetrominoTypes;
+        }
+        else if (sentisAgent != null)
+        {
+            allowedTypes = sentisAgent.allowedTetrominoTypes;
+
         }
 
         // Limit piece selection based on curriculum
@@ -183,6 +199,18 @@ public class Board : MonoBehaviour
         if (nextPieceDisplay != null)
         {
             nextPieceDisplay.DisplayNextPiece(this.nextPieceData);
+        }
+        if ((inputController is SinglePlayerInputController || inputController is PlayerInputController || inputController is Player1InputController || inputController is Player2InputController))
+        {
+            if (IsValidPosition(this.activePiece, this.spawnPosition))
+            {
+                Set(this.activePiece);
+            }
+            else
+            {
+                Data.PlayerScore = this.playerScore;
+                GameOver();
+            }
         }
     }
 
@@ -224,6 +252,7 @@ public class Board : MonoBehaviour
         // Inform both types of ML agents about the new piece
         TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
         SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
+        TetrisSentisAgent sentisAgent = this.inputController as TetrisSentisAgent;
 
         if (mlAgent != null)
         {
@@ -232,6 +261,11 @@ public class Board : MonoBehaviour
         else if (socketAgent != null)
         {
             socketAgent.SetCurrentPiece(this.activePiece);
+        }
+        else if (sentisAgent != null)
+        {
+            sentisAgent.SetCurrentPiece(this.activePiece);
+
         }
 
         GenerateNextPiece();
@@ -247,7 +281,7 @@ public class Board : MonoBehaviour
         }
     }
 
-    private void GameOver()
+    public void GameOver()
     {
 
         // Notify ML agent if this is an ML agent-controlled board
@@ -277,7 +311,7 @@ public class Board : MonoBehaviour
         Data.PlayerScore = this.playerScore;
 
         // Load game over scene only if not in ML training
-        SceneManager.LoadScene(2);
+        SceneManager.LoadScene(3);
     }
 
 
