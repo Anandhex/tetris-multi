@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Linq;
+using System.Text;
 
 /// <summary>
 /// Data-only copy of the board's occupancy grid (no Tilemap) for fast simulation.
@@ -7,7 +8,7 @@ using System.Linq;
 public class BoardData
 {
     public readonly int width, height;
-    private readonly int xOffset, yOffset;
+    public readonly int xOffset, yOffset;
     public bool[,] grid;
 
     // Construct from real Board, capturing its bounds offsets
@@ -26,6 +27,24 @@ public class BoardData
                 grid[x, y] = real.tilemap.HasTile(
                     new Vector3Int(x + xOffset, y + yOffset, 0)
                 );
+    }
+    /// <summary>
+    /// Returns a multi-line string showing the grid.
+    /// ‘X’ = filled, ‘.’ = empty. Top row first.
+    /// </summary>
+    public string DumpToString()
+    {
+        var sb = new StringBuilder();
+        // iterate from top (height-1) down to 0 so the visual matches Unity’s Y-axis
+        for (int y = height - 1; y >= 0; y--)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                sb.Append(grid[x, y] ? 'X' : '.');
+            }
+            sb.AppendLine();
+        }
+        return sb.ToString();
     }
 
     // Private constructor for cloning
@@ -92,18 +111,23 @@ public class BoardData
     /// </summary>
     public int PlaceAndClear(PieceState p)
     {
-        // Lock piece cells
+        // Lock piece cells (clamped to the visible grid)
         foreach (var c in p.Cells)
         {
             int worldX = p.position.x + c.x;
             int worldY = p.position.y + c.y;
             int lx = worldX - xOffset;
             int ly = worldY - yOffset;
+
+            // skip any cell outside the grid
+            if (lx < 0 || lx >= width || ly < 0 || ly >= height)
+                continue;
+
             grid[lx, ly] = true;
         }
 
         int cleared = 0;
-        // Check each row for fullness
+        // now clear full rows as before...
         for (int y = 0; y < height; y++)
         {
             bool full = true;
@@ -113,14 +137,12 @@ public class BoardData
             if (full)
             {
                 cleared++;
-                // Shift rows above down
                 for (int yy = y + 1; yy < height; yy++)
                     for (int x = 0; x < width; x++)
                         grid[x, yy - 1] = grid[x, yy];
-                // Clear top row
                 for (int x = 0; x < width; x++)
                     grid[x, height - 1] = false;
-                y--; // recheck this row index after shift
+                y--;
             }
         }
         return cleared;
@@ -203,9 +225,49 @@ public struct PieceState
         };
     }
 
-    public void RotateCW()
+    public bool RotateCW(BoardData board)
     {
-        rotationIndex = (rotationIndex + 1) % data.RotationCount;
+
+
+        // look up the SRS kicks for this from→to transition
+        int from = rotationIndex;
+        int to = (from + 1) % data.RotationCount;  // for CW
+
+        int kickRow;
+        if (to == (from + 1) % 4)
+        {
+            // CW: 0→1,1→2,2→3,3→0  → rows 0–3
+            kickRow = from;
+        }
+        else
+        {
+            // CCW: 1→0,2→1,3→2,0→3 → rows 4–7
+            // map 0→3 into row 7, 1→0 into 4, etc.
+            kickRow = 4 + ((to + 3) % 4);
+        }
+        var kicks = Data.WallKicks[data.tetromino];
+        int tests = kicks.GetLength(1);
+
+        for (int t = 0; t < tests; t++)
+        {
+            var offset = kicks[kickRow, t];
+
+            // Create a test-piece clone
+            var testPiece = this.Clone();
+            testPiece.rotationIndex = to;
+            testPiece.position += offset;
+
+            // Now IsValidPosition wants exactly a PieceState + a pos
+            if (board.IsValidPosition(testPiece, testPiece.position))
+            {
+                // commit the rotation + kick
+                rotationIndex = to;
+                position += offset;
+                return true;
+            }
+        }
+
+        return false;  // all kicks failed
     }
 
     /// <summary>

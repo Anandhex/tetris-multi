@@ -416,23 +416,7 @@ public class Board : MonoBehaviour
         }
 
         // Notify ML agent about line clears
-        if (linesCleared > 0)
-        {
-            SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
-            if (socketAgent != null)
-            {
-                socketAgent.OnLinesCleared(linesCleared);
-            }
 
-            // Also notify TetrisMLAgent if applicable
-            TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
-            if (mlAgent != null && mlAgent.GetType().GetMethod("OnLinesCleared") != null)
-            {
-                // Only call if the method exists
-                System.Reflection.MethodInfo method = mlAgent.GetType().GetMethod("OnLinesCleared");
-                method?.Invoke(mlAgent, new object[] { linesCleared });
-            }
-        }
 
         // Calculate score speed bonus based on player score
         scoreSpeedBonus = Mathf.Min(playerScore / 10000f, 1.0f);
@@ -539,55 +523,5 @@ public class Board : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Scans each row, removes any that are full,
-    /// drops everything above down one, and returns the count.
-    /// </summary>
-    public int ClearLinesCount()
-    {
-        int cleared = 0;
-        int width = boardSize.x;
-        int height = boardSize.y;
 
-        // for each row from bottom up
-        for (int y = 0; y < height; y++)
-        {
-            bool full = true;
-            for (int x = 0; x < width; x++)
-            {
-                if (!tilemap.HasTile(new Vector3Int(x + Bounds.xMin, y + Bounds.yMin, 0)))
-                {
-                    full = false;
-                    break;
-                }
-            }
-
-            if (full)
-            {
-                cleared++;
-
-                // remove that row
-                for (int x = 0; x < width; x++)
-                    tilemap.SetTile(new Vector3Int(x + Bounds.xMin, y + Bounds.yMin, 0), null);
-
-                // move everything above down one
-                for (int yy = y + 1; yy < height; yy++)
-                {
-                    for (int x = 0; x < width; x++)
-                    {
-                        var abovePos = new Vector3Int(x + Bounds.xMin, yy + Bounds.yMin, 0);
-                        var belowPos = new Vector3Int(x + Bounds.xMin, yy - 1 + Bounds.yMin, 0);
-                        var tile = tilemap.GetTile(abovePos);
-                        tilemap.SetTile(belowPos, tile);
-                        tilemap.SetTile(abovePos, null);
-                    }
-                }
-
-                // after collapsing, re‐check this same y (since rows shifted down)
-                y--;
-            }
-        }
-
-        return cleared;
-    }
 }

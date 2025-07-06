@@ -64,11 +64,11 @@ public static class Data
             // Apply rotation center offset based on SRS standard
             Vector2 center;
             if (tetromino == Tetromino.I)
-                center = new Vector2(0.5f, 0.5f);  // I-piece rotates around (0.5, 0.5)
+                center = new Vector2(1.5f, 1.5f);  // I-piece rotates around (0.5, 0.5)
             else if (tetromino == Tetromino.O)
                 center = new Vector2(0.5f, 0.5f);  // O-piece rotates around (0.5, 0.5)
             else
-                center = new Vector2(0f, 0f);      // Other pieces rotate around (0, 0)
+                center = new Vector2(1f, 1f);      // Other pieces rotate around (0, 0)
 
             // Translate to rotation center
             cell -= center;
@@ -84,8 +84,8 @@ public static class Data
 
             // Round to integer coordinates
             rotated[i] = new Vector2Int(
-     Mathf.CeilToInt(cell.x),
-     Mathf.CeilToInt(cell.y)
+     Mathf.RoundToInt(cell.x),
+     Mathf.RoundToInt(cell.y)
  );
         }
 

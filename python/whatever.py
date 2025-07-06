@@ -62,7 +62,7 @@ class TetrisTrainer:
             discount=self.discount,
             replay_start_size=self.replay_start_size,
             tensorboard_log_dir=log_dir,
-            epsilon=0
+            # epsilon=0
         )
 
         # Load pretrained weights if requested
@@ -82,15 +82,7 @@ class TetrisTrainer:
             time.sleep(delay)
         raise ConnectionError("Unable to connect to Unity Tetris client.")
 
-    def calculate_reward(self, prev_meta: dict, curr_meta: dict, action: int) -> float:
-        # Basic reward: block reward + line clear bonus - game over penalty
-        lines_prev = prev_meta.get('linesCleared', 0) if prev_meta else 0
-        lines_now = curr_meta.get('linesCleared', 0)
-        new_lines = max(0, lines_now - lines_prev)
-        reward = 1 + (new_lines ** 2) * self.BOARD_WIDTH
-        if curr_meta.get('gameOver', False):
-            reward -= 2
-        return reward
+    
 
     def train(self):
         scores = []
@@ -144,16 +136,17 @@ class TetrisTrainer:
                     best_state = self.agent.best_state(feature_list, episode)
                     col, rot = action_map[tuple(best_state)]     
                     # Send action and receive new state
-                    print(next_states)
-                    print(best_state)
                     curr_meta = self.client.send_action_and_wait({"col":col,"rot":rot}, timeout=30.0)
                     if curr_meta is None:
                         print(f"Episode {episode}: timeout, skipping step")
                         break
-                    input()    
+                    # print(best_state)
+                    # print(next_states)
                     done = curr_meta.get('gameOver', False)
                     # Compute and store reward
                     reward = curr_meta.get('reward',0)
+                    # print(reward)
+                    # input()
                     self.agent.add_to_memory(
                         current_state,
                         best_state,
@@ -213,6 +206,9 @@ class TetrisTrainer:
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
-    trainer = TetrisTrainer(load_model=True,model_path='/Users/anandpatil/Documents/Projects/tetris-multi/python/model_20250616-071507/model_20250616-071507.h5')
-    # trainer = TetrisTrainer(load_model=True)
+     # trainer = TetrisTrainer(load_model=True,model_path='/Users/anandpatil/Documents/Projects/tetris-multi/python/model_20250616-071507/model_20250616-071507.h5')
+    # trainer = TetrisTrainer(load_model=True,model_path='/Users/anandpatil/Documents/Projects/tetris-multi/python/model_20250619-000714/model_20250619-000714.h5')
+    # trainer = TetrisTrainer(load_model=True,model_path='/Users/anandpatil/Documents/Projects/tetris-multi/python/main_model/sample.keras')
+    # trainer = TetrisTrainer(load_model=True,model_path='/Users/anandpatil/Documents/Projects/tetris-multi/python/model_20250705-164915/model_20250705-164915.h5')
+    trainer = TetrisTrainer(load_model=True)
     trainer.train()

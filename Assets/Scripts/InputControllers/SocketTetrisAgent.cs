@@ -12,6 +12,9 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
     private bool isExecutingAction = false;
     private bool waitingForNewPiece = false;
     private bool pythonConnected = false;
+    private float prevLineHeight = 0.0f;
+
+    private Dictionary<(int, int), float[]> prevResults;
 
     [Header("Curriculum Parameters")]
     public int curriculumBoardHeight = 20;
@@ -61,7 +64,6 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
                     else
                     {
                         board.DumpTilemap(board.Bounds);
-                        Debug.Log("Triggered" + command.action.col + ":" + command.action.rot);
                         TriggerGameOver();
                     }
                 }
@@ -139,26 +141,18 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         // 1) Rotate to target
         int curRot = currentPiece.rotationIndex;
         int needed = (rot - curRot + 4) % 4;
-
         for (int i = 0; i < needed; i++)
-        {
-            currentPiece.Rotate(1);
+            currentPiece.Rotate(-1);
 
-        }
-
-        // 2) Move horizontally
-        int leftX = currentPiece.cells.Min(c => currentPiece.position.x + c.x);
-        int halfW = board.Bounds.width / 2;
-        int targetX = col - halfW;
-        int offset = targetX - leftX;
-        var dir = offset > 0 ? Vector3Int.right : Vector3Int.left;
-
-        for (int i = 0; i < Mathf.Abs(offset); i++)
-        {
-            var newPos = currentPiece.position + dir;
-
-            currentPiece.position = newPos;
-        }
+        // 2) Move horizontally — **use** Bounds.xMin and cells[]
+        int xOffset = board.Bounds.xMin;
+        int minLocalX = currentPiece.cells.Min(c => c.x);
+        int worldX = col + xOffset - minLocalX;
+        currentPiece.position = new Vector3Int(
+            worldX,
+            currentPiece.position.y,
+            currentPiece.position.z
+        );
 
         // 3) Hard drop
         while (true)
@@ -172,25 +166,25 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         }
 
         // 4) Final placement
-        FinalizePlacement();
+        FinalizePlacement(col, rot);
     }
 
     public void TriggerGameOver()
     {
         gameOver = true;
-        SendGameState();
+        SendGameState(-1, -1);
         gameOver = false;
         isExecutingAction = false;
 
     }
-    void FinalizePlacement()
+    void FinalizePlacement(int col, int rot)
     {
 
         board.Set(currentPiece);
 
 
         // Clear any completed lines
-        SendGameState();
+        SendGameState(col, rot);
 
         // Send game state after placement
 
@@ -245,7 +239,7 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         GameState state = new GameState();
         SocketManager.Instance.SendGameState(state);
     }
-    void SendGameState()
+    void SendGameState(int col, int rot)
     {
         if (board == null || SocketManager.Instance == null)
             return;
@@ -254,8 +248,27 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         //    (or you can cache the last lines cleared in your OnLinesCleared callback)
         // int linesCleared = board.ClearLinesCount();
         int linesCleared = board.ClearLines();
+        // float holes = 0;
+        // float bumpiness = 0;
 
+        // float survivalStep = -0.01f;               // small time penalty
+        // float maxLineBonus = 1.0f;                // 4-line maximum
+        // float holeCost = 0.2f;                // per hole
+        // float bumpCost = 0.2f;                // per bump
+        // float deathPenalty = -1.0f;               // harsher end-of-game cost
+
+        // if (col > -1 && rot > -1 && prevResults.ToList().Count > 0)
+        // {
+        //     holes = prevResults[(col, rot)][1];
+        //     bumpiness = prevResults[(col, rot)][2];
+        // }
         // 2) Shaped reward: +1 per placement, +lines²×width, −2 if game over
+        // float lineBonus = Mathf.Pow(linesCleared / 4f, 2) * maxLineBonus;
+        // float reward = survivalStep
+        //      + lineBonus
+        //      - holeCost * holes
+        //      - bumpCost * bumpiness;
+        // penalty for creating holes
         float reward = 1f + (linesCleared * linesCleared) * board.boardSize.x;
         if (gameOver)
             reward -= 2f;
@@ -265,7 +278,7 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         payload.reward = reward;
         payload.gameOver = gameOver;
         // Debug.Log("somethinggg");
-
+        Debug.Log("reward" + reward);
         // 4) Send it over the socket (using our SendEvent helper)
         SocketManager.Instance.SendGameState(payload);
 
@@ -329,7 +342,7 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
         lastReward = -10f; // Penalty for game over
         isExecutingAction = false;
         // Send game over state BEFORE resetting
-        SendGameState();
+        SendGameState(-1, -1);
 
     }
 
@@ -380,6 +393,8 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
 
         int w = board.boardSize.x;
         int halfW = board.Bounds.width / 2;
+        Debug.Log("orgiBoard=== before sim");
+        Debug.Log(origBoard.DumpToString());
 
 
         for (int rot = 0; rot < currentPiece.data.RotationCount; rot++)
@@ -395,30 +410,36 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
 
                     int rotCount = simPiece.data.RotationCount;
                     int steps = (rot - simPiece.rotationIndex + rotCount) % rotCount;
+
                     for (int i = 0; i < steps; i++)
                     {
-                        simPiece.RotateCW();
+                        simPiece.RotateCW(simBoard);
                     }
+
+
+
 
 
                     // Move horizontally
-                    int leftX = simPiece.Cells.Min(c => simPiece.position.x + c.x);
-                    int targetX = colIdx - halfW;
-                    int offset = targetX - leftX;
-                    var dir = offset > 0 ? Vector2Int.right : Vector2Int.left;
-                    bool couldMoveAllTheWay = true;
-                    for (int s = 0; s < Mathf.Abs(offset); s++)
+                    int xOffset = simBoard.xOffset;
+                    int minLocalX = simPiece.Cells.Min(c => c.x);
+                    int desiredX = colIdx + xOffset - minLocalX;
+
+                    // Build the candidate position
+                    var testPos = new Vector2Int(desiredX, simPiece.position.y);
+
+                    // Check validity
+                    bool canPlace = simBoard.IsValidPosition(simPiece, testPos);
+
+                    if (!canPlace)
                     {
-                        var np = simPiece.position + dir;
-                        if (!simBoard.IsValidPosition(simPiece, np))
-                        {
-                            couldMoveAllTheWay = false;
-                            break;
-                        }
-                        simPiece.position = np;
-                    }
-                    if (!couldMoveAllTheWay)
+                        // This column/rotation simply can't fit here
                         continue;
+                    }
+
+                    // It’s safe—move the piece there
+                    simPiece.position = testPos;
+
 
                     // Hard drop
                     while (simBoard.IsValidPosition(simPiece, simPiece.position + Vector2Int.down))
@@ -431,11 +452,15 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
                     //   simBoard.DumpToString());
                     // Place piece and calculate metrics
                     int lines = simBoard.PlaceAndClear(simPiece);
+                    Debug.Log($"After placing rot={rot} @ col={colIdx}, linesCleared={lines}:\n"
+          + simBoard.DumpToString());
+                    int[] heights = simBoard.GetColumnHeights();
                     float holes = simBoard.CountHoles();
                     float bumpiness = simBoard.GetBumpinessScore();
                     float height = simBoard.CalculateStackHeight();
                     results[(colIdx, rot)] = new float[] { lines, holes, bumpiness, height
-};
+                    };
+
                 }
                 catch (System.Exception e)
                 {
@@ -462,6 +487,7 @@ public class SocketTetrisAgent : MonoBehaviour, IPlayerInputController
                       $"Bumpiness: {metrics[2]}, Height: {metrics[3]}");
         }
         Debug.Log($"Calculated metrics for {results.Count} valid moves");
+        prevResults = results;
         return results;
     }
     // Inside the BoardData class
