@@ -83,5 +83,5 @@ crashlytics-build.properties
 /python/logs/*
 /python/*.log
 /python/models/*
-*.h5
+/python/model*/*.h5
 *.json
