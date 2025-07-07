@@ -6,7 +6,7 @@ public class BoardManager : MonoBehaviour
     public GameObject boardPrefab;  // Assign your BoardResuse prefab here
     public static BoardManager Instance { get; private set; }
     public enum GameMode { SinglePlayer, TwoPlayer, VsAI, AIVsAI, AI };
-    public GameMode currentMode = Data.gameMode;
+    public GameMode currentMode = GameMode.SinglePlayer;
 
     public Vector3Int singlePlayerPosition = new Vector3Int(0, 0, 0);
     public ModelAsset sentisModelAsset;
@@ -127,6 +127,7 @@ public class BoardManager : MonoBehaviour
 
         // Set the input controller
         board.inputController = input;
+        Debug.Log($"Assigned input controller: {input} to board: {board.playerTag}");
 
         // Special handling for ML agent
         // if (input is TetrisMLAgent mlAgent)
