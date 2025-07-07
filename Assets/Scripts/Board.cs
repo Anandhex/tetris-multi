@@ -32,7 +32,6 @@ public class Board : MonoBehaviour
             int currentHeight = 20;
             TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
             SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
-            TetrisSentisAgent sentisAgent = this.inputController as TetrisSentisAgent;
 
             if (mlAgent != null)
             {
@@ -42,9 +41,15 @@ public class Board : MonoBehaviour
             {
                 currentHeight = (int)socketAgent.curriculumBoardHeight;
             }
-            else if (sentisAgent != null)
+            
+            // Handle TetrisSentisAgent safely using reflection
+            if (inputController != null && inputController.GetType().Name == "TetrisSentisAgent")
             {
-                currentHeight = (int)sentisAgent.curriculumBoardHeight;
+                var heightProperty = inputController.GetType().GetProperty("curriculumBoardHeight");
+                if (heightProperty != null)
+                {
+                    currentHeight = (int)(float)heightProperty.GetValue(inputController);
+                }
             }
 
             return new Vector3Int(baseSpawnPosition.x, currentHeight / 2 - 2, baseSpawnPosition.z);
@@ -70,7 +75,6 @@ public class Board : MonoBehaviour
             int height = boardSize.y;
             TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
             SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
-            TetrisSentisAgent sentisAgent = this.inputController as TetrisSentisAgent;
 
             if (mlAgent != null)
             {
@@ -80,7 +84,9 @@ public class Board : MonoBehaviour
             {
                 height = 20;
             }
-            else if (sentisAgent != null)
+            
+            // Handle TetrisSentisAgent safely
+            if (inputController != null && inputController.GetType().Name == "TetrisSentisAgent")
             {
                 height = 20;
             }
@@ -105,7 +111,6 @@ public class Board : MonoBehaviour
             float totalSpeedDecrease = timeSpeedDecrease + scoreSpeedBonus + temporarySpeedBoost;
             float baseRate = Mathf.Max(initialDropRate - totalSpeedDecrease, minimumDropRate);
 
-            // Power-up effects using reflection to avoid type issues
             if (powerUpManagerComponent != null)
             {
                 var speedBoostMethod = powerUpManagerComponent.GetType().GetMethod("IsSpeedBoostActive");
@@ -113,7 +118,7 @@ public class Board : MonoBehaviour
                 
                 if (speedBoostMethod != null && (bool)speedBoostMethod.Invoke(powerUpManagerComponent, null))
                 {
-                    baseRate *= 2.0f; // Slower for speed boost (more time)
+                    baseRate *= 2.0f;
                 }
                 
                 if (frozenMethod != null && (bool)frozenMethod.Invoke(powerUpManagerComponent, null))
@@ -147,9 +152,11 @@ public class Board : MonoBehaviour
             socketAgent.SetBoard(this);
         }
         
-        if (inputController is TetrisSentisAgent sentisAgent)
+        // Handle TetrisSentisAgent safely using reflection
+        if (inputController != null && inputController.GetType().Name == "TetrisSentisAgent")
         {
-            sentisAgent.SetBoard(this);
+            var setBoardMethod = inputController.GetType().GetMethod("SetBoard");
+            setBoardMethod?.Invoke(inputController, new object[] { this });
         }
 
         if (playerTagHolder != null)
@@ -174,7 +181,6 @@ public class Board : MonoBehaviour
         int allowedTypes = 7;
         TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
         SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
-        TetrisSentisAgent sentisAgent = this.inputController as TetrisSentisAgent;
 
         if (mlAgent != null)
         {
@@ -184,9 +190,15 @@ public class Board : MonoBehaviour
         {
             allowedTypes = socketAgent.allowedTetrominoTypes;
         }
-        else if (sentisAgent != null)
+        
+        // Handle TetrisSentisAgent safely
+        if (inputController != null && inputController.GetType().Name == "TetrisSentisAgent")
         {
-            allowedTypes = sentisAgent.allowedTetrominoTypes;
+            var allowedTypesProperty = inputController.GetType().GetProperty("allowedTetrominoTypes");
+            if (allowedTypesProperty != null)
+            {
+                allowedTypes = (int)allowedTypesProperty.GetValue(inputController);
+            }
         }
 
         int maxIndex = Mathf.Min(allowedTypes, this.tetrominoes.Length);
@@ -197,25 +209,6 @@ public class Board : MonoBehaviour
         {
             nextPieceDisplay.DisplayNextPiece(this.nextPieceData);
         }
-    }
-
-    public void ReadyThePieceForSpwan()
-    {
-        TetrominoData pieceToUse;
-
-        if (this.nextPieceData.Equals(default(TetrominoData)))
-        {
-            GenerateNextPiece();
-            pieceToUse = this.nextPieceData;
-        }
-        else
-        {
-            pieceToUse = this.nextPieceData;
-        }
-
-        this.activePiece.Initialize(this, this.spawnPosition, pieceToUse, this.inputController);
-        GenerateNextPiece();
-        Debug.Log($"Piece ready for spawn: {pieceToUse} at {this.spawnPosition}");
     }
 
     public void SpawnPiece()
@@ -229,7 +222,6 @@ public class Board : MonoBehaviour
 
         TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
         SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
-        TetrisSentisAgent sentisAgent = this.inputController as TetrisSentisAgent;
 
         if (mlAgent != null)
         {
@@ -239,9 +231,12 @@ public class Board : MonoBehaviour
         {
             socketAgent.SetCurrentPiece(this.activePiece);
         }
-        else if (sentisAgent != null)
+        
+        // Handle TetrisSentisAgent safely
+        if (inputController != null && inputController.GetType().Name == "TetrisSentisAgent")
         {
-            sentisAgent.SetCurrentPiece(this.activePiece);
+            var setCurrentPieceMethod = inputController.GetType().GetMethod("SetCurrentPiece");
+            setCurrentPieceMethod?.Invoke(inputController, new object[] { this.activePiece });
         }
 
         GenerateNextPiece();
@@ -261,7 +256,6 @@ public class Board : MonoBehaviour
     {
         Debug.Log("=== GAME OVER ===");
         
-        // Notify ML agents first (if applicable)
         SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
         if (socketAgent != null)
         {
@@ -277,15 +271,15 @@ public class Board : MonoBehaviour
             return;
         }
 
-        TetrisSentisAgent sentisAgent = this.inputController as TetrisSentisAgent;
-        if (sentisAgent != null)
+        // Handle TetrisSentisAgent safely
+        if (inputController != null && inputController.GetType().Name == "TetrisSentisAgent")
         {
-            sentisAgent.OnGameOver();
+            var onGameOverMethod = inputController.GetType().GetMethod("OnGameOver");
+            onGameOverMethod?.Invoke(inputController, null);
             StartCoroutine(ResetGameForMLTraining());
             return;
         }
 
-        // For regular game over - simple restart
         Debug.Log($"FINAL SCORE: {this.playerScore}");
         Data.PlayerScore = this.playerScore;
         
@@ -437,24 +431,15 @@ public class Board : MonoBehaviour
             }
         }
 
-        // Notify PowerUpManager about line clears
         if (linesCleared > 0)
         {
-            Debug.Log($"Board: {linesCleared} lines cleared, checking PowerUpManager...");
             PowerUpManager powerUpMgr = GetComponent<PowerUpManager>();
             if (powerUpMgr != null)
             {
-                Debug.Log("PowerUpManager found directly, calling OnLinesCleared...");
                 powerUpMgr.OnLinesCleared(linesCleared);
-                Debug.Log("OnLinesCleared called successfully!");
-            }
-            else
-            {
-                Debug.Log("PowerUpManager component NOT found on this GameObject!");
             }
         }
 
-        // Notify ML agents
         if (linesCleared > 0)
         {
             SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
