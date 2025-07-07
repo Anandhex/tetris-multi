@@ -20,9 +20,6 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
     [SerializeField] private BackendType backendType = BackendType.GPUCompute;
 
     [Header("Logging Settings")]
-    [SerializeField] private bool enableDetailedLogging = true;
-    [SerializeField] private bool logBestMoveDetails = true;
-    [SerializeField] private int maxLoggedMoves = 10;
 
     // Core Sentis components
     private Model runtimeModel;
@@ -35,7 +32,6 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
     private float stateUpdateInterval = 0.1f;
 
     // Statistics tracking
-    private int inferenceCount = 0;
     private Dictionary<string, int> actionHistory = new Dictionary<string, int>();
 
     void Awake()
@@ -46,7 +42,6 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
     void OnDestroy()
     {
         CleanupSentis();
-        LogFinalStats();
     }
 
     private void InitializeSentis()
@@ -154,12 +149,8 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
     {
         try
         {
-            inferenceCount++;
 
-            if (enableDetailedLogging)
-            {
-                Debug.Log($"[TetrisAI] === Inference #{inferenceCount} ===");
-            }
+
 
             // Get all possible moves (same as Python trainer)
             var possibleMoves = GetPossibleMoves();
@@ -181,7 +172,6 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
             }
 
             // Log move information
-            LogMoveDetails(possibleMoves);
 
             // Create input tensor for the model
             // Each move has 4 features: [lines, holes, bumpiness, height]
@@ -277,34 +267,12 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
         return moves;
     }
 
-    private void LogMoveDetails(Dictionary<string, float[]> moves)
+
+    private IEnumerator ExecuteMoveWithDelay(string move, float delaySeconds)
     {
-        if (!enableDetailedLogging) return;
-
-        Debug.Log($"[TetrisAI] Found {moves.Count} possible moves");
-
-        if (logBestMoveDetails)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("[TetrisAI] Possible moves (Lines, Holes, Bumpiness, Height):");
-
-            int logged = 0;
-            foreach (var move in moves.Take(maxLoggedMoves))
-            {
-                var features = move.Value;
-                sb.AppendLine($"  {move.Key} → [{features[0]:F2}, {features[1]:F2}, {features[2]:F2}, {features[3]:F2}]");
-                logged++;
-            }
-
-            if (moves.Count > maxLoggedMoves)
-            {
-                sb.AppendLine($"  ... (showing first {maxLoggedMoves} moves)");
-            }
-
-            Debug.Log(sb.ToString());
-        }
+        yield return new WaitForSeconds(delaySeconds);
+        ExecuteMove(move);
     }
-
     private void ProcessInferenceOutput(Tensor<float> outputTensor, Dictionary<string, float[]> possibleMoves)
     {
         try
@@ -335,11 +303,9 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
             string bestMove = moveKeys[bestIndex];
             var bestFeatures = possibleMoves[bestMove];
 
-            // Log best action
-            LogBestAction(bestMove, bestScore, bestFeatures, scores);
 
             // Execute the move
-            ExecuteMove(bestMove);
+            StartCoroutine(ExecuteMoveWithDelay(bestMove, 0.5f));
         }
         catch (System.Exception e)
         {
@@ -347,35 +313,7 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
         }
     }
 
-    private void LogBestAction(string bestMove, float bestScore, float[] features, float[] allScores)
-    {
-        if (!enableDetailedLogging) return;
 
-        var parts = bestMove.Split(':');
-        int col = int.Parse(parts[0]);
-        int rot = int.Parse(parts[1]);
-
-        var sb = new StringBuilder();
-        sb.AppendLine($"[TetrisAI] === BEST ACTION SELECTED ===");
-        sb.AppendLine($"  Move: {bestMove}");
-        sb.AppendLine($"  Target Column: {col}");
-        sb.AppendLine($"  Target Rotation: {rot}");
-        sb.AppendLine($"  AI Score: {bestScore:F4}");
-        sb.AppendLine($"  Move Features:");
-        sb.AppendLine($"    Lines Cleared: {features[0]:F2}");
-        sb.AppendLine($"    Holes Created: {features[1]:F2}");
-        sb.AppendLine($"    Bumpiness: {features[2]:F2}");
-        sb.AppendLine($"    Stack Height: {features[3]:F2}");
-
-        Debug.Log(sb.ToString());
-
-        // Track action history
-        if (!actionHistory.ContainsKey(bestMove))
-        {
-            actionHistory[bestMove] = 0;
-        }
-        actionHistory[bestMove]++;
-    }
 
     private int GetBestActionIndex(float[] scores)
     {
@@ -411,10 +349,7 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
             int targetCol = int.Parse(parts[0]);
             int targetRot = int.Parse(parts[1]);
 
-            if (enableDetailedLogging)
-            {
-                Debug.Log($"[TetrisAI] Executing move: {move}");
-            }
+
 
             // Clear current piece from board
             board.Clear(currentPiece);
@@ -451,12 +386,9 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
             // Place piece on board
             board.Set(currentPiece);
             board.ClearLines();
-            StartCoroutine(ExecuteMoveWithPause());
+            board.SpawnPiece();
 
-            if (enableDetailedLogging)
-            {
-                Debug.Log($"[TetrisAI] Move executed successfully. Final position: {currentPiece.position}");
-            }
+
         }
         catch (System.Exception e)
         {
@@ -464,29 +396,7 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
         }
     }
 
-    private void LogFinalStats()
-    {
-        if (!enableDetailedLogging) return;
 
-        var sb = new StringBuilder();
-        sb.AppendLine($"[TetrisAI] === FINAL STATISTICS ===");
-        sb.AppendLine($"  Total Inferences: {inferenceCount}");
-        sb.AppendLine($"  Most Common Actions:");
-
-        var topActions = actionHistory
-            .OrderByDescending(x => x.Value)
-            .Take(5)
-            .ToList();
-
-        for (int i = 0; i < topActions.Count; i++)
-        {
-            var action = topActions[i];
-            float percentage = (float)action.Value / inferenceCount * 100f;
-            sb.AppendLine($"    {action.Key}: {action.Value} times ({percentage:F1}%)");
-        }
-
-        Debug.Log(sb.ToString());
-    }
 
     // IPlayerInputController implementation (unused in AI mode)
     public bool GetLeft() => false;
