@@ -2,16 +2,9 @@ using UnityEngine;
 
 public enum PowerUpType
 {
-    Wild,
-    LineBlaster,
-    Freeze,
-    SpeedBoost,
-    GhostMode,
-    LineClear,
-    Scramble,
-    Shield,
-    Bomb,
-    Gravity
+    LineBlaster,    // Clears bottom line
+    Gravity,        // Drops all floating blocks  
+    Bomb           // Clears 3x3 area around piece
 }
 
 [System.Serializable]
