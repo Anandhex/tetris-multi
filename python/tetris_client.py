@@ -273,4 +273,142 @@ class UnityTetrisClient:
                 if action_info and not executing:
                     return state
             time.sleep(check_interval)
-        raise TimeoutError("Timeout waiting for game reset and ready state.")        
+        raise TimeoutError("Timeout waiting for game reset and ready state.")          
+    
+    def execute_powerup_decision(self, decision_result, timeout=5.0):
+        """
+        Execute powerup decision based on complete decision result
+        
+        Args:
+            decision_result: Complete decision from PowerUp DQN
+            timeout: Response timeout
+            
+        Returns:
+            dict: Execution result with board updates
+        """
+        decision_data = decision_result['decision_data']
+        action = decision_data['action']
+        
+        if action == 'wait':
+            # Hold powerup for later
+            command = {
+                "type": "hold_powerup",
+                "powerup_type": decision_data['powerup_type'],
+                "ai_confidence": decision_result['q_value'],
+                "timestamp": time.time()
+            }
+            
+            success = self._send_command(command)
+            return {
+                'success': success,
+                'action': 'wait',
+                'powerup_type': decision_data['powerup_type'],
+                'ai_confidence': decision_result['q_value']
+            }
+        
+        elif action == 'use_bomb':
+            # Execute bomb drop at specific column
+            command = {
+                "type": "execute_bomb_drop",
+                "bomb": {
+                    "column": decision_data['column'],
+                    "predicted_impact": decision_data['impact'],
+                    "ai_confidence": decision_result['q_value'],
+                    "timestamp": time.time()
+                }
+            }
+            
+            if not self._send_command(command):
+                return {'success': False, 'error': 'Failed to send bomb command'}
+            
+            # Wait for execution result
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                state = self.get_game_state(timeout=0.1)
+                if state and state.get('type') == 'bomb_executed':
+                    return {
+                        'success': state.get('success', False),
+                        'action': 'use_bomb',
+                        'powerup_type': 'bomb',
+                        'column': decision_data['column'],
+                        'landing_row': state.get('landing_row'),
+                        'explosion_center': state.get('explosion_center'),
+                        'board_state_before': state.get('board_before'),
+                        'board_state_after': state.get('board_after'),
+                        'impact_metrics': state.get('impact_metrics', {}),
+                        'ui_updates': state.get('ui_updates', {}),
+                        'ai_confidence': decision_result['q_value'],
+                        'predicted_impact': decision_data['impact'],
+                        'error': state.get('error', None)
+                    }
+            
+            return {'success': False, 'error': 'Timeout waiting for bomb execution'}
+        
+        elif action == 'use_gravity':
+            # Execute gravity powerup
+            command = {
+                "type": "execute_gravity",
+                "gravity": {
+                    "predicted_impact": decision_data['impact'],
+                    "ai_confidence": decision_result['q_value'],
+                    "timestamp": time.time()
+                }
+            }
+            
+            if not self._send_command(command):
+                return {'success': False, 'error': 'Failed to send gravity command'}
+            
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                state = self.get_game_state(timeout=0.1)
+                if state and state.get('type') == 'gravity_executed':
+                    return {
+                        'success': state.get('success', False),
+                        'action': 'use_gravity',
+                        'powerup_type': 'gravity',
+                        'board_state_before': state.get('board_before'),
+                        'board_state_after': state.get('board_after'),
+                        'impact_metrics': state.get('impact_metrics', {}),
+                        'ui_updates': state.get('ui_updates', {}),
+                        'ai_confidence': decision_result['q_value'],
+                        'predicted_impact': decision_data['impact'],
+                        'error': state.get('error', None)
+                    }
+            
+            return {'success': False, 'error': 'Timeout waiting for gravity execution'}
+        
+        elif action == 'use_bottom_clear':
+            # Execute bottom line clear powerup
+            command = {
+                "type": "execute_bottom_clear",
+                "bottom_clear": {
+                    "predicted_impact": decision_data['impact'],
+                    "ai_confidence": decision_result['q_value'],
+                    "timestamp": time.time()
+                }
+            }
+            
+            if not self._send_command(command):
+                return {'success': False, 'error': 'Failed to send bottom clear command'}
+            
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                state = self.get_game_state(timeout=0.1)
+                if state and state.get('type') == 'bottom_clear_executed':
+                    return {
+                        'success': state.get('success', False),
+                        'action': 'use_bottom_clear',
+                        'powerup_type': 'bottom_line_clear',
+                        'board_state_before': state.get('board_before'),
+                        'board_state_after': state.get('board_after'),
+                        'impact_metrics': state.get('impact_metrics', {}),
+                        'ui_updates': state.get('ui_updates', {}),
+                        'ai_confidence': decision_result['q_value'],
+                        'predicted_impact': decision_data['impact'],
+                        'error': state.get('error', None)
+                    }
+            
+            return {'success': False, 'error': 'Timeout waiting for bottom clear execution'}
+        
+        else:
+            return {'success': False, 'error': f'Unknown action: {action}'}    
