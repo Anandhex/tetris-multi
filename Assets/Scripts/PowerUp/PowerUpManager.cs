@@ -1,6 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
-using System.Linq; 
+using System.Linq;
 using UnityEngine.Tilemaps;
 using TMPro;
 
@@ -9,15 +9,15 @@ public class PowerUpManager : MonoBehaviour
     [Header("Power-up Settings")]
     public PowerUp[] availablePowerUps;
     public float powerUpChance = 0.8f;
-    
+
     [Header("Time Challenge Settings")]
     public float timeWindowMinutes = 4f; // 4 minutes window
     public int requiredLinesInWindow = 8; // 8 lines needed in 4 minutes
-    
+
     [Header("UI References")]
     public GameObject powerUpSlotPrefab;
     public Transform powerUpInventoryParent;
-    
+
     [Header("Power-up HUD UI")]
     public TextMeshProUGUI inventoryText;
     public TextMeshProUGUI progressText;
@@ -26,39 +26,39 @@ public class PowerUpManager : MonoBehaviour
     [Header("Audio")]
     public AudioClip powerUpObtainedSound;
     public AudioClip powerUpUsedSound;
-    
+
     // Inventory by power-up type
     private Dictionary<PowerUpType, int> powerUpInventory = new Dictionary<PowerUpType, int>();
     private Board ownerBoard;
     private AudioSource audioSource;
-    
+
     // Time challenge tracking
     private List<float> linesClearedTimes = new List<float>();
     private float gameStartTime;
-    
+
     // Logging control
     private float lastLogTime = 0f;
     private float logInterval = 2f; // Log every 2 seconds
     private int lastLinesCount = 0;
-    
+
     private void Start()
     {
         ownerBoard = GetComponent<Board>();
         audioSource = GetComponent<AudioSource>();
         gameStartTime = Time.time;
-        
+
         Debug.Log("🎮 === POWER-UP MANAGER INITIALIZED ===");
         Debug.Log($"⚙️ Settings: PowerUp Chance = {powerUpChance * 100}%");
         Debug.Log($"⏰ Time Window: {timeWindowMinutes} minutes for {requiredLinesInWindow} lines");
         Debug.Log($"🎯 Constraint 1: Clear 2+ lines = {powerUpChance * 100}% base chance");
         Debug.Log($"🎯 Constraint 2: Clear {requiredLinesInWindow} lines in {timeWindowMinutes} minutes = GUARANTEED");
-        
+
         // Initialize inventory
         InitializeInventory();
-        
+
         // Initialize UI
         InitializeUI();
-        
+
         // Initial status log
         LogCurrentStatus();
     }
@@ -68,7 +68,7 @@ public class PowerUpManager : MonoBehaviour
         powerUpInventory[PowerUpType.LineBlaster] = 0;
         powerUpInventory[PowerUpType.Gravity] = 0;
         powerUpInventory[PowerUpType.Bomb] = 0;
-        
+
         Debug.Log("📦 Inventory initialized: LineBlaster=0, Gravity=0, Bomb=0");
     }
 
@@ -77,17 +77,17 @@ public class PowerUpManager : MonoBehaviour
         // Set up the keys instruction (this won't change)
         if (keysText != null)
         {
-            keysText.text = "Keys: 1=LineBlaster  2=Gravity  3=Bomb";
+            keysText.text = "Keys:\n1=LineBlaster\n2=Gravity\n3=Bomb";
             Debug.Log("✅ Keys UI initialized");
         }
         else
         {
             Debug.LogWarning("⚠️ Keys UI not connected!");
         }
-        
+
         // Update the dynamic UI elements
         UpdateUI();
-        
+
         // Check UI connections
         Debug.Log($"🔗 UI Connections: Inventory={inventoryText != null}, Progress={progressText != null}, Keys={keysText != null}");
     }
@@ -110,20 +110,20 @@ public class PowerUpManager : MonoBehaviour
             Debug.Log("🔑 Key 3 pressed - attempting Bomb");
             UsePowerUp(PowerUpType.Bomb);
         }
-        
+
         // Clean up old line clear times (outside the time window)
         CleanupOldLineTimes();
-        
+
         // Update UI every frame
         UpdateUI();
-        
+
         // Periodic status logging
         if (Time.time - lastLogTime > logInterval)
         {
             LogCurrentStatus();
             lastLogTime = Time.time;
         }
-        
+
         // Check for lines count change
         if (linesClearedTimes.Count != lastLinesCount)
         {
@@ -137,16 +137,16 @@ public class PowerUpManager : MonoBehaviour
         float timeElapsed = Time.time - gameStartTime;
         float timeRemaining = (timeWindowMinutes * 60f) - timeElapsed;
         int linesInWindow = linesClearedTimes.Count;
-        
+
         Debug.Log("📋 === CURRENT STATUS ===");
         Debug.Log($"⏰ Time: {timeElapsed:F1}s elapsed, {Mathf.Max(0, timeRemaining):F1}s remaining");
         Debug.Log($"📊 Progress: {linesInWindow}/{requiredLinesInWindow} lines in window");
         Debug.Log($"🎒 Inventory: L={powerUpInventory[PowerUpType.LineBlaster]}, G={powerUpInventory[PowerUpType.Gravity]}, B={powerUpInventory[PowerUpType.Bomb]}");
-        
+
         // Calculate progress percentage
         float progressPercent = (float)linesInWindow / requiredLinesInWindow * 100f;
         Debug.Log($"📈 Progress: {progressPercent:F1}% towards time challenge");
-        
+
         // Time window status
         if (timeRemaining > 0)
         {
@@ -156,7 +156,7 @@ public class PowerUpManager : MonoBehaviour
         {
             Debug.Log("🔄 Time window expired - ready for reset");
         }
-        
+
         Debug.Log("=========================");
     }
 
@@ -164,11 +164,11 @@ public class PowerUpManager : MonoBehaviour
     {
         float currentTime = Time.time;
         float timeWindowSeconds = timeWindowMinutes * 60f;
-        
+
         int beforeCount = linesClearedTimes.Count;
         linesClearedTimes.RemoveAll(time => currentTime - time > timeWindowSeconds);
         int afterCount = linesClearedTimes.Count;
-        
+
         if (beforeCount != afterCount)
         {
             Debug.Log($"🧹 Cleaned up {beforeCount - afterCount} old line records");
@@ -181,27 +181,27 @@ public class PowerUpManager : MonoBehaviour
         // Update inventory display
         if (inventoryText != null)
         {
-            string inventoryDisplay = $"Power-ups: [LineBlaster:{powerUpInventory[PowerUpType.LineBlaster]}] [Gravity:{powerUpInventory[PowerUpType.Gravity]}] [Bomb:{powerUpInventory[PowerUpType.Bomb]}]";
+            string inventoryDisplay = $"Power-ups:\n[LineBlaster:{powerUpInventory[PowerUpType.LineBlaster]}]\n[Gravity:{powerUpInventory[PowerUpType.Gravity]}]\n[Bomb:{powerUpInventory[PowerUpType.Bomb]}]";
             inventoryText.text = inventoryDisplay;
         }
-        
+
         // Update progress display
         if (progressText != null)
         {
             float timeRemaining = (gameStartTime + timeWindowMinutes * 60f) - Time.time;
             int linesInWindow = linesClearedTimes.Count;
-            
+
             string progressDisplay = $"Progress: {linesInWindow}/{requiredLinesInWindow} lines";
-            
+
             if (timeRemaining > 0)
             {
                 int minutesLeft = Mathf.FloorToInt(timeRemaining / 60f);
                 int secondsLeft = Mathf.FloorToInt(timeRemaining % 60f);
-                progressDisplay += $" ({minutesLeft}:{secondsLeft:00} remaining)";
+                progressDisplay += $"\n({minutesLeft}:{secondsLeft:00} remaining)";
             }
             else
             {
-                progressDisplay += " (New window started)";
+                progressDisplay += "\n(New window started)";
                 // Auto-reset if time window expired
                 if (linesInWindow == 0)
                 {
@@ -209,12 +209,12 @@ public class PowerUpManager : MonoBehaviour
                     gameStartTime = Time.time;
                 }
             }
-            
+
             // Add progress bar visual
             float progressPercentage = (float)linesInWindow / requiredLinesInWindow;
             string progressBar = CreateProgressBar(progressPercentage);
-            progressDisplay = progressBar + " " + progressDisplay;
-            
+            progressDisplay = progressBar + "\n\n " + progressDisplay;
+
             progressText.text = progressDisplay;
         }
     }
@@ -223,7 +223,7 @@ public class PowerUpManager : MonoBehaviour
     {
         int totalBars = 10;
         int filledBars = Mathf.FloorToInt(percentage * totalBars);
-        
+
         string bar = "[";
         for (int i = 0; i < totalBars; i++)
         {
@@ -233,26 +233,26 @@ public class PowerUpManager : MonoBehaviour
                 bar += "░";
         }
         bar += "]";
-        
+
         return bar;
     }
 
     public void UsePowerUp(PowerUpType type)
     {
         Debug.Log($"🎯 === ATTEMPTING TO USE {type.ToString().ToUpper()} ===");
-        
+
         if (powerUpInventory.ContainsKey(type) && powerUpInventory[type] > 0)
         {
             int beforeCount = powerUpInventory[type];
             powerUpInventory[type]--;
             int afterCount = powerUpInventory[type];
-            
+
             Debug.Log($"✅ {type} used successfully! Count: {beforeCount} → {afterCount}");
-            
+
             SafeExecutePowerUp(type);
             UpdatePowerUpUI();
             PlaySound(powerUpUsedSound);
-            
+
             // Log updated inventory
             Debug.Log($"📦 New inventory: L={powerUpInventory[PowerUpType.LineBlaster]}, G={powerUpInventory[PowerUpType.Gravity]}, B={powerUpInventory[PowerUpType.Bomb]}");
         }
@@ -262,21 +262,21 @@ public class PowerUpManager : MonoBehaviour
             Debug.Log($"❌ Cannot use {type}! Current count: {currentCount}");
             Debug.Log($"📦 Available: L={powerUpInventory[PowerUpType.LineBlaster]}, G={powerUpInventory[PowerUpType.Gravity]}, B={powerUpInventory[PowerUpType.Bomb]}");
         }
-        
+
         Debug.Log("=== END POWER-UP USAGE ===");
     }
 
     private void SafeExecutePowerUp(PowerUpType type)
     {
         Debug.Log($"🔧 Executing {type} power-up...");
-        
+
         // For bomb, we need special handling
         if (type == PowerUpType.Bomb)
         {
             ExecuteBombImproved();
             return;
         }
-        
+
         // For other power-ups, clear active piece temporarily
         bool hadActivePiece = ownerBoard.activePiece != null;
         if (hadActivePiece)
@@ -284,7 +284,7 @@ public class PowerUpManager : MonoBehaviour
             Debug.Log("🔄 Temporarily clearing active piece");
             ownerBoard.Clear(ownerBoard.activePiece);
         }
-        
+
         // Execute the power-up
         switch (type)
         {
@@ -295,7 +295,7 @@ public class PowerUpManager : MonoBehaviour
                 ExecuteGravity();
                 break;
         }
-        
+
         // Put active piece back
         if (hadActivePiece && ownerBoard.activePiece != null)
         {
@@ -319,43 +319,43 @@ public class PowerUpManager : MonoBehaviour
             }
         }
     }
-    
+
     public void OnLinesCleared(int lineCount)
     {
         Debug.Log($"🎯 === LINES CLEARED EVENT: {lineCount} LINES ===");
-        
+
         // Add lines to time tracking (each line gets a timestamp)
         float currentTime = Time.time;
         Debug.Log($"⏰ Adding {lineCount} line timestamps at time {currentTime:F1}");
-        
+
         for (int i = 0; i < lineCount; i++)
         {
             linesClearedTimes.Add(currentTime);
         }
-        
+
         int totalLinesInWindow = linesClearedTimes.Count;
         Debug.Log($"📊 Total lines in current window: {totalLinesInWindow}");
-        
+
         // Check both constraints for power-up earning
         Debug.Log("🔍 Checking power-up constraints...");
-        
+
         bool earnedFromLineCount = CheckLineCountConstraint(lineCount);
         bool earnedFromTimeChallenge = CheckTimeConstraint();
-        
+
         Debug.Log($"📋 Constraint Results:");
         Debug.Log($"  🎲 Line Count: {(earnedFromLineCount ? "✅ PASSED" : "❌ FAILED")}");
         Debug.Log($"  ⏰ Time Challenge: {(earnedFromTimeChallenge ? "✅ PASSED" : "❌ FAILED")}");
-        
+
         // Award power-ups
         int powerUpsAwarded = 0;
-        
+
         if (earnedFromLineCount)
         {
             Debug.Log("🎁 Awarding power-up from line count constraint!");
             GenerateRandomPowerUp();
             powerUpsAwarded++;
         }
-        
+
         if (earnedFromTimeChallenge)
         {
             Debug.Log("🎁 Awarding power-up from time challenge constraint!");
@@ -363,7 +363,7 @@ public class PowerUpManager : MonoBehaviour
             powerUpsAwarded++;
             ResetTimeChallenge();
         }
-        
+
         if (powerUpsAwarded == 0)
         {
             Debug.Log("💔 No power-ups awarded this time");
@@ -372,7 +372,7 @@ public class PowerUpManager : MonoBehaviour
         {
             Debug.Log($"🎉 TOTAL POWER-UPS AWARDED: {powerUpsAwarded}");
         }
-        
+
         Debug.Log("=== END LINES CLEARED PROCESSING ===");
     }
 
@@ -380,14 +380,14 @@ public class PowerUpManager : MonoBehaviour
     {
         Debug.Log($"🔍 === CHECKING LINE COUNT CONSTRAINT ===");
         Debug.Log($"📊 Lines cleared this turn: {lineCount}");
-        
+
         // Constraint 1: 2+ lines cleared = chance for power-up
         if (lineCount < 2)
         {
             Debug.Log($"❌ Insufficient lines: {lineCount} < 2 (minimum required)");
             return false;
         }
-        
+
         float baseChance = powerUpChance;
         float multiplier = lineCount switch
         {
@@ -400,7 +400,7 @@ public class PowerUpManager : MonoBehaviour
         float finalChance = baseChance * multiplier;
         float randomRoll = Random.Range(0f, 1f);
         bool success = randomRoll < finalChance;
-        
+
         Debug.Log($"🎲 Calculation Details:");
         Debug.Log($"  Base Chance: {baseChance * 100:F1}%");
         Debug.Log($"  Multiplier: {multiplier}x (for {lineCount} lines)");
@@ -408,28 +408,28 @@ public class PowerUpManager : MonoBehaviour
         Debug.Log($"  Random Roll: {randomRoll:F3}");
         Debug.Log($"  Required: < {finalChance:F3}");
         Debug.Log($"  Result: {(success ? "✅ SUCCESS!" : "❌ FAILED")}");
-        
+
         return success;
     }
 
     private bool CheckTimeConstraint()
     {
         Debug.Log($"🔍 === CHECKING TIME CHALLENGE CONSTRAINT ===");
-        
+
         // Constraint 2: X lines in Y minutes = guaranteed power-up
         int linesInWindow = linesClearedTimes.Count;
         float timeElapsed = Time.time - gameStartTime;
         float timeRemaining = (timeWindowMinutes * 60f) - timeElapsed;
-        
+
         Debug.Log($"📊 Challenge Details:");
         Debug.Log($"  Lines in window: {linesInWindow}");
         Debug.Log($"  Required lines: {requiredLinesInWindow}");
         Debug.Log($"  Time elapsed: {timeElapsed:F1}s");
         Debug.Log($"  Time remaining: {timeRemaining:F1}s");
         Debug.Log($"  Window duration: {timeWindowMinutes * 60f}s");
-        
+
         bool success = linesInWindow >= requiredLinesInWindow;
-        
+
         if (success)
         {
             Debug.Log($"✅ TIME CHALLENGE COMPLETED!");
@@ -443,7 +443,7 @@ public class PowerUpManager : MonoBehaviour
             Debug.Log($"  Still need: {linesNeeded} more lines");
             Debug.Log($"  Time left: {Mathf.Max(0, timeRemaining):F1}s");
         }
-        
+
         return success;
     }
 
@@ -453,10 +453,10 @@ public class PowerUpManager : MonoBehaviour
         Debug.Log($"📊 Previous window stats:");
         Debug.Log($"  Lines cleared: {linesClearedTimes.Count}");
         Debug.Log($"  Time taken: {Time.time - gameStartTime:F1}s");
-        
+
         linesClearedTimes.Clear();
         gameStartTime = Time.time;
-        
+
         Debug.Log("✅ New time challenge window started!");
         Debug.Log($"  Target: {requiredLinesInWindow} lines in {timeWindowMinutes} minutes");
     }
@@ -464,29 +464,29 @@ public class PowerUpManager : MonoBehaviour
     private void GenerateRandomPowerUp()
     {
         Debug.Log("🎰 === GENERATING RANDOM POWER-UP ===");
-        
+
         // Only generate our 3 main power-ups
         PowerUpType[] availableTypes = { PowerUpType.LineBlaster, PowerUpType.Gravity, PowerUpType.Bomb };
-        
+
         // Weight-based selection
         float[] weights = { 3f, 2f, 1f }; // LineBlaster most common, Bomb least common
         float totalWeight = weights.Sum();
-        
+
         Debug.Log($"🎲 Weighted selection:");
-        Debug.Log($"  LineBlaster: {weights[0]} ({weights[0]/totalWeight*100:F1}%)");
-        Debug.Log($"  Gravity: {weights[1]} ({weights[1]/totalWeight*100:F1}%)");
-        Debug.Log($"  Bomb: {weights[2]} ({weights[2]/totalWeight*100:F1}%)");
-        
+        Debug.Log($"  LineBlaster: {weights[0]} ({weights[0] / totalWeight * 100:F1}%)");
+        Debug.Log($"  Gravity: {weights[1]} ({weights[1] / totalWeight * 100:F1}%)");
+        Debug.Log($"  Bomb: {weights[2]} ({weights[2] / totalWeight * 100:F1}%)");
+
         float randomValue = Random.Range(0f, totalWeight);
         float currentWeight = 0f;
-        
+
         Debug.Log($"🎯 Random value: {randomValue:F2} / {totalWeight:F2}");
-        
+
         for (int i = 0; i < availableTypes.Length; i++)
         {
             currentWeight += weights[i];
             Debug.Log($"  Checking {availableTypes[i]}: {currentWeight:F2}");
-            
+
             if (randomValue <= currentWeight)
             {
                 Debug.Log($"🎁 Selected: {availableTypes[i]}!");
@@ -495,26 +495,26 @@ public class PowerUpManager : MonoBehaviour
             }
         }
     }
-    
+
     public void AddPowerUp(PowerUpType type)
     {
         Debug.Log($"🎁 === ADDING POWER-UP: {type.ToString().ToUpper()} ===");
-        
+
         if (powerUpInventory.ContainsKey(type))
         {
             int beforeCount = powerUpInventory[type];
             powerUpInventory[type]++;
             int afterCount = powerUpInventory[type];
-            
+
             Debug.Log($"✅ {type} added successfully!");
             Debug.Log($"  Count: {beforeCount} → {afterCount}");
-            
+
             UpdatePowerUpUI();
             PlaySound(powerUpObtainedSound);
-            
+
             // Log full inventory
             Debug.Log($"📦 Full inventory: L={powerUpInventory[PowerUpType.LineBlaster]}, G={powerUpInventory[PowerUpType.Gravity]}, B={powerUpInventory[PowerUpType.Bomb]}");
-            
+
             string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
             Debug.Log($"🎮 Player {playerTag} received {type}!");
         }
@@ -529,12 +529,12 @@ public class PowerUpManager : MonoBehaviour
         Debug.Log("🧹 === CLEARING ALL POWER-UPS ===");
         Debug.Log($"📊 Before clear: L={powerUpInventory[PowerUpType.LineBlaster]}, G={powerUpInventory[PowerUpType.Gravity]}, B={powerUpInventory[PowerUpType.Bomb]}");
         Debug.Log($"📊 Lines in window: {linesClearedTimes.Count}");
-        
+
         InitializeInventory();
         linesClearedTimes.Clear();
         gameStartTime = Time.time;
         UpdatePowerUpUI();
-        
+
         Debug.Log("✅ All power-ups and progress cleared");
         Debug.Log("🔄 New game session started");
     }
@@ -545,7 +545,7 @@ public class PowerUpManager : MonoBehaviour
         {
             // Count existing UI elements
             int existingSlots = powerUpInventoryParent.childCount;
-            
+
             foreach (Transform child in powerUpInventoryParent)
             {
                 Destroy(child.gameObject);
@@ -565,28 +565,28 @@ public class PowerUpManager : MonoBehaviour
                     }
                 }
             }
-            
+
             if (existingSlots != totalSlots)
             {
                 Debug.Log($"🎨 UI updated: {existingSlots} → {totalSlots} power-up slots");
             }
         }
     }
-    
+
     private void ExecuteBombImproved()
     {
         Debug.Log("💣 === EXECUTING BOMB POWER-UP ===");
-        
+
         if (ownerBoard.activePiece != null)
         {
             Vector3Int center = ownerBoard.activePiece.position;
             Debug.Log($"💥 Bomb center: {center}");
-            
+
             ownerBoard.Clear(ownerBoard.activePiece);
-            
+
             int clearedCount = 0;
             List<Vector3Int> clearedPositions = new List<Vector3Int>();
-            
+
             // Clear 3x3 area
             for (int x = -1; x <= 1; x++)
             {
@@ -601,7 +601,7 @@ public class PowerUpManager : MonoBehaviour
                     }
                 }
             }
-            
+
             // Clear falling piece cells
             foreach (Vector3Int cell in ownerBoard.activePiece.cells)
             {
@@ -613,13 +613,13 @@ public class PowerUpManager : MonoBehaviour
                     clearedCount++;
                 }
             }
-            
+
             Debug.Log($"💥 Bomb cleared {clearedCount} tiles at positions:");
             foreach (var pos in clearedPositions)
             {
                 Debug.Log($"  - {pos}");
             }
-            
+
             // Try to place piece back safely
             bool placed = false;
             for (int yOffset = 0; yOffset < 5; yOffset++)
@@ -634,7 +634,7 @@ public class PowerUpManager : MonoBehaviour
                     break;
                 }
             }
-            
+
             if (!placed)
             {
                 Debug.Log("🔄 Spawning new piece after bomb (couldn't reposition)");
@@ -646,20 +646,20 @@ public class PowerUpManager : MonoBehaviour
             Debug.LogWarning("⚠️ No active piece to center bomb on!");
         }
     }
-    
+
     private void ExecuteLineBlaster()
     {
         Debug.Log("⚡ === EXECUTING LINE BLASTER POWER-UP ===");
-        
+
         RectInt bounds = ownerBoard.Bounds;
         Debug.Log($"🎯 Searching for bottom line in bounds: {bounds}");
-        
+
         bool lineFound = false;
         for (int y = bounds.yMin; y < bounds.yMax; y++)
         {
             bool hasBlocks = false;
             int blockCount = 0;
-            
+
             for (int x = bounds.xMin; x < bounds.xMax; x++)
             {
                 if (ownerBoard.tilemap.HasTile(new Vector3Int(x, y, 0)))
@@ -668,7 +668,7 @@ public class PowerUpManager : MonoBehaviour
                     blockCount++;
                 }
             }
-            
+
             if (hasBlocks)
             {
                 Debug.Log($"⚡ Found bottom line at y={y} with {blockCount} blocks");
@@ -678,27 +678,27 @@ public class PowerUpManager : MonoBehaviour
                 break;
             }
         }
-        
+
         if (!lineFound)
         {
             Debug.Log("❌ No lines found to clear with LineBlaster");
         }
     }
-    
+
     private void ExecuteGravity()
     {
         Debug.Log("🌍 === EXECUTING GRAVITY POWER-UP ===");
-        
+
         RectInt bounds = ownerBoard.Bounds;
         int totalMoved = 0;
-        
+
         Debug.Log($"🎯 Processing columns in bounds: {bounds}");
-        
+
         for (int x = bounds.xMin; x < bounds.xMax; x++)
         {
             List<TileBase> column = new List<TileBase>();
             int originalTiles = 0;
-            
+
             // Collect tiles in column
             for (int y = bounds.yMin; y < bounds.yMax; y++)
             {
@@ -711,7 +711,7 @@ public class PowerUpManager : MonoBehaviour
                 }
                 ownerBoard.tilemap.SetTile(pos, null);
             }
-            
+
             // Place tiles at bottom
             for (int i = 0; i < column.Count; i++)
             {
@@ -719,28 +719,28 @@ public class PowerUpManager : MonoBehaviour
                 ownerBoard.tilemap.SetTile(pos, column[i]);
                 totalMoved++;
             }
-            
+
             if (originalTiles > 0)
             {
                 Debug.Log($"🌍 Column {x}: {originalTiles} tiles → compacted to bottom");
             }
         }
-        
+
         Debug.Log($"✅ Gravity completed: {totalMoved} tiles moved");
     }
-    
+
     private PowerUp GetPowerUpData(PowerUpType type)
     {
         return availablePowerUps.FirstOrDefault(p => p.type == type);
     }
-    
+
     private void ClearLine(int row)
     {
         Debug.Log($"🧹 Clearing line {row}");
-        
+
         RectInt bounds = ownerBoard.Bounds;
         int clearedTiles = 0;
-        
+
         // Clear the line
         for (int x = bounds.xMin; x < bounds.xMax; x++)
         {
@@ -751,9 +751,9 @@ public class PowerUpManager : MonoBehaviour
                 clearedTiles++;
             }
         }
-        
+
         Debug.Log($"🧹 Cleared {clearedTiles} tiles from line {row}");
-        
+
         // Move lines down
         int movedTiles = 0;
         for (int y = row + 1; y < bounds.yMax; y++)
@@ -765,14 +765,14 @@ public class PowerUpManager : MonoBehaviour
                 TileBase tile = ownerBoard.tilemap.GetTile(above);
                 ownerBoard.tilemap.SetTile(below, tile);
                 ownerBoard.tilemap.SetTile(above, null);
-                
+
                 if (tile != null) movedTiles++;
             }
         }
-        
+
         Debug.Log($"🔄 Moved {movedTiles} tiles down after line clear");
     }
-    
+
     private void PlaySound(AudioClip clip)
     {
         if (audioSource != null && clip != null)
@@ -790,13 +790,13 @@ public class PowerUpManager : MonoBehaviour
     {
         return powerUpInventory.Values.Sum();
     }
-    
+
     // Public methods for AI agents to check inventory
     public int GetPowerUpCount(PowerUpType type)
     {
         return powerUpInventory.ContainsKey(type) ? powerUpInventory[type] : 0;
     }
-    
+
     public bool HasPowerUp(PowerUpType type)
     {
         return GetPowerUpCount(type) > 0;
