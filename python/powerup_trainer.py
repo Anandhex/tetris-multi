@@ -1,5 +1,5 @@
 from simplified_dqn_network import EnhancedDQNAgent
-from powerup_dqn_network import FinalPowerUpDQNAgent
+from powerup_dqn_network import FinalPowerUpDQNAgent  # Fixed import
 from datetime import datetime
 from tetris_client import UnityTetrisClient
 from statistics import mean
@@ -202,232 +202,253 @@ class FinalCompleteTrainer:
         print(f"🚀 Starting final PowerUp training for {self.episodes} episodes...")
         
         for episode in tqdm(range(self.episodes), desc="Training Episodes"):
-            # Reset game
-            self.client.env_reset()
-            done = False
-            steps = 0
-            blocks_placed = 0
-            episode_reward = 0.0
-            episode_score = 0
-            
-            # PowerUp state
-            self.current_powerup = None
-            self.blocks_since_powerup = 0
-            episode_powerup_rewards = []
-            episode_decisions = []
-            
-            while not done and (self.max_steps is None or steps < self.max_steps):
-                # ═══════════════════════════════════════
-                # PHASE 1: BLOCK PLACEMENT (Pre-trained)
-                # ═══════════════════════════════════════
+            try:
+                print(f"\n🎮 Starting Episode {episode}")
+                # Reset game
+                self.client.env_reset()
+                done = False
+                steps = 0
+                blocks_placed = 0
+                episode_reward = 0.0
+                episode_score = 0
                 
-                # Get possible block placements
-                next_states = self.client.get_possible_states()
-                if not next_states:
-                    break
+                # PowerUp state
+                self.current_powerup = None
+                self.blocks_since_powerup = 0
+                episode_powerup_rewards = []
+                episode_decisions = []
                 
-                # Use pre-trained block placement agent
-                action_map = {}
-                for key, feats in next_states.items():
-                    col_str, rot_str = key.split(":")
-                    col_i, rot_i = int(col_str), int(rot_str)
-                    action_map[tuple(feats)] = (col_i, rot_i)
-                
-                feature_list = list(action_map.keys())
-                best_state = self.block_agent.best_state(feature_list, episode)
-                col, rot = action_map[tuple(best_state)]
-                
-                # ═══════════════════════════════════════
-                # PHASE 2: POWERUP ASSIGNMENT
-                # ═══════════════════════════════════════
-                
-                # Get current board state
-                board_features, board_2d = self.get_board_features_and_2d()
-                if board_features is None:
-                    break
-                
-                # Check powerup assignment
-                if blocks_placed > 0 and blocks_placed % self.powerup_interval == 0 and self.current_powerup is None:
-                    self.current_powerup = random.choice(self.powerup_types)
-                    self.blocks_since_powerup = 0
-                    self.powerup_usage_stats[self.current_powerup]['total'] += 1
-                    print(f"🎁 PowerUp assigned: {self.current_powerup}")
-                
-                # ═══════════════════════════════════════
-                # PHASE 3: POWERUP DECISION (Complete)
-                # ═══════════════════════════════════════
-                
-                powerup_reward = 0
-                
-                if self.current_powerup is not None:
-                    # Make complete powerup decision
-                    decision_result = self.powerup_agent.make_powerup_decision(
-                        self.current_powerup, board_2d, board_features, 
-                        self.blocks_since_powerup, steps
-                    )
+                while not done and (self.max_steps is None or steps < self.max_steps):
+                    # ═══════════════════════════════════════
+                    # PHASE 1: BLOCK PLACEMENT (Pre-trained)
+                    # ═══════════════════════════════════════
                     
-                    if decision_result:
-                        decision_data = decision_result['decision_data']
+                    # Get possible block placements
+                    next_states = self.client.get_possible_states()
+                    if not next_states:
+                        print("🐛 DEBUG: No possible states available")
+                        break
+                    
+                    # Use pre-trained block placement agent
+                    action_map = {}
+                    for key, feats in next_states.items():
+                        col_str, rot_str = key.split(":")
+                        col_i, rot_i = int(col_str), int(rot_str)
+                        action_map[tuple(feats)] = (col_i, rot_i)
+                    
+                    feature_list = list(action_map.keys())
+                    best_state = self.block_agent.best_state(feature_list, episode)
+                    col, rot = action_map[tuple(best_state)]
+                    
+                    # ═══════════════════════════════════════
+                    # PHASE 2: POWERUP ASSIGNMENT
+                    # ═══════════════════════════════════════
+                    
+                    # Get current board state
+                    board_features, board_2d = self.get_board_features_and_2d()
+                    if board_features is None:
+                        break
+                    
+                    # Check powerup assignment
+                    if blocks_placed > 0 and blocks_placed % self.powerup_interval == 0 and self.current_powerup is None:
+                        self.current_powerup = random.choice(self.powerup_types)
+                        self.blocks_since_powerup = 0
+                        self.powerup_usage_stats[self.current_powerup]['total'] += 1
+                        print(f"🎁 PowerUp assigned: {self.current_powerup}")
+                    
+                    # ═══════════════════════════════════════
+                    # PHASE 3: POWERUP DECISION (Complete)
+                    # ═══════════════════════════════════════
+                    
+                    powerup_reward = 0
+                    
+                    if self.current_powerup is not None:
+                        # Make complete powerup decision
+                        decision_result = self.powerup_agent.make_powerup_decision(
+                            self.current_powerup, board_2d, board_features, 
+                            self.blocks_since_powerup, steps
+                        )
                         
-                        # Force use if held too long
-                        if self.blocks_since_powerup >= self.max_powerup_hold and decision_data['action'] == 'wait':
-                            # Find best use option from all evaluations
-                            use_options = [eval for eval in decision_result['all_evaluations'] 
-                                         if eval['decision_data']['action'] != 'wait']
-                            if use_options:
-                                best_use = max(use_options, key=lambda x: x['q_value'])
-                                decision_result['decision_data'] = best_use['decision_data']
-                                decision_result['state_features'] = best_use['state_features']
-                                decision_result['q_value'] = best_use['q_value']
-                                decision_data = decision_result['decision_data']
-                        
-                        if decision_data['action'] != 'wait':
-                            # ═══════════════════════════════════════
-                            # PHASE 4: POWERUP EXECUTION & REWARD
-                            # ═══════════════════════════════════════
+                        if decision_result:
+                            decision_data = decision_result['decision_data']
                             
-                            # Execute powerup
-                            try:
-                                execution_result = self.client.execute_powerup_decision(decision_result)
+                            # Force use if held too long
+                            if self.blocks_since_powerup >= self.max_powerup_hold and decision_data['action'] == 'wait':
+                                # Find best use option from all evaluations
+                                use_options = [eval for eval in decision_result['all_evaluations'] 
+                                            if eval['decision_data']['action'] != 'wait']
+                                if use_options:
+                                    best_use = max(use_options, key=lambda x: x['q_value'])
+                                    decision_result['decision_data'] = best_use['decision_data']
+                                    decision_result['state_features'] = best_use['state_features']
+                                    decision_result['q_value'] = best_use['q_value']
+                                    decision_data = decision_result['decision_data']
+                            
+                            if decision_data['action'] != 'wait':
+                                # ═══════════════════════════════════════
+                                # PHASE 4: POWERUP EXECUTION & REWARD
+                                # ═══════════════════════════════════════
                                 
-                                if execution_result.get('success', False):
-                                    # Extract board features after powerup
-                                    impact_metrics = execution_result.get('impact_metrics', {})
+                                # Execute powerup
+                                try:
+                                    execution_result = self.client.execute_powerup_decision(decision_result)
                                     
-                                    lines_after = board_features[0] + impact_metrics.get('lines_cleared', 0)
-                                    holes_after = max(0, board_features[1] - impact_metrics.get('holes_filled', 0))
-                                    bumpiness_after = max(0, board_features[2] - impact_metrics.get('bumpiness_reduced', 0))
-                                    height_after = max(0, board_features[3] - impact_metrics.get('height_reduced', 0))
-                                    
-                                    board_features_after = [lines_after, holes_after, bumpiness_after, height_after]
-                                    actual_impact = impact_metrics.get('actual_impact', decision_data.get('impact', 0))
-                                else:
-                                    # Execution failed, use simulation
+                                    if execution_result.get('success', False):
+                                        # Extract board features after powerup
+                                        impact_metrics = execution_result.get('impact_metrics', {})
+                                        
+                                        lines_after = board_features[0] + impact_metrics.get('lines_cleared', 0)
+                                        holes_after = max(0, board_features[1] - impact_metrics.get('holes_filled', 0))
+                                        bumpiness_after = max(0, board_features[2] - impact_metrics.get('bumpiness_reduced', 0))
+                                        height_after = max(0, board_features[3] - impact_metrics.get('height_reduced', 0))
+                                        
+                                        board_features_after = [lines_after, holes_after, bumpiness_after, height_after]
+                                        actual_impact = impact_metrics.get('actual_impact', decision_data.get('impact', 0))
+                                    else:
+                                        # Execution failed, use simulation
+                                        board_features_after, actual_impact, execution_result = self.simulate_powerup_effect(
+                                            decision_data, board_features
+                                        )
+                                        
+                                except Exception as e:
+                                    print(f"⚠️ PowerUp execution error: {e}")
+                                    # Use simulation as fallback
                                     board_features_after, actual_impact, execution_result = self.simulate_powerup_effect(
                                         decision_data, board_features
                                     )
-                                    
-                            except Exception as e:
-                                print(f"⚠️ PowerUp execution error: {e}")
-                                # Use simulation as fallback
-                                board_features_after, actual_impact, execution_result = self.simulate_powerup_effect(
-                                    decision_data, board_features
+                                
+                                # Calculate reward
+                                powerup_reward = self.powerup_agent.calculate_placement_reward(
+                                    board_features, board_features_after, self.current_powerup, decision_data
                                 )
-                            
-                            # Calculate reward
-                            powerup_reward = self.powerup_agent.calculate_placement_reward(
-                                board_features, board_features_after, self.current_powerup, decision_data
-                            )
-                            
-                            # Store experience for training
-                            next_state_features = self.powerup_agent.get_placement_state(
-                                board_features_after, 0, 0, 'none'
-                            )
-                            
-                            self.powerup_agent.remember(
-                                decision_result['state_features'], powerup_reward, next_state_features, True
-                            )
-                            
-                            # Update statistics
-                            self.powerup_usage_stats[self.current_powerup]['used'] += 1
-                            self.powerup_usage_stats[self.current_powerup]['total_reward'] += powerup_reward
-                            
-                            decision_record = {
-                                'powerup_type': self.current_powerup,
-                                'action': decision_data['action'],
-                                'q_value': decision_result['q_value'],
-                                'reward': powerup_reward,
-                                'decision_type': decision_result['decision_type'],
-                                'predicted_impact': decision_data.get('impact', 0),
-                                'actual_impact': actual_impact
-                            }
-                            
-                            if self.current_powerup == 'bomb':
-                                decision_record.update({
-                                    'column': decision_data.get('column', -1),
-                                    'landing_row': decision_data.get('landing_row', -1)
-                                })
-                            
-                            self.powerup_usage_stats[self.current_powerup]['decisions'].append(decision_record)
-                            episode_powerup_rewards.append(powerup_reward)
-                            episode_decisions.append(decision_record)
-                            
-                            # Logging
-                            if self.current_powerup == 'bomb':
-                                print(f"💣 Bomb used: column {decision_data.get('column', 'N/A')}, "
-                                      f"Q={decision_result['q_value']:.2f}, reward={powerup_reward:.1f}")
+                                
+                                # Store experience for training
+                                next_state_features = self.powerup_agent.get_placement_state(
+                                    board_features_after, 0, 0, 'none'
+                                )
+                                
+                                self.powerup_agent.remember(
+                                    decision_result['state_features'], powerup_reward, next_state_features, True
+                                )
+                                
+                                # Update statistics
+                                self.powerup_usage_stats[self.current_powerup]['used'] += 1
+                                self.powerup_usage_stats[self.current_powerup]['total_reward'] += powerup_reward
+                                
+                                decision_record = {
+                                    'powerup_type': self.current_powerup,
+                                    'action': decision_data['action'],
+                                    'q_value': decision_result['q_value'],
+                                    'reward': powerup_reward,
+                                    'decision_type': decision_result['decision_type'],
+                                    'predicted_impact': decision_data.get('impact', 0),
+                                    'actual_impact': actual_impact
+                                }
+                                
+                                if self.current_powerup == 'bomb':
+                                    decision_record.update({
+                                        'column': decision_data.get('column', -1),
+                                        'landing_row': decision_data.get('landing_row', -1)
+                                    })
+                                
+                                self.powerup_usage_stats[self.current_powerup]['decisions'].append(decision_record)
+                                episode_powerup_rewards.append(powerup_reward)
+                                episode_decisions.append(decision_record)
+                                
+                                # Logging
+                                if self.current_powerup == 'bomb':
+                                    print(f"💣 Bomb used: column {decision_data.get('column', 'N/A')}, "
+                                        f"Q={decision_result['q_value']:.2f}, reward={powerup_reward:.1f}")
+                                else:
+                                    print(f"⚡ {self.current_powerup} used: "
+                                        f"Q={decision_result['q_value']:.2f}, reward={powerup_reward:.1f}")
+                                
+                                self.current_powerup = None
+                                self.blocks_since_powerup = 0
+                                
                             else:
-                                print(f"⚡ {self.current_powerup} used: "
-                                      f"Q={decision_result['q_value']:.2f}, reward={powerup_reward:.1f}")
-                            
-                            self.current_powerup = None
-                            self.blocks_since_powerup = 0
-                            
-                        else:
-                            # Hold/wait decision
-                            self.blocks_since_powerup += 1
-                            powerup_reward = -1
-                            
-                            # Store experience for waiting
-                            self.powerup_agent.remember(
-                                decision_result['state_features'], powerup_reward, 
-                                decision_result['state_features'], False
-                            )
+                                # Hold/wait decision
+                                self.blocks_since_powerup += 1
+                                powerup_reward = -1
+                                
+                                # Store experience for waiting
+                                self.powerup_agent.remember(
+                                    decision_result['state_features'], powerup_reward, 
+                                    decision_result['state_features'], False
+                                )
+                    
+                    # ═══════════════════════════════════════
+                    # PHASE 5: BLOCK EXECUTION
+                    # ═══════════════════════════════════════
+                    
+                    # Execute block placement
+                    print(f"🐛 DEBUG: Executing block placement - col: {col}, rot: {rot}")
+                    curr_meta = self.client.send_action_and_wait({"col": col, "rot": rot}, timeout=30.0)
+                    if curr_meta is None:
+                        print("🐛 DEBUG: No response from block placement")
+                        break
+                    
+                    done = curr_meta.get('gameOver', False)
+                    reward = curr_meta.get('reward', 0)
+                    episode_score = curr_meta.get('score', 0)
+                    
+                    if done:
+                        print(f"🎯 Episode {episode} ended - Final Score: {episode_score}, Steps: {steps}")
+                        break
+                    
+                    # Update counters
+                    blocks_placed += 1
+                    if self.current_powerup is not None:
+                        self.blocks_since_powerup += 1
+                    
+                    episode_reward += reward + powerup_reward
+                    episode_score = curr_meta.get('score', 0)
+                    steps += 1
+                    self.total_steps += 1
+                
+                # Skip very short episodes
+                if steps <= 6:
+                    continue
                 
                 # ═══════════════════════════════════════
-                # PHASE 5: BLOCK EXECUTION
+                # PHASE 6: TRAINING UPDATE
                 # ═══════════════════════════════════════
                 
-                # Execute block placement
-                curr_meta = self.client.send_action_and_wait({"col": col, "rot": rot}, timeout=30.0)
-                if curr_meta is None:
+                # Train powerup agent
+                if len(self.powerup_agent.memory) > self.powerup_agent.batch_size:
+                    for _ in range(3):  # Multiple training steps per episode
+                        self.powerup_agent.replay()
+                
+                # Record metrics
+                scores.append(episode_reward)
+                self.powerup_rewards.extend(episode_powerup_rewards)
+                
+                # Logging
+                if episode % 50 == 0:
+                    self.log_episode_metrics(episode, episode_reward, episode_score, 
+                                        episode_powerup_rewards, steps, blocks_placed)
+                
+                # Save best model
+                if episode_reward > self.best_score:
+                    self.best_score = episode_reward
+                    self.powerup_agent.save_model(f"{self.start_at}_best.pth")
+                    print(f"🏆 New best model saved! Score: {episode_reward:.2f}")
+                
+                # Periodic checkpoint
+                if episode % 100 == 0:
+                    self.powerup_agent.save_model(f"{self.start_at}_checkpoint.pth")
+                    self.save_training_stats(episode)
+            except Exception as e:
+                print(f"🐛 ERROR in Episode {episode}: {e}")
+                print(f"🐛 DEBUG: Attempting to reconnect...")
+                try:
+                    self.client.disconnect()
+                    time.sleep(1)
+                    self.client.connect()
+                except:
+                    print(f"🐛 ERROR: Failed to reconnect. Stopping training.")
                     break
-                
-                done = curr_meta.get('gameOver', False)
-                reward = curr_meta.get('reward', 0)
-                
-                # Update counters
-                blocks_placed += 1
-                if self.current_powerup is not None:
-                    self.blocks_since_powerup += 1
-                
-                episode_reward += reward + powerup_reward
-                episode_score = curr_meta.get('score', 0)
-                steps += 1
-                self.total_steps += 1
-            
-            # Skip very short episodes
-            if steps <= 6:
                 continue
-            
-            # ═══════════════════════════════════════
-            # PHASE 6: TRAINING UPDATE
-            # ═══════════════════════════════════════
-            
-            # Train powerup agent
-            if len(self.powerup_agent.memory) > self.powerup_agent.batch_size:
-                for _ in range(3):  # Multiple training steps per episode
-                    self.powerup_agent.replay()
-            
-            # Record metrics
-            scores.append(episode_reward)
-            self.powerup_rewards.extend(episode_powerup_rewards)
-            
-            # Logging
-            if episode % 50 == 0:
-                self.log_episode_metrics(episode, episode_reward, episode_score, 
-                                       episode_powerup_rewards, steps, blocks_placed)
-            
-            # Save best model
-            if episode_reward > self.best_score:
-                self.best_score = episode_reward
-                self.powerup_agent.save_model(f"{self.start_at}_best.pth")
-                print(f"🏆 New best model saved! Score: {episode_reward:.2f}")
-            
-            # Periodic checkpoint
-            if episode % 100 == 0:
-                self.powerup_agent.save_model(f"{self.start_at}_checkpoint.pth")
-                self.save_training_stats(episode)
         
         # Final save and cleanup
         self.powerup_agent.save_model(f"{self.start_at}_final.pth")

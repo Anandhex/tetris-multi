@@ -170,24 +170,24 @@ class UnityTetrisClient:
         if state and 'curriculumConfirmed' in state:
                 return state
         return None
-    def send_reset(self):
-        command = {
-            "type": "reset",
-            "reset": {"resetBoard": True}
-        }
-        return self._send_command(command)
+    # def send_reset(self):
+    #     command = {
+    #         "type": "reset",
+    #         "reset": {"resetBoard": True}
+    #     }
+    #     return self._send_command(command)
     
-    def _send_command(self, command):
-        if not self.connected:
-            return False
+    # def _send_command(self, command):
+    #     if not self.connected:
+    #         return False
             
-        try:
-            message = json.dumps(command)
-            self.socket.send(message.encode('utf-8'))
-            return True
-        except Exception as e:
-            print(f"Send error: {e}")
-            return False
+    #     try:
+    #         message = json.dumps(command)
+    #         self.socket.send(message.encode('utf-8'))
+    #         return True
+    #     except Exception as e:
+    #         print(f"Send error: {e}")
+    #         return False
     
     def get_game_state(self, timeout=1.0):
         try:
@@ -227,7 +227,7 @@ class UnityTetrisClient:
         """Send reset command to Unity to reset the board"""
         if not self.connected:
             return False
-        command = {"type": "reset", "reset": {"resetBoard": True}}
+        command = {"type": "reset", "reset": {"resetBoard": True, "clearPowerups": True}}
         return self._send_command(command)
     
     def get_possible_states(self, timeout=2.0, poll_interval=0.05):
@@ -259,14 +259,31 @@ class UnityTetrisClient:
         Resets the game board in Unity and waits until the environment is ready for actions.
         Returns the initial game state dict.
         """
+        print(f"🐛 DEBUG: Starting environment reset...")
         # Send reset signal
         if not self.send_reset():
             raise RuntimeError("Failed to send reset command to Unity.")
+            
+        # Clear any old game states from queue
+        old_states_cleared = 0
+        while not self.game_state_queue.empty():
+            try:
+                self.game_state_queue.get_nowait()
+                old_states_cleared += 1
+            except:
+                break
+        
+        if old_states_cleared > 0:
+            print(f"🐛 DEBUG: Cleared {old_states_cleared} old game states from queue")
+                    
         # Wait for Unity to finish resetting and be ready
         start_time = time.time()
         while time.time() - start_time < timeout:
             state = self.get_game_state(timeout=check_interval)
             if state:
+                if state.get('type') == 'reset_confirmed':
+                    print(f"🐛 DEBUG: Reset confirmed by Unity")
+                    continue
                 # Check if ready for new action
                 action_info = state.get('waitingForAction', False)
                 executing = state.get('isExecutingAction', False)
@@ -277,37 +294,26 @@ class UnityTetrisClient:
     
     def execute_powerup_decision(self, decision_result, timeout=5.0):
         """
-        Execute powerup decision based on complete decision result
-        
-        Args:
-            decision_result: Complete decision from PowerUp DQN
-            timeout: Response timeout
-            
-        Returns:
-            dict: Execution result with board updates
+        Execute powerup decision with enhanced debugging
         """
         decision_data = decision_result['decision_data']
         action = decision_data['action']
         
+        print(f"🐛 DEBUG: Executing powerup decision:")
+        print(f"   Action: {action}")
+        print(f"   PowerUp Type: {decision_data['powerup_type']}")
+        print(f"   Q-Value: {decision_result['q_value']:.3f}")
+        
         if action == 'wait':
-            # Hold powerup for later
             command = {
                 "type": "hold_powerup",
                 "powerup_type": decision_data['powerup_type'],
                 "ai_confidence": decision_result['q_value'],
                 "timestamp": time.time()
             }
+            print(f"🐛 DEBUG: Sending hold command: {json.dumps(command, indent=2)}")
             
-            success = self._send_command(command)
-            return {
-                'success': success,
-                'action': 'wait',
-                'powerup_type': decision_data['powerup_type'],
-                'ai_confidence': decision_result['q_value']
-            }
-        
         elif action == 'use_bomb':
-            # Execute bomb drop at specific column
             command = {
                 "type": "execute_bomb_drop",
                 "bomb": {
@@ -317,35 +323,9 @@ class UnityTetrisClient:
                     "timestamp": time.time()
                 }
             }
+            print(f"🐛 DEBUG: Sending bomb command: {json.dumps(command, indent=2)}")
             
-            if not self._send_command(command):
-                return {'success': False, 'error': 'Failed to send bomb command'}
-            
-            # Wait for execution result
-            start_time = time.time()
-            while time.time() - start_time < timeout:
-                state = self.get_game_state(timeout=0.1)
-                if state and state.get('type') == 'bomb_executed':
-                    return {
-                        'success': state.get('success', False),
-                        'action': 'use_bomb',
-                        'powerup_type': 'bomb',
-                        'column': decision_data['column'],
-                        'landing_row': state.get('landing_row'),
-                        'explosion_center': state.get('explosion_center'),
-                        'board_state_before': state.get('board_before'),
-                        'board_state_after': state.get('board_after'),
-                        'impact_metrics': state.get('impact_metrics', {}),
-                        'ui_updates': state.get('ui_updates', {}),
-                        'ai_confidence': decision_result['q_value'],
-                        'predicted_impact': decision_data['impact'],
-                        'error': state.get('error', None)
-                    }
-            
-            return {'success': False, 'error': 'Timeout waiting for bomb execution'}
-        
         elif action == 'use_gravity':
-            # Execute gravity powerup
             command = {
                 "type": "execute_gravity",
                 "gravity": {
@@ -354,31 +334,9 @@ class UnityTetrisClient:
                     "timestamp": time.time()
                 }
             }
+            print(f"🐛 DEBUG: Sending gravity command: {json.dumps(command, indent=2)}")
             
-            if not self._send_command(command):
-                return {'success': False, 'error': 'Failed to send gravity command'}
-            
-            start_time = time.time()
-            while time.time() - start_time < timeout:
-                state = self.get_game_state(timeout=0.1)
-                if state and state.get('type') == 'gravity_executed':
-                    return {
-                        'success': state.get('success', False),
-                        'action': 'use_gravity',
-                        'powerup_type': 'gravity',
-                        'board_state_before': state.get('board_before'),
-                        'board_state_after': state.get('board_after'),
-                        'impact_metrics': state.get('impact_metrics', {}),
-                        'ui_updates': state.get('ui_updates', {}),
-                        'ai_confidence': decision_result['q_value'],
-                        'predicted_impact': decision_data['impact'],
-                        'error': state.get('error', None)
-                    }
-            
-            return {'success': False, 'error': 'Timeout waiting for gravity execution'}
-        
         elif action == 'use_bottom_clear':
-            # Execute bottom line clear powerup
             command = {
                 "type": "execute_bottom_clear",
                 "bottom_clear": {
@@ -387,28 +345,78 @@ class UnityTetrisClient:
                     "timestamp": time.time()
                 }
             }
-            
-            if not self._send_command(command):
-                return {'success': False, 'error': 'Failed to send bottom clear command'}
-            
-            start_time = time.time()
-            while time.time() - start_time < timeout:
-                state = self.get_game_state(timeout=0.1)
-                if state and state.get('type') == 'bottom_clear_executed':
-                    return {
-                        'success': state.get('success', False),
-                        'action': 'use_bottom_clear',
-                        'powerup_type': 'bottom_line_clear',
-                        'board_state_before': state.get('board_before'),
-                        'board_state_after': state.get('board_after'),
-                        'impact_metrics': state.get('impact_metrics', {}),
-                        'ui_updates': state.get('ui_updates', {}),
-                        'ai_confidence': decision_result['q_value'],
-                        'predicted_impact': decision_data['impact'],
-                        'error': state.get('error', None)
-                    }
-            
-            return {'success': False, 'error': 'Timeout waiting for bottom clear execution'}
+            print(f"🐛 DEBUG: Sending bottom clear command: {json.dumps(command, indent=2)}")
         
         else:
-            return {'success': False, 'error': f'Unknown action: {action}'}    
+            print(f"🐛 ERROR: Unknown action: {action}")
+            return {'success': False, 'error': f'Unknown action: {action}'}
+        
+        # Send command with debugging
+        print(f"🐛 DEBUG: Attempting to send command...")
+        if not self._send_command(command):
+            print(f"🐛 ERROR: Failed to send command to Unity!")
+            return {'success': False, 'error': 'Failed to send command'}
+        
+        print(f"🐛 DEBUG: Command sent successfully, waiting for response...")
+        
+        # Wait for response with detailed logging
+        start_time = time.time()
+        response_count = 0
+        
+        while time.time() - start_time < timeout:
+            state = self.get_game_state(timeout=0.1)
+            if state:
+                response_count += 1
+                print(f"🐛 DEBUG: Received response #{response_count}: type='{state.get('type', 'UNKNOWN')}'")
+                
+                # Check for expected response types
+                expected_types = {
+                    'use_bomb': 'bomb_executed',
+                    'use_gravity': 'gravity_executed', 
+                    'use_bottom_clear': 'bottom_clear_executed'
+                }
+                
+                expected_type = expected_types.get(action)
+                if expected_type and state.get('type') == expected_type:
+                    print(f"🐛 DEBUG: Found expected response type: {expected_type}")
+                    print(f"🐛 DEBUG: Response content: {json.dumps(state, indent=2)}")
+                    
+                    return {
+                        'success': state.get('success', False),
+                        'action': action,
+                        'powerup_type': decision_data['powerup_type'],
+                        'impact_metrics': state.get('impact_metrics', {}),
+                        'board_state_before': state.get('board_before'),
+                        'board_state_after': state.get('board_after'),
+                        'ui_updates': state.get('ui_updates', {}),
+                        'error': state.get('error', None)
+                    }
+                else:
+                    # Log unexpected responses
+                    print(f"🐛 DEBUG: Unexpected response type. Expected: {expected_type}, Got: {state.get('type')}")
+                    if 'error' in state:
+                        print(f"🐛 DEBUG: Error in response: {state['error']}")
+        
+        print(f"🐛 ERROR: Timeout after {timeout}s. Received {response_count} responses but none matched expected type.")
+        return {'success': False, 'error': f'Timeout waiting for {action} execution'}
+
+    # Also add debugging to _send_command method
+    def _send_command(self, command):
+        """Enhanced _send_command with debugging"""
+        if not self.connected:
+            print("🐛 ERROR: Not connected to Unity!")
+            return False
+            
+        try:
+            message = json.dumps(command)
+            print(f"🐛 DEBUG: Sending {len(message)} bytes to Unity")
+            print(f"🐛 DEBUG: Raw message: {message}")
+            
+            self.socket.send(message.encode('utf-8'))
+            print(f"🐛 DEBUG: Message sent successfully")
+            return True
+            
+        except Exception as e:
+            print(f"🐛 ERROR: Send error: {e}")
+            print(f"🐛 DEBUG: Connection status: connected={self.connected}")
+            return False 
