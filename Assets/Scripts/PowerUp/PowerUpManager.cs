@@ -16,7 +16,7 @@ public class PowerUpManager : MonoBehaviour
     [Header("Audio")]
     public AudioClip powerUpObtainedSound;
     public AudioClip powerUpUsedSound;
-    
+
     private List<PowerUpInstance> playerPowerUps = new List<PowerUpInstance>();
     private Board ownerBoard;
     private AudioSource audioSource;
@@ -201,7 +201,7 @@ public class PowerUpManager : MonoBehaviour
         }
     }
     
-    private void ExecuteBombImproved()
+    public void ExecuteBombImproved()
     {
         Debug.Log("=== ExecuteBombImproved: Clearing 3x3 area ===");
         
@@ -209,6 +209,8 @@ public class PowerUpManager : MonoBehaviour
         {
             Vector3Int center = ownerBoard.activePiece.position;
             ownerBoard.Clear(ownerBoard.activePiece);
+            
+            Debug.Log($"=== ExecuteBombImproved: Cleared Center {center}");
             
             int clearedCount = 0;
             
@@ -261,7 +263,7 @@ public class PowerUpManager : MonoBehaviour
         }
     }
     
-    private void ExecuteLineBlaster()
+    public void ExecuteLineBlaster()
     {
         Debug.Log("=== LineBlaster: Clearing bottom line ===");
         RectInt bounds = ownerBoard.Bounds;
@@ -286,7 +288,7 @@ public class PowerUpManager : MonoBehaviour
         }
     }
     
-    private void ExecuteGravity()
+    public void ExecuteGravity()
     {
         Debug.Log("=== Gravity: Dropping floating blocks ===");
         

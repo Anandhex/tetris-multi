@@ -6,7 +6,7 @@ public class BoardManager : MonoBehaviour
     public GameObject boardPrefab;  // Assign your BoardResuse prefab here
     public static BoardManager Instance { get; private set; }
     public enum GameMode { SinglePlayer, TwoPlayer, VsAI, AIVsAI, AI };
-    public GameMode currentMode = GameMode.SinglePlayer;
+    public GameMode currentMode = GameMode.AI;
 
     public Vector3Int singlePlayerPosition = new Vector3Int(0, 0, 0);
     public ModelAsset sentisModelAsset;
@@ -42,6 +42,7 @@ public class BoardManager : MonoBehaviour
 
     public void SetupGame()
     {
+        Data.gameMode = GameMode.AI;
         Debug.Log("GameMode:" + Data.gameMode);
         // Clear existing boards
         if (activeBoards != null)

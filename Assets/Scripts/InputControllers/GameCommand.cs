@@ -4,10 +4,19 @@ using UnityEngine;
 [System.Serializable]
 public class GameCommand
 {
-    public string type; // "action", "reset", "curriculum_change"
+    public string type; // "action", "reset", "curriculum_change", "hold_powerup", "execute_bomb_drop", "execute_gravity", "execute_bottom_clear"
     public ActionData action;
     public CurriculumData curriculum;
     public ResetData reset;
+    
+    // PowerUp command fields
+    public string powerup_type;
+    public float ai_confidence;
+    public float timestamp;
+    
+    public BombData bomb;
+    public GravityData gravity;
+    public BottomClearData bottom_clear;
 }
 
 [System.Serializable]
@@ -32,6 +41,34 @@ public class CurriculumData
 public class ResetData
 {
     public bool resetBoard = true;
+    public bool clearPowerups = true;
+    public float timestamp;
+}
+
+// PowerUp command data structures
+[System.Serializable]
+public class BombData
+{
+    public int column;
+    public float predicted_impact;
+    public float ai_confidence;
+    public float timestamp;
+}
+
+[System.Serializable]
+public class GravityData
+{
+    public float predicted_impact;
+    public float ai_confidence;
+    public float timestamp;
+}
+
+[System.Serializable]
+public class BottomClearData
+{
+    public float predicted_impact;
+    public float ai_confidence;
+    public float timestamp;
 }
 
 [System.Serializable]
@@ -60,6 +97,10 @@ public class GameState
     public bool perfectClear = false;
     public int linesCleared = 0;
 
+    // int lines = simBoard.PlaceAndClear(simPiece);
+    public float holes;
+    public float height;
+
 
     public float curriculumBoardHeight = 20f;
     public int curriculumBoardPreset = 0;
@@ -70,4 +111,9 @@ public class GameState
     public float bumpiness;
     public int covered;
     public int[] heights;
+    
+    // PowerUp related fields
+    public string currentPowerupType = "none";
+    public bool hasPowerup = false;
+    public int powerupCount = 0;
 }

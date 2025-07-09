@@ -195,13 +195,29 @@ class UnityTetrisClient:
         except:
             return None
     
-    def get_board_state(self, game_state):
-        board_flat = game_state.get('board', [])
-        if len(board_flat) == 200:  # 10x20 board
-            return np.array(board_flat).reshape(20, 10)
-        else:
-            height = len(board_flat) // 10
-            return np.array(board_flat).reshape(height, 10)
+    def get_board_state(self, timeout=2.0, poll_interval=0.05):
+        """
+        Ask Unity for all valid (col,rot) placements and their [lines, holes, bumpiness, height].
+        Blocks until it receives a message of type 'possible_states' or times out.
+        Returns a dict { 'col:rot': [lines, holes, bumpiness, height], ... }
+        """
+        # 1) send the request
+        cmd = { "type": "board_state" }
+        if not self._send_command(cmd):
+            return {}
+
+        # 2) drain queue until we find the response
+        start = time.time()
+        while time.time() - start < timeout:
+            msg = self.get_game_state(timeout=poll_interval)
+            print(msg)
+            if not msg:
+                continue
+            # we expect Unity to send back {"type":"possible_states","payload":{...}}
+            if msg.get("type") == "possible_states" and "payload" in msg:
+                return msg["payload"]
+        # timed out
+        return {}
     
     def get_current_piece_info(self, game_state):
         piece_info = game_state.get('currentPiece', [0, 0, 0, 0])
@@ -409,7 +425,11 @@ class UnityTetrisClient:
             
         try:
             message = json.dumps(command)
-            print(f"🐛 DEBUG: Sending {len(message)} bytes to Unity")
+
+            # Add newline terminator for Unity parsing
+            message_with_newline = message + '\n'            
+            print(f"🐛 DEBUG: Sending {len(message_with_newline)} bytes to Unity")
+            # print(f"🐛 DEBUG: Sending {len(message)} bytes to Unity")
             print(f"🐛 DEBUG: Raw message: {message}")
             
             self.socket.send(message.encode('utf-8'))
