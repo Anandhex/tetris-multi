@@ -148,8 +148,8 @@ class TetrisTrainer:
                     # print(reward)
                     # input()
                     self.agent.add_to_memory(
-                        current_state,
-                        best_state,
+                        current_state, 
+                        best_state, 
                         reward, done
                     )
 

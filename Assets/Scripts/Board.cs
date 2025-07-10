@@ -163,6 +163,14 @@ public class Board : MonoBehaviour
             this.playerScoreToDisplay.text = this.playerScore.ToString();
         }
 
+        PowerupTetrisAgent powerupTetrisAgent = FindAnyObjectByType<PowerupTetrisAgent>();
+        PowerUpManager powerUpManager = FindAnyObjectByType<PowerUpManager>();
+        if (powerupTetrisAgent != null && powerUpManager != null)
+        {
+
+            powerupTetrisAgent.RunInference(this, powerUpManager.powerUpInventory, powerUpManager);
+        }
+
         // if (fireBorderController != null)
         // {
         //     fireBorderController.SetGameSpeed(1f / CurrentDropRate);

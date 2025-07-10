@@ -10,6 +10,7 @@ public class BoardManager : MonoBehaviour
 
     public Vector3Int singlePlayerPosition = new Vector3Int(0, 0, 0);
     public ModelAsset sentisModelAsset;
+    public ModelAsset powerupAsset;
 
     public Vector3Int player1Position = new Vector3Int(-10, 0, 0);
     public Vector3Int player2Position = new Vector3Int(10, 0, 0);
@@ -85,9 +86,8 @@ public class BoardManager : MonoBehaviour
 
             // Use TetrisMLAgent instead of AIController
             TetrisSentisAgent mlAgent = gameObject.AddComponent<TetrisSentisAgent>();
-            PowerupTetrisAgent pagent = gameObject.AddComponent<PowerupTetrisAgent>();
+            gameObject.AddComponent<PowerupTetrisAgent>();
             activeBoards[0] = CreateBoard(singlePlayerPosition, mlAgent, "ML Player");
-            pagent.SetBoard(activeBoards[0]);
             activeBoards[0].isMLTraining = true;
         }
         else if (Data.gameMode == GameMode.AIVsAI)

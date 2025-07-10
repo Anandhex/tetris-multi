@@ -191,11 +191,14 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
             {
                 Debug.LogWarning("TetrisSentisAgent: No output tensor received");
             }
+            inputTensor.Dispose();
+            outputTensor.Dispose();
         }
         catch (System.Exception e)
         {
             Debug.LogError($"TetrisSentisAgent: Inference failed: {e.Message}");
         }
+
     }
 
     /// <summary>
@@ -306,6 +309,7 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
 
             // Execute the move
             StartCoroutine(ExecuteMoveWithDelay(bestMove, 0.5f));
+
         }
         catch (System.Exception e)
         {

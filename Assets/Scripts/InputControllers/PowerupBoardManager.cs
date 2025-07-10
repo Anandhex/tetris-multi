@@ -33,7 +33,7 @@ public class PowerupBoardManager : MonoBehaviour
         if (useDirectPlacement)
         {
             var socketAgent = container.AddComponent<PowerupTetrisAgent>();
-            socketAgent.SetBoard(activeBoard[0]);
+            // socketAgent.SetBoard(activeBoard[0]);
             activeBoard[0].isMLTraining = true;
             // socketAgent.SetCurrentPiece(activeBoard.activePiece);
         }
