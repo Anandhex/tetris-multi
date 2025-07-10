@@ -32,6 +32,18 @@ public class BoardData
     /// Returns a multi-line string showing the grid.
     /// ‘X’ = filled, ‘.’ = empty. Top row first.
     /// </summary>
+    /// 
+
+    public void ClearTopTowRows()
+    {
+        for (int y = height - 1; y >= 18; y--)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                grid[x, y] = false;
+            }
+        }
+    }
     public string DumpToString()
     {
         var sb = new StringBuilder();

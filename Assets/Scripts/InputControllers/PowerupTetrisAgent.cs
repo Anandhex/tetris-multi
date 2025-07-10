@@ -5,7 +5,7 @@ using System.Linq;
 using System;
 using UnityEngine.InputSystem;
 
-public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
+public class PowerupTetrisAgent : MonoBehaviour
 {
     private Board board;
     private Piece currentPiece;
@@ -57,7 +57,7 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
 
     void HandleCommand(GameCommand command)
     {
-        
+
         Debug.Log($"🐛 UNITY DEBUG: Received command type: {command.type}");
         switch (command.type)
         {
@@ -92,7 +92,7 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
                 SendBoardState();
                 break;
 
-             case "hold_powerup":
+            case "hold_powerup":
                 HandleHoldPowerup(command);
                 break;
 
@@ -147,18 +147,25 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
         //      - holeCost * holes
         //      - bumpCost * bumpiness;
         // penalty for creating holes
-        float reward = 1f + (linesCleared * linesCleared) * board.boardSize.x;
-        if (gameOver)
-            reward -= 2f;
-
+        var origBoard = new BoardData(board);
+        var simBoard = origBoard.Clone();
+        simBoard.ClearTopTowRows();
+        //             Debug.Log($"After placing rot={rot} @ col={colIdx}, linesCleared={lines}:\n"
+        //   + simBoard.DumpToString());
+        int[] heights = simBoard.GetColumnHeights();
+        float holes = simBoard.CountHoles();
+        float bumpiness = simBoard.GetBumpinessScore();
+        float height = simBoard.CalculateStackHeight();
+        // 3) Build minimal payload
         // 3) Build minimal payload
         var payload = new GameState();
-        payload.reward = reward;
         payload.gameOver = gameOver;
-        // Debug.Log("somethinggg");
-        Debug.Log("reward" + reward);
+        payload.heights = heights;
+        payload.holes = holes;
+        payload.bumpiness = bumpiness;
+        payload.height = height;
         // 4) Send it over the socket (using our SendEvent helper)
-        SocketManager.Instance.SendGameState(payload);
+        SocketManager.Instance.SendEvent("board_state", payload);
 
         // 5) Reset lastReward if needed
         lastReward = 0f;
@@ -167,19 +174,19 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
     void HandleHoldPowerup(GameCommand command)
     {
         Debug.Log($"🐛 UNITY DEBUG: Holding powerup - type: {command.powerup_type}");
-        
+
         currentPowerupType = command.powerup_type ?? "none";
         hasPowerup = true;
-        
+
         // Convert Python powerup names to Unity PowerUpType
         PowerUpType unityPowerUpType = ConvertPythonToUnityPowerUpType(currentPowerupType);
-        
+
         // Add to PowerUpManager inventory
         if (powerUpManager != null)
         {
             powerUpManager.AddPowerUp(unityPowerUpType);
         }
-        
+
         // Send confirmation back to Python
         var response = new
         {
@@ -189,36 +196,36 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
             ai_confidence = command.ai_confidence,
             timestamp = Time.time
         };
-        
+
         SocketManager.Instance.SendEvent("powerup_held", response);
     }
 
     void HandleExecuteBomb(GameCommand command)
     {
         Debug.Log($"🐛 UNITY DEBUG: Executing bomb drop - column: {command.bomb?.column}");
-        
+
         if (command.bomb == null)
         {
             SendPowerupError("bomb_executed", "No bomb data provided");
             return;
         }
-        
+
         // Capture board state before bomb
         var boardBefore = GetBoardStateArray();
-        
+
         // Execute bomb using existing PowerUpManager
         if (powerUpManager != null)
         {
             // Force execute bomb at specific location
             ExecuteBombAtColumn(command.bomb.column);
         }
-        
+
         // Capture board state after bomb
         var boardAfter = GetBoardStateArray();
-        
+
         // Calculate impact metrics
         var impactMetrics = CalculateImpactMetrics(boardBefore, boardAfter);
-        
+
         // Send response back to Python
         var response = new
         {
@@ -239,7 +246,7 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
             predicted_impact = command.bomb.predicted_impact,
             error = (string)null
         };
-        
+
         SocketManager.Instance.SendEvent("bomb_executed", response);
         ClearCurrentPowerup();
     }
@@ -247,18 +254,18 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
     void HandleExecuteGravity(GameCommand command)
     {
         Debug.Log($"🐛 UNITY DEBUG: Executing gravity powerup");
-        
+
         var boardBefore = GetBoardStateArray();
-        
+
         // Execute gravity using existing PowerUpManager
         if (powerUpManager != null)
         {
             ExecuteGravityPowerup();
         }
-        
+
         var boardAfter = GetBoardStateArray();
         var impactMetrics = CalculateImpactMetrics(boardBefore, boardAfter);
-        
+
         var response = new
         {
             type = "gravity_executed",
@@ -275,7 +282,7 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
             predicted_impact = command.gravity.predicted_impact,
             error = (string)null
         };
-        
+
         SocketManager.Instance.SendEvent("gravity_executed", response);
         ClearCurrentPowerup();
     }
@@ -283,18 +290,18 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
     void HandleExecuteBottomClear(GameCommand command)
     {
         Debug.Log($"🐛 UNITY DEBUG: Executing bottom clear powerup");
-        
+
         var boardBefore = GetBoardStateArray();
-        
+
         // Execute bottom clear using existing PowerUpManager
         if (powerUpManager != null)
         {
             ExecuteBottomClearPowerup();
         }
-        
+
         var boardAfter = GetBoardStateArray();
         var impactMetrics = CalculateImpactMetrics(boardBefore, boardAfter);
-        
+
         var response = new
         {
             type = "bottom_clear_executed",
@@ -311,35 +318,11 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
             predicted_impact = command.bottom_clear.predicted_impact,
             error = (string)null
         };
-        
+
         SocketManager.Instance.SendEvent("bottom_clear_executed", response);
         ClearCurrentPowerup();
     }
 
-    void RequestStates()
-    {
-        // Prepare the piece for spawn but don't actually spawn it yet
-        // Clear any existing piece from the board to ensure clean state calculation
-        if (currentPiece != null)
-        {
-            board.Clear(currentPiece);
-        }
-
-        // Set the current piece reference
-        SetCurrentPiece(board.activePiece);
-
-        // Calculate all possible moves without placing the piece on the board
-        var metrics = GetMoveMetricsForCurrentPiece();
-
-        // Convert to the format expected by Python
-        var dict = metrics.ToDictionary(
-            kv => $"{kv.Key.Item1}:{kv.Key.Item2}",
-            kv => kv.Value
-        );
-
-        // Debug.Log($"Sending {dict.Count} possible states to Python");
-        SocketManager.Instance.SendEvent("possible_states", dict);
-    }
 
     void ExecuteAction(int colIdx, int rotation)
     {
@@ -434,7 +417,7 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
 
 
 
-   
+
 
     void OnPythonConnected()
     {
@@ -482,7 +465,7 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
         payload.holes = holes;
         payload.bumpiness = bumpiness;
         payload.height = height;
-        
+
         // Debug.Log("somethinggg");
         Debug.Log("reward" + reward);
         // 4) Send it over the socket (using our SendEvent helper)
@@ -498,36 +481,7 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
 
 
 
-    // IPlayerInputController implementation - Updated method names
-    public bool GetLeft()
-    {
-        return false; // Not used in direct placement mode
-    }
 
-    public bool GetRight()
-    {
-        return false; // Not used in direct placement mode
-    }
-
-    public bool GetDown()
-    {
-        return false; // Not used in direct placement mode
-    }
-
-    public bool GetRotateLeft()
-    {
-        return false; // Not used in direct placement mode
-    }
-
-    public bool GetRotateRight()
-    {
-        return false; // Not used in direct placement mode
-    }
-
-    public bool GetHardDrop()
-    {
-        return false; // Not used in direct placement mode
-    }
 
     public void SetCurrentPiece(Piece piece)
     {
@@ -538,7 +492,6 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
     public void SetBoard(Board gameBoard)
     {
         board = gameBoard;
-        board.inputController = this;
         lastStateTime = Time.time;   // reset your timer so you don’t immediately resend
     }
 
@@ -583,18 +536,18 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
     void ExecuteBombAtColumn(int targetColumn)
     {
         Debug.Log($"🐛 UNITY DEBUG: Executing bomb at column {targetColumn}");
-    
+
         if (powerUpManager != null)
         {
             // Store original position
             Vector3Int originalPos = Vector3Int.zero;
             bool hadActivePiece = false;
-            
+
             if (board.activePiece != null)
             {
                 originalPos = board.activePiece.position;
                 hadActivePiece = true;
-                
+
                 // Move piece to target column for bomb execution
                 board.activePiece.position = new Vector3Int(
                     targetColumn + board.Bounds.xMin,
@@ -602,10 +555,10 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
                     board.activePiece.position.z
                 );
             }
-            
+
             // Call PowerUpManager's public method directly
             powerUpManager.ExecuteBombImproved();
-            
+
             // Restore original position if piece still exists
             if (hadActivePiece && board.activePiece != null)
             {
@@ -621,7 +574,7 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
     void ExecuteGravityPowerup()
     {
         Debug.Log($"🐛 UNITY DEBUG: Executing gravity powerup");
-    
+
         if (powerUpManager != null)
         {
             // Call PowerUpManager's public method directly
@@ -636,7 +589,7 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
     void ExecuteBottomClearPowerup()
     {
         Debug.Log($"🐛 UNITY DEBUG: Executing bottom clear powerup");
-    
+
         if (powerUpManager != null)
         {
             // Call PowerUpManager's public method directly
@@ -654,14 +607,14 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
         int boardWidth = board.boardSize.x;
         int boardHeight = board.boardSize.y;
         int[] boardArray = new int[boardWidth * boardHeight];
-        
+
         // Fill array with current board state
         for (int y = 0; y < boardHeight; y++)
         {
             for (int x = 0; x < boardWidth; x++)
             {
                 Vector3Int pos = new Vector3Int(x + board.Bounds.xMin, y + board.Bounds.yMin, 0);
-                
+
                 // Check if there's a tile at this position
                 if (board.tilemap.GetTile(pos) != null)
                 {
@@ -673,7 +626,7 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
                 }
             }
         }
-        
+
         return boardArray;
     }
 
@@ -695,7 +648,7 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
         // Calculate differences between before and after
         int blocksRemoved = 0;
         int blocksAdded = 0;
-        
+
         for (int i = 0; i < boardBefore.Length && i < boardAfter.Length; i++)
         {
             if (boardBefore[i] != 0 && boardAfter[i] == 0)
@@ -703,10 +656,10 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
             else if (boardBefore[i] == 0 && boardAfter[i] != 0)
                 blocksAdded++;
         }
-        
+
         // Calculate lines cleared (simplified)
         int linesCleared = blocksRemoved / board.boardSize.x;
-        
+
         return new TetrisImpactMetrics
         {
             lines_cleared = linesCleared,
@@ -723,7 +676,7 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
     void SendPowerupError(string responseType, string errorMessage)
     {
         Debug.LogError($"🐛 UNITY ERROR: {responseType} - {errorMessage}");
-        
+
         var response = new
         {
             type = responseType,
@@ -731,7 +684,7 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
             error = errorMessage,
             timestamp = Time.time
         };
-        
+
         SocketManager.Instance.SendEvent(responseType, response);
     }
 
@@ -739,7 +692,7 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
     {
         currentPowerupType = "none";
         hasPowerup = false;
-    }    
+    }
 
     void OnDestroy()
     {
@@ -835,8 +788,8 @@ public class PowerupTetrisAgent : MonoBehaviour, IPlayerInputController
                     //   simBoard.DumpToString());
                     // Place piece and calculate metrics
                     int lines = simBoard.PlaceAndClear(simPiece);
-        //             Debug.Log($"After placing rot={rot} @ col={colIdx}, linesCleared={lines}:\n"
-        //   + simBoard.DumpToString());
+                    //             Debug.Log($"After placing rot={rot} @ col={colIdx}, linesCleared={lines}:\n"
+                    //   + simBoard.DumpToString());
                     int[] heights = simBoard.GetColumnHeights();
                     float holes = simBoard.CountHoles();
                     float bumpiness = simBoard.GetBumpinessScore();

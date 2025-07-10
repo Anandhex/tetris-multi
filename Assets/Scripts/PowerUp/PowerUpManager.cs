@@ -573,7 +573,7 @@ public class PowerUpManager : MonoBehaviour
         }
     }
 
-    private void ExecuteBombImproved()
+    public void ExecuteBombImproved()
     {
         Debug.Log("💣 === EXECUTING BOMB POWER-UP ===");
 
@@ -646,7 +646,7 @@ public class PowerUpManager : MonoBehaviour
         }
     }
 
-    private void ExecuteLineBlaster()
+    public void ExecuteLineBlaster()
     {
         Debug.Log("⚡ === EXECUTING LINE BLASTER POWER-UP ===");
 
@@ -684,7 +684,7 @@ public class PowerUpManager : MonoBehaviour
         }
     }
 
-    private void ExecuteGravity()
+    public void ExecuteGravity()
     {
         Debug.Log("🌍 === EXECUTING GRAVITY POWER-UP ===");
 

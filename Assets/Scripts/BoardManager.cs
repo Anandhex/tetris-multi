@@ -85,7 +85,10 @@ public class BoardManager : MonoBehaviour
 
             // Use TetrisMLAgent instead of AIController
             TetrisSentisAgent mlAgent = gameObject.AddComponent<TetrisSentisAgent>();
+            PowerupTetrisAgent pagent = gameObject.AddComponent<PowerupTetrisAgent>();
             activeBoards[0] = CreateBoard(singlePlayerPosition, mlAgent, "ML Player");
+            pagent.SetBoard(activeBoards[0]);
+            activeBoards[0].isMLTraining = true;
         }
         else if (Data.gameMode == GameMode.AIVsAI)
         {
