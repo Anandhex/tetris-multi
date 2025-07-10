@@ -12,11 +12,10 @@ public class Board : MonoBehaviour
     public TetrominoData nextPieceData { get; private set; }
     public string playerTag;
     private bool gameOverTriggered = false;
-    
     [Header("Power-ups")]
     public MonoBehaviour powerUpManagerComponent;
-    
     public TetrominoData[] tetrominoes;
+    // public FireBorderController fireBorderController;
     [SerializeField] private GameObject debrisPrefab;
 
     [Header("Visual Grid")]
@@ -29,7 +28,9 @@ public class Board : MonoBehaviour
     {
         get
         {
-            int currentHeight = 20;
+            int currentHeight = 20; // Default height
+
+            // Check for both types of ML agents
             TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
             SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
 
@@ -41,17 +42,8 @@ public class Board : MonoBehaviour
             {
                 currentHeight = (int)socketAgent.curriculumBoardHeight;
             }
-            
-            // Handle TetrisSentisAgent safely using reflection
-            if (inputController != null && inputController.GetType().Name == "TetrisSentisAgent")
-            {
-                var heightProperty = inputController.GetType().GetProperty("curriculumBoardHeight");
-                if (heightProperty != null)
-                {
-                    currentHeight = (int)(float)heightProperty.GetValue(inputController);
-                }
-            }
 
+            // Adjust spawn position to be at the top of the current board height
             return new Vector3Int(baseSpawnPosition.x, currentHeight / 2 - 2, baseSpawnPosition.z);
         }
     }
@@ -66,15 +58,19 @@ public class Board : MonoBehaviour
     public TMP_Text playerTagHolder;
     public NextPiece nextPieceDisplay;
 
+    // Flag to check if we're in ML training mode
     public bool isMLTraining = false;
 
     public RectInt Bounds
     {
         get
         {
-            int height = boardSize.y;
+            int height = boardSize.y; // Default height
+
+            // Check for both types of ML agents
             TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
             SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
+            TetrisSentisAgent sentisAgent = this.inputController as TetrisSentisAgent;
 
             if (mlAgent != null)
             {
@@ -84,9 +80,7 @@ public class Board : MonoBehaviour
             {
                 height = 20;
             }
-            
-            // Handle TetrisSentisAgent safely
-            if (inputController != null && inputController.GetType().Name == "TetrisSentisAgent")
+            else if (sentisAgent != null)
             {
                 height = 20;
             }
@@ -96,11 +90,10 @@ public class Board : MonoBehaviour
         }
     }
 
-    public float initialDropRate = 0.75f;
-    public float speedIncreasePerMinute = 0.5f;
-    public float minimumDropRate = 0.1f;
+    public float initialDropRate = 0.75f; // Initial time between drops
+    public float speedIncreasePerMinute = 0.5f; // How much to decrease drop time per minute
+    public float minimumDropRate = 0.1f; // Fastest allowed drop rate
     private float gameStartTime;
-    private float temporarySpeedBoost = 0f;
 
     public float CurrentDropRate
     {
@@ -108,26 +101,11 @@ public class Board : MonoBehaviour
         {
             float minutesPlayed = (Time.time - gameStartTime) / 60f;
             float timeSpeedDecrease = minutesPlayed * speedIncreasePerMinute;
+
+            // Apply all speed increases: time-based, score-based, and temporary boosts
             float totalSpeedDecrease = timeSpeedDecrease + scoreSpeedBonus + temporarySpeedBoost;
-            float baseRate = Mathf.Max(initialDropRate - totalSpeedDecrease, minimumDropRate);
 
-            if (powerUpManagerComponent != null)
-            {
-                var speedBoostMethod = powerUpManagerComponent.GetType().GetMethod("IsSpeedBoostActive");
-                var frozenMethod = powerUpManagerComponent.GetType().GetMethod("IsFrozen");
-                
-                if (speedBoostMethod != null && (bool)speedBoostMethod.Invoke(powerUpManagerComponent, null))
-                {
-                    baseRate *= 2.0f;
-                }
-                
-                if (frozenMethod != null && (bool)frozenMethod.Invoke(powerUpManagerComponent, null))
-                {
-                    baseRate *= 2f;
-                }
-            }
-
-            return baseRate;
+            return Mathf.Max(initialDropRate - totalSpeedDecrease, minimumDropRate);
         }
     }
 
@@ -151,22 +129,32 @@ public class Board : MonoBehaviour
         {
             socketAgent.SetBoard(this);
         }
-        
-        // Handle TetrisSentisAgent safely using reflection
-        if (inputController != null && inputController.GetType().Name == "TetrisSentisAgent")
+        if (inputController is TetrisSentisAgent sentisAgent)
         {
-            var setBoardMethod = inputController.GetType().GetMethod("SetBoard");
-            setBoardMethod?.Invoke(inputController, new object[] { this });
+            sentisAgent.SetBoard(this);
+            SpawnPiece();
         }
+        // ClearBoard();
+
+        // // Apply initial curriculum
+        // // ApplyCurriculumBoardPreset();
+
+        // // Only spawn a piece if all components are properly initialized
+        if (activePiece != null && tetrominoes != null && tetrominoes.Length > 0 && (inputController is SinglePlayerInputController || inputController is PlayerInputController || inputController is Player1InputController || inputController is Player2InputController))
+        {
+            SpawnPiece();
+        }
+        // else
+        // {
+        // }
 
         if (playerTagHolder != null)
         {
             this.playerTagHolder.text = playerTag;
         }
-        
-        Debug.Log("Board Start() completed. Calling SpawnPiece...");
-        SpawnPiece();
     }
+
+
 
     private void Update()
     {
@@ -174,13 +162,22 @@ public class Board : MonoBehaviour
         {
             this.playerScoreToDisplay.text = this.playerScore.ToString();
         }
+
+        // if (fireBorderController != null)
+        // {
+        //     fireBorderController.SetGameSpeed(1f / CurrentDropRate);
+        // }
     }
+
 
     public void GenerateNextPiece()
     {
-        int allowedTypes = 7;
+        int allowedTypes = 7; // Default to all pieces
+
+        // Check for both types of ML agents
         TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
         SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
+        TetrisSentisAgent sentisAgent = this.inputController as TetrisSentisAgent;
 
         if (mlAgent != null)
         {
@@ -190,17 +187,13 @@ public class Board : MonoBehaviour
         {
             allowedTypes = socketAgent.allowedTetrominoTypes;
         }
-        
-        // Handle TetrisSentisAgent safely
-        if (inputController != null && inputController.GetType().Name == "TetrisSentisAgent")
+        else if (sentisAgent != null)
         {
-            var allowedTypesProperty = inputController.GetType().GetProperty("allowedTetrominoTypes");
-            if (allowedTypesProperty != null)
-            {
-                allowedTypes = (int)allowedTypesProperty.GetValue(inputController);
-            }
+            allowedTypes = sentisAgent.allowedTetrominoTypes;
+
         }
 
+        // Limit piece selection based on curriculum
         int maxIndex = Mathf.Min(allowedTypes, this.tetrominoes.Length);
         int random = Random.Range(0, maxIndex);
         this.nextPieceData = this.tetrominoes[random];
@@ -209,7 +202,45 @@ public class Board : MonoBehaviour
         {
             nextPieceDisplay.DisplayNextPiece(this.nextPieceData);
         }
+        if ((inputController is SinglePlayerInputController || inputController is PlayerInputController || inputController is Player1InputController || inputController is Player2InputController))
+        {
+            if (IsValidPosition(this.activePiece, this.spawnPosition))
+            {
+                Set(this.activePiece);
+            }
+            else
+            {
+                Data.PlayerScore = this.playerScore;
+                GameOver();
+            }
+        }
     }
+
+
+    public void ReadyThePieceForSpwan()
+    {
+        TetrominoData pieceToUse;
+
+        if (this.nextPieceData.Equals(default(TetrominoData)))
+        {
+            // No next piece, generate one
+            GenerateNextPiece();
+            pieceToUse = this.nextPieceData;
+        }
+        else
+        {
+            pieceToUse = this.nextPieceData;
+        }
+
+        // Initialize the piece but don't place it on the board yet
+        this.activePiece.Initialize(this, this.spawnPosition, pieceToUse, this.inputController);
+
+        // Generate the next piece for display
+        GenerateNextPiece();
+        Debug.Log($"Piece ready for spawn: {pieceToUse} at {this.spawnPosition}");
+    }
+
+
 
     public void SpawnPiece()
     {
@@ -220,8 +251,10 @@ public class Board : MonoBehaviour
 
         this.activePiece.Initialize(this, this.spawnPosition, pieceToUse, this.inputController);
 
+        // Inform both types of ML agents about the new piece
         TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
         SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
+        TetrisSentisAgent sentisAgent = this.inputController as TetrisSentisAgent;
 
         if (mlAgent != null)
         {
@@ -231,12 +264,10 @@ public class Board : MonoBehaviour
         {
             socketAgent.SetCurrentPiece(this.activePiece);
         }
-        
-        // Handle TetrisSentisAgent safely
-        if (inputController != null && inputController.GetType().Name == "TetrisSentisAgent")
+        else if (sentisAgent != null)
         {
-            var setCurrentPieceMethod = inputController.GetType().GetMethod("SetCurrentPiece");
-            setCurrentPieceMethod?.Invoke(inputController, new object[] { this.activePiece });
+            sentisAgent.SetCurrentPiece(this.activePiece);
+
         }
 
         GenerateNextPiece();
@@ -245,84 +276,101 @@ public class Board : MonoBehaviour
         {
             Set(this.activePiece);
         }
+
         else
         {
-            Debug.Log("GAME OVER - Cannot spawn new piece!");
-            GameOver();
+            Data.PlayerScore = this.playerScore;
         }
     }
 
     public void GameOver()
     {
-        Debug.Log("=== GAME OVER ===");
-        
+
+        // Notify ML agent if this is an ML agent-controlled board
         SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
-        if (socketAgent != null)
+
+        if (isMLTraining)
         {
-            socketAgent.OnGameOver();
+            ClearBoard();
+            this.playerScore = 0;
+            this.gameStartTime = Time.time;
+            PowerUpManager powerUpMgr = GetComponent<PowerUpManager>();
+            if (powerUpMgr != null)
+            {
+                powerUpMgr.ClearAllPowerUps();
+            }
+            TetrisSentisAgent tAgent = this.inputController as TetrisSentisAgent;
+            tAgent.CleanupSentis();
+            tAgent.InitializeSentis();
+            SpawnPiece();
             return;
         }
+        // new: clear *first*, then notify and reset
+        if (socketAgent != null)
+        {
+
+            // 1) immediately clear any existing tiles
+            // 2) let Python know the game is over on an empty board
+            PowerUpManager powerUpMgr = GetComponent<PowerUpManager>();
+            if (powerUpMgr != null)
+            {
+                powerUpMgr.ClearAllPowerUps();
+            }
+            socketAgent.OnGameOver();
+
+            // 3) schedule the curriculum reset + spawn
+            return;
+        }
+
 
         TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
         if (mlAgent != null)
         {
             mlAgent.OnGameOver();
             StartCoroutine(ResetGameForMLTraining());
+            PowerUpManager powerUpMgr = GetComponent<PowerUpManager>();
+            if (powerUpMgr != null)
+            {
+                powerUpMgr.ClearAllPowerUps();
+            }
             return;
         }
 
-        // Handle TetrisSentisAgent safely
-        if (inputController != null && inputController.GetType().Name == "TetrisSentisAgent")
-        {
-            var onGameOverMethod = inputController.GetType().GetMethod("OnGameOver");
-            onGameOverMethod?.Invoke(inputController, null);
-            StartCoroutine(ResetGameForMLTraining());
-            return;
-        }
-
-        Debug.Log($"FINAL SCORE: {this.playerScore}");
+        // Store the score for the game over screen
         Data.PlayerScore = this.playerScore;
-        
-        StartCoroutine(GameOverSequence());
+
+        // Load game over scene only if not in ML training
+        SceneManager.LoadScene(3);
     }
 
-    private IEnumerator GameOverSequence()
-    {
-        Time.timeScale = 0f;
-        yield return new WaitForSecondsRealtime(2f);
-        Time.timeScale = 1f;
-        RestartGame();
-    }
-
-    public void RestartGame()
-    {
-        Debug.Log("Restarting game...");
-        
-        ClearBoard();
-        this.playerScore = 0;
-        this.gameStartTime = Time.time;
-        
-        PowerUpManager powerUpMgr = GetComponent<PowerUpManager>();
-        if (powerUpMgr != null)
-        {
-            powerUpMgr.ClearAllPowerUps();
-        }
-        
-        SpawnPiece();
-        Debug.Log("Game restarted!");
-    }
 
     private IEnumerator ResetGameForMLTraining()
     {
+        // Short delay to ensure ML Agent has processed the game over
         yield return new WaitForSeconds(0.1f);
+
+        // Reset the board
         ClearBoard();
+        // ApplyCurriculumBoardPreset();
         this.playerScore = 0;
         this.gameStartTime = Time.time;
+
+        // Spawn a new piece to start the game again
         SpawnPiece();
     }
 
     public void ClearBoard()
     {
+        // Clear the entire tilemap
+        // RectInt bounds = this.Bounds;
+        // for (int row = bounds.yMin; row < bounds.yMax; row++)
+        // {
+        //     for (int col = bounds.xMin; col < bounds.xMax; col++)
+        //     {
+        //         Vector3Int position = new Vector3Int(col, row, 0);
+        //         this.tilemap.SetTile(position, null);
+        //     }
+        // }
         tilemap.ClearAllTiles();
     }
 
@@ -354,26 +402,40 @@ public class Board : MonoBehaviour
 
             if (!bounds.Contains((Vector2Int)tilePosition))
             {
-                return false;
-            }
+                // DumpTilemap(bounds);
 
-            if (powerUpManagerComponent != null)
-            {
-                var ghostMethod = powerUpManagerComponent.GetType().GetMethod("IsGhostModeActive");
-                if (ghostMethod != null && (bool)ghostMethod.Invoke(powerUpManagerComponent, null))
-                {
-                    continue;
-                }
+                return false;
             }
 
             if (this.tilemap.HasTile(tilePosition))
             {
+                Debug.LogError($"Collision at cell #{i} → {tilePosition}. Dumping map:");
+                // DumpTilemap(bounds);
+                SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
+                if (socketAgent != null)
+                {
+                    // socketAgent.TriggerGameOver();
+                }
                 return false;
             }
         }
         return true;
     }
-
+    public void DumpTilemap(RectInt bounds)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("=== TILEMAP DUMP ===");
+        for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
+        {
+            for (int x = bounds.xMin; x < bounds.xMax; x++)
+            {
+                var has = tilemap.HasTile(new Vector3Int(x, y, 0)) ? 'X' : '.';
+                sb.Append(has);
+            }
+            sb.AppendLine();
+        }
+        Debug.Log(sb.ToString());
+    }
     public bool IsValidPosition2(Piece piece, Vector3Int position)
     {
         RectInt bounds = this.Bounds;
@@ -389,26 +451,11 @@ public class Board : MonoBehaviour
 
             if (this.tilemap.HasTile(tilePosition))
             {
+
                 return false;
             }
         }
         return true;
-    }
-
-    public void DumpTilemap(RectInt bounds)
-    {
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine("=== TILEMAP DUMP ===");
-        for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
-        {
-            for (int x = bounds.xMin; x < bounds.xMax; x++)
-            {
-                var has = tilemap.HasTile(new Vector3Int(x, y, 0)) ? 'X' : '.';
-                sb.Append(has);
-            }
-            sb.AppendLine();
-        }
-        Debug.Log(sb.ToString());
     }
 
     public int ClearLines()
@@ -430,7 +477,6 @@ public class Board : MonoBehaviour
                 row++;
             }
         }
-
         if (linesCleared > 0)
         {
             PowerUpManager powerUpMgr = GetComponent<PowerUpManager>();
@@ -440,22 +486,10 @@ public class Board : MonoBehaviour
             }
         }
 
-        if (linesCleared > 0)
-        {
-            SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
-            if (socketAgent != null)
-            {
-                socketAgent.OnLinesCleared(linesCleared);
-            }
+        // Notify ML agent about line clears
 
-            TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
-            if (mlAgent != null && mlAgent.GetType().GetMethod("OnLinesCleared") != null)
-            {
-                System.Reflection.MethodInfo method = mlAgent.GetType().GetMethod("OnLinesCleared");
-                method?.Invoke(mlAgent, new object[] { linesCleared });
-            }
-        }
 
+        // Calculate score speed bonus based on player score
         scoreSpeedBonus = Mathf.Min(playerScore / 10000f, 1.0f);
 
         if (linesCleared >= 4)
@@ -469,18 +503,23 @@ public class Board : MonoBehaviour
         return linesCleared;
     }
 
+    private float temporarySpeedBoost = 0f;
+
     private IEnumerator ApplyTemporarySpeedBoost(float amount, float duration)
     {
         temporarySpeedBoost += amount;
+
         yield return new WaitForSeconds(duration);
+
         temporarySpeedBoost -= amount;
     }
 
     private void SpawnDebris(Vector3Int tilePosition, Color color)
     {
+        // Skip debris generation during ML training to improve performance
         if (isMLTraining) return;
 
-        Vector3 worldPosition = this.tilemap.CellToWorld(tilePosition) + new Vector3(0.5f, 0.5f, 0);
+        Vector3 worldPosition = this.tilemap.CellToWorld(tilePosition) + new Vector3(0.5f, 0.5f, 0); // center it
         GameObject debris = Instantiate(debrisPrefab, worldPosition, Quaternion.identity);
         SpriteRenderer sr = debris.GetComponent<SpriteRenderer>();
         sr.sortingOrder = 200;
@@ -492,12 +531,12 @@ public class Board : MonoBehaviour
         Rigidbody2D rb = debris.GetComponent<Rigidbody2D>();
         if (rb != null)
         {
-            float randomForceX = Random.Range(-1f, 1f);
-            float randomForceY = Random.Range(1f, 3f);
+            float randomForceX = Random.Range(-1f, 1f); // scatter a little
+            float randomForceY = Random.Range(1f, 3f);  // upward burst
             rb.AddForce(new Vector2(randomForceX, randomForceY), ForceMode2D.Impulse);
         }
 
-        Destroy(debris, 2f);
+        Destroy(debris, 2f); // destroy after 2 seconds
     }
 
     private bool IsLineFull(int row)
@@ -523,18 +562,21 @@ public class Board : MonoBehaviour
             TileBase tile = this.tilemap.GetTile(position);
             Sprite sprite = this.tilemap.GetSprite(position);
             this.tilemap.SetTile(position, null);
-            Color tileColor = Color.white;
+            Color tileColor = Color.white; // fallback
             if (sprite != null)
             {
                 Texture2D texture = sprite.texture;
                 if (texture != null)
                 {
+                    // Sample pixel from the center of the sprite's rect
                     int centerX = Mathf.FloorToInt(sprite.rect.x + sprite.rect.width / 2f);
                     int centerY = Mathf.FloorToInt(sprite.rect.y + sprite.rect.height / 2f);
+
+                    // Use GetPixelBilinear if you want normalized 0..1 coords
                     tileColor = texture.GetPixel(centerX, centerY);
                 }
             }
-            SpawnDebris(position, tileColor);
+            SpawnDebris(position, tileColor); // SPAWN DEBRIS
             tilemap.SetTile(position, null);
         }
 
@@ -552,47 +594,5 @@ public class Board : MonoBehaviour
         }
     }
 
-    public int ClearLinesCount()
-    {
-        int cleared = 0;
-        int width = boardSize.x;
-        int height = boardSize.y;
 
-        for (int y = 0; y < height; y++)
-        {
-            bool full = true;
-            for (int x = 0; x < width; x++)
-            {
-                if (!tilemap.HasTile(new Vector3Int(x + Bounds.xMin, y + Bounds.yMin, 0)))
-                {
-                    full = false;
-                    break;
-                }
-            }
-
-            if (full)
-            {
-                cleared++;
-
-                for (int x = 0; x < width; x++)
-                    tilemap.SetTile(new Vector3Int(x + Bounds.xMin, y + Bounds.yMin, 0), null);
-
-                for (int yy = y + 1; yy < height; yy++)
-                {
-                    for (int x = 0; x < width; x++)
-                    {
-                        var abovePos = new Vector3Int(x + Bounds.xMin, yy + Bounds.yMin, 0);
-                        var belowPos = new Vector3Int(x + Bounds.xMin, yy - 1 + Bounds.yMin, 0);
-                        var tile = tilemap.GetTile(abovePos);
-                        tilemap.SetTile(belowPos, tile);
-                        tilemap.SetTile(abovePos, null);
-                    }
-                }
-
-                y--;
-            }
-        }
-
-        return cleared;
-    }
 }

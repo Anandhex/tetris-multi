@@ -44,7 +44,7 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
         CleanupSentis();
     }
 
-    private void InitializeSentis()
+    public void InitializeSentis()
     {
         try
         {
@@ -107,7 +107,7 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
         return null;
     }
 
-    private void CleanupSentis()
+    public void CleanupSentis()
     {
         worker?.Dispose();
         worker = null;
