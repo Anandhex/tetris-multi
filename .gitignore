@@ -85,3 +85,7 @@ crashlytics-build.properties
 /python/models/*
 /python/model*/*.h5
 *.json
+
+/python/powerup/__pycache__/*
+*.pth
+/python/powerup/runs/*
