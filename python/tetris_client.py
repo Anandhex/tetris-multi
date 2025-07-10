@@ -210,11 +210,10 @@ class UnityTetrisClient:
         start = time.time()
         while time.time() - start < timeout:
             msg = self.get_game_state(timeout=poll_interval)
-            print(msg)
             if not msg:
                 continue
             # we expect Unity to send back {"type":"possible_states","payload":{...}}
-            if msg.get("type") == "possible_states" and "payload" in msg:
+            if msg.get("type") == "board_state" and "payload" in msg:
                 return msg["payload"]
         # timed out
         return {}
