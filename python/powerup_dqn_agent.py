@@ -133,13 +133,53 @@ class PowerupDQNAgent:
         return valid_actions
     
     def _has_valid_bomb_positions(self, board: np.ndarray) -> bool:
-        """Check if there are valid bomb positions"""
-        rows, cols = board.shape
-        for row in range(rows - 2):
-            for col in range(cols - 2):
-                if np.sum(board[row:row+3, col:col+3]) > 0:
-                    return True
+        """Check if there are valid bomb positions (only surface blocks)"""
+        surface_blocks = self._get_surface_blocks(board)
+        
+        for hit_row, hit_col in surface_blocks:
+            effectiveness = self._calculate_bomb_effectiveness_on_surface(board, hit_row, hit_col)
+            if effectiveness >= 3:  # At least 3 effectiveness to be worth it
+                return True
         return False
+    
+    def _get_surface_blocks(self, board: np.ndarray) -> List[Tuple[int, int]]:
+        """Get all surface blocks (blocks that can be hit by bomb from above)"""
+        rows, cols = board.shape
+        surface_blocks = []
+        
+        for col in range(cols):
+            for row in range(rows):
+                if board[row, col] == 1:  # Found a block
+                    # This is a surface block (first block from top in this column)
+                    surface_blocks.append((row, col))
+                    break  # Only the topmost block in each column is reachable
+        
+        return surface_blocks
+    
+    def _calculate_bomb_effectiveness_on_surface(self, board: np.ndarray, hit_row: int, hit_col: int) -> float:
+        """Calculate bomb effectiveness when bomb hits a surface block using relative offsets"""
+        rows, cols = board.shape
+        
+        # Define 3x3 explosion pattern around hit point
+        explosion_offsets = [
+            (-1, -1), (-1, 0), (-1, 1),  # Row above
+            (0, -1),  (0, 0),  (0, 1),   # Same row as hit
+            (1, -1),  (1, 0),  (1, 1)    # Row below
+        ]
+        
+        # Count blocks that would be destroyed in explosion
+        blocks_destroyed = 0
+        
+        for row_offset, col_offset in explosion_offsets:
+            explosion_row = hit_row + row_offset
+            explosion_col = hit_col + col_offset
+            
+            # Check if position is valid (within board bounds)
+            if 0 <= explosion_row < rows and 0 <= explosion_col < cols:
+                if board[explosion_row, explosion_col] == 1:
+                    blocks_destroyed += 1
+        
+        return float(blocks_destroyed)  # Simple effectiveness for validation
     
     def _mask_invalid_actions(self, q_values: np.ndarray, powerups: Dict[str, bool], 
                              board: np.ndarray) -> np.ndarray:

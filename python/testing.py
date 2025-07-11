@@ -7,24 +7,18 @@ class ModelTester:
     """Test trained powerup model"""
     
     def __init__(self, model_path: str, dataset_path: str):
-        from powerup_dqn_agent import PowerupDQNAgent
-        from environments import TrainingEnvironment
-        
         self.agent = PowerupDQNAgent()
         self.agent.load_model(model_path)
-        self.agent.set_eval_mode()  # Set to evaluation mode
+        self.agent.epsilon = 0  # No exploration during testing
         
         self.test_env = TrainingEnvironment(dataset_path)
-        
-        print("Model loaded for testing:")
-        self.agent.print_model_info()
         
     def test_model(self, num_tests: int = 100):
         """Test model performance on dataset"""
         total_reward = 0
         action_counts = {'none': 0, 'bottom_clear': 0, 'gravity': 0, 'bomb': 0}
         
-        print(f"Testing PyTorch model on {num_tests} scenarios...")
+        print(f"Testing model on {num_tests} scenarios...")
         
         for test in range(num_tests):
             self.test_env.reset()
@@ -41,13 +35,9 @@ class ModelTester:
         
         avg_reward = total_reward / num_tests
         
-        print(f"\nPyTorch Model Test Results:")
+        print(f"\nTest Results:")
         print(f"Average Reward: {avg_reward:.2f}")
         print(f"Action Distribution: {action_counts}")
-        
-        # Calculate action percentages
-        action_percentages = {k: (v/num_tests)*100 for k, v in action_counts.items()}
-        print(f"Action Percentages: {action_percentages}")
         
         return avg_reward, action_counts
 
