@@ -13,8 +13,8 @@ def generate_supervised_dataset(env, samples=1000):
         state = env.get_state()
 
         # Heuristic label
-        if env.powerups[0] == 1 and np.all(env.player_board[0] == 1):
-            action = 1  # clear line
+        if env.powerups[0] == 1 and np.sum(env.player_board[0]) >= 4:
+            action = 1  # clear bottom line
         elif env.powerups[1] == 1 and np.sum(env.player_board == 0) > 50:
             action = 2  # gravity
         elif env.powerups[2] == 1:
@@ -31,7 +31,7 @@ def generate_supervised_dataset(env, samples=1000):
 
 def train_supervised(model, env, epochs=5, batch_size=64,timestamp=""):
     X, y = generate_supervised_dataset(env, samples=10000)
-    log_dir = f"runs/supervised_experiment_{timestamp}"
+    log_dir = f"runs/{timestamp}/supervised_experiment_{timestamp}"
     writer = SummaryWriter(log_dir)
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     criterion = torch.nn.CrossEntropyLoss()

@@ -1,4 +1,6 @@
 import numpy as np
+import matplotlib.pyplot as plt
+
 
 class PowerupEnv:
     def __init__(self):
@@ -11,14 +13,40 @@ class PowerupEnv:
     def reset(self):
         self.steps = 0
         self.done = False
-        self.player_board = self.generate_random_board()
-        self.opponent_board = self.generate_random_board()
+        while True:
+            self.player_board = self.generate_random_board(protected_top_rows=0)
+            if np.sum(self.player_board) > 0:
+                break
+
+        while True:
+            self.opponent_board = self.generate_random_board(protected_top_rows=5)
+            if np.sum(self.opponent_board) > 0:
+                break
+        
         self.powerups = self.generate_powerup_vector()
         return self.get_state()
+    
 
-    def generate_random_board(self, density=0.2):
+    def show_boards_side_by_side(self,player_board, opponent_board,action=None):
+        fig, axes = plt.subplots(1, 2, figsize=(10, 5))  # 1 row, 2 columns
+
+        axes[0].imshow(player_board, cmap='gray_r')
+        axes[0].set_title("Player Board")
+        axes[0].axis('off')  # optional: hide axes
+
+        axes[1].imshow(opponent_board, cmap='gray_r')
+        axes[1].set_title("Opponent Board")
+        axes[1].axis('off')  # optional: hide axes
+
+        if(action is not None):
+            plt.title(f"action used: {action}")
+
+        plt.tight_layout()
+        plt.show()
+
+    def generate_random_board(self, density=0.5, protected_top_rows=5):
         board = np.zeros((self.board_height, self.board_width), dtype=np.float32)
-        for y in range(self.board_height):
+        for y in range(protected_top_rows, self.board_height):  # start from row 5
             if np.random.rand() < density:
                 row = np.ones(self.board_width)
                 holes = np.random.randint(0, 4)
@@ -32,13 +60,50 @@ class PowerupEnv:
         available = np.random.choice(self.num_powerups, size=np.random.randint(0, self.num_powerups + 1), replace=False)
         vector[available] = 1.0
         return vector
+    
+    def extract_board_features(self, board):
+        heights = np.zeros(board.shape[1])
+        holes = 0
+
+        for col in range(board.shape[1]):
+            column = board[:, col]
+            nonzero_indices = np.where(column != 0)[0]
+            if len(nonzero_indices) == 0:
+                heights[col] = 0
+            else:
+                heights[col] = self.board_height - nonzero_indices[0]
+
+            block_found = False
+            col_holes = 0
+            for cell in column:
+                if cell != 0:
+                    block_found = True
+                elif block_found and cell == 0:
+                    col_holes += 1
+            holes += col_holes
+
+        bumpiness = np.sum(np.abs(np.diff(heights)))
+        return heights, holes, bumpiness
+    
+    def clear_full_lines(self, board):
+        full_lines = np.all(board == 1, axis=1)
+        num_full = np.sum(full_lines)
+        if num_full == 0:
+            return board  # no full lines, return as is
+
+        # Keep only rows that are NOT full
+        new_board = board[~full_lines]
+
+        # Add empty rows on top to maintain board height
+        empty_rows = np.zeros((num_full, board.shape[1]), dtype=board.dtype)
+        new_board = np.vstack((empty_rows, new_board))
+
+        return new_board
+    def count_full_lines(self, board):
+        return np.sum(np.all(board == 1, axis=1))
 
     def get_state(self):
-        return np.concatenate([
-            self.player_board.flatten(),
-            self.opponent_board.flatten(),
-            self.powerups
-        ])
+        return np.concatenate([self.player_board.copy().flatten(), self.opponent_board.copy().flatten(), self.powerups.copy().flatten()])
 
     def board_quality(self, board):
         heights = np.zeros(board.shape[1])
@@ -73,50 +138,89 @@ class PowerupEnv:
 
         self.steps += 1
 
-        old_quality = self.board_quality(self.player_board)
-
         reward = 0
+        powerup_used = False
+        powerup_had_effect = False
 
+        old_quality = self.board_quality(self.player_board)
+        old_opponent_quality = self.board_quality(self.opponent_board)
+        # self.show_boards_side_by_side(self.player_board,self.opponent_board)
+        
+
+
+        # No-op
         if action == 0:
-            # No-op
-            if np.sum(self.player_board) == 0:
-                reward = 1  # correct no-op on empty board
-            else:
-                reward = -0.1
+            reward = 0  # neutral
+
+        # Clear bottom line
         elif action == 1 and self.powerups[0] == 1:
+            powerup_used = True
+            before = np.sum(self.player_board[0, :])
             self.clear_bottom_line()
             self.powerups[0] = 0
-            reward = 5
+            after = np.sum(self.player_board[0, :])
+            powerup_had_effect = before > after
+
+        # Gravity
         elif action == 2 and self.powerups[1] == 1:
+            powerup_used = True
+            before = self.player_board.copy()
             self.gravity_push()
             self.powerups[1] = 0
-            reward = 4
+            powerup_had_effect = not np.array_equal(before, self.player_board)
+
+        # Bomb (cols 0–9)
         elif 3 <= action <= 12:
             col = action - 3
             if self.powerups[2] == 1:
-                self.place_bomb(col)
+                powerup_used = True
+                powerup_had_effect = self.place_bomb(col)
                 self.powerups[2] = 0
-                reward = 6
-            else:
-                reward = -2
+
+        # Wild card (cols 0–9)
         elif 13 <= action <= 22:
             col = action - 13
             if self.powerups[3] == 1:
+                powerup_used = True
+                before = self.opponent_board.copy()
                 self.place_wild_card_opponent(col)
                 self.powerups[3] = 0
-                reward = 6
-            else:
-                reward = -2
+                powerup_had_effect = not np.array_equal(before, self.opponent_board)
+                if np.any(self.opponent_board[-1, :]):
+                    self.opponent_board = self.generate_random_board(protected_top_rows=5)
+                    reward += 10
+
+        # Invalid action
         else:
-            reward = -1
+            reward = -1  # wrong action or unavailable power-up
 
+        # Penalize ineffective power-up usage
+        if powerup_used and not powerup_had_effect:
+            reward -= 2
+
+        # Reward for player board quality improvement
         new_quality = self.board_quality(self.player_board)
-        quality_diff = new_quality - old_quality
+        reward += (new_quality - old_quality) * 3
 
-        reward += quality_diff * 10  # scale improvement impact
-
+        # Reward for worsening opponent board (only after wild card use)
+        if action >= 13 and action <= 22 and not self.powerups[3]:  # wild card used
+            new_opponent_quality = self.board_quality(self.opponent_board)
+            reward += (old_opponent_quality - new_opponent_quality) * 5
+       
+        # self.show_boards_side_by_side(self.player_board,self.opponent_board,action)
         self.done = self.steps >= self.max_steps
+        if np.sum(self.powerups) == 0:
+            self.powerups = self.generate_powerup_vector()    
+
+        if np.sum(self.player_board) == 0:
+            self.done = True
+            reward += 10  # Optional: give bonus reward for clearing board (or adjust as needed)
+
+            # Return immediately with done=True
+            return self.get_state(), reward, self.done, {}    
+
         return self.get_state(), reward, self.done, {}
+
 
     def clear_bottom_line(self):
         # Clear bottom line
@@ -134,13 +238,60 @@ class PowerupEnv:
             self.player_board[:, col] = np.concatenate((empty, blocks))
 
     def place_bomb(self, col):
-        row_start = 0
-        row_end = min(3, self.board_height)
-        col_start = max(0, col - 1)
-        col_end = min(self.board_width, col + 2)
+        bomb_size = 3
+        center_col = col
+        col_start = max(0, center_col - 1)
+        col_end = min(self.board_width, center_col + 2)
+
+        # Drop bomb from bottom up to simulate gravity
+        for row in range(self.board_height - bomb_size + 1):
+            area = self.player_board[row:row + bomb_size, col_start:col_end]
+            if np.any(area != 0):
+                landing_row = max(0, row - 1)
+                break
+        else:
+            landing_row = self.board_height - bomb_size
+
+
+        # Clamp in bounds
+        landing_row = row
+        row_start = landing_row
+        row_end = row_start + bomb_size
+
+        cleared_area = self.player_board[row_start:row_end, col_start:col_end]
+        before = np.sum(cleared_area)
+
+       
+
         self.player_board[row_start:row_end, col_start:col_end] = 0
 
+       
+        
+        return before > 0
+
+
+
     def place_wild_card_opponent(self, col):
-        rows_to_fill = min(3, self.board_height)
-        self.opponent_board[0:rows_to_fill, col] = 1
+        block_height = 3
+        block_width = 3
+
+        # Define horizontal range of the block
+        col_start = max(0, col - 1)
+        col_end = min(self.board_width, col + 2)  # exclusive
+        actual_block_width = col_end - col_start
+
+        # Extract column area for collision detection
+        for drop_row in range(self.board_height - block_height + 1):
+            # Check 3x3 area below to see if there's any existing block
+            area_below = self.opponent_board[drop_row:drop_row + block_height, col_start:col_end]
+            # Check the row below the bottom of the block
+            if drop_row + block_height >= self.board_height or \
+            np.any(self.opponent_board[drop_row + block_height, col_start:col_end]):
+                # Found collision or floor — place block above
+                target_row = drop_row
+                self.opponent_board[target_row:target_row + block_height, col_start:col_end] = 1
+                return
+
+        # If no collision found, place block at the bottom
+        self.opponent_board[-block_height:, col_start:col_end] = 1
 

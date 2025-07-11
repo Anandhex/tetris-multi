@@ -28,7 +28,7 @@ def train_dqn(model, env, episodes=300, batch_size=64, gamma=0.99,timestamp=""):
     target_model = PowerupNet(model.net[0].in_features, model.net[-1].out_features)
     target_model.load_state_dict(model.state_dict())
     optimizer = optim.Adam(model.parameters(), lr=0.001)
-    log_dir = f"runs/dqn_experiment_{timestamp}"
+    log_dir = f"runs/{timestamp}/dqn_experiment_{timestamp}"
     replay = ReplayBuffer()
     epsilon = 1.0
     epsilon_decay = 0.999
