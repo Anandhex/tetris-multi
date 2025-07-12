@@ -581,7 +581,7 @@ MonoBehaviour:
   currentMode: 1
   singlePlayerPosition: {x: 0, y: 0, z: 0}
   sentisModelAsset: {fileID: 5022602860645237092, guid: 53e518cc90f204e14b32d2626ef23f8b, type: 3}
-  powerupAsset: {fileID: 5022602860645237092, guid: c7bd1fcae472c48fda2cad9fe5ad2e76, type: 3}
+  powerupAsset: {fileID: 5022602860645237092, guid: 6197f2191f99fee439d8a308fa83c635, type: 3}
   player1Position: {x: -10, y: 0, z: 0}
   player2Position: {x: 10, y: 0, z: 0}
 --- !u!4 &1746893301
