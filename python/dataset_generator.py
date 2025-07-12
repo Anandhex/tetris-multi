@@ -82,10 +82,10 @@ class TetrisDatasetGenerator:
         return board
     
     def generate_dataset(self, num_samples: int, save_path: str):
-        """Generate and save a complete dataset"""
+        """Generate and save a complete dataset with guaranteed powerup availability"""
         dataset = []
         
-        print(f"Generating {num_samples} board configurations...")
+        print(f"Generating {num_samples} board configurations with powerups...")
         
         for i in range(num_samples):
             board_type = random.choice(['random', 'structured', 'problem'])
@@ -97,25 +97,85 @@ class TetrisDatasetGenerator:
             else:
                 board = self.create_problem_board()
             
-            # Add powerup availability (random for training diversity)
-            powerups = {
-                'bottom_clear': random.choice([True, False]),
-                'gravity': random.choice([True, False]),
-                'bomb': random.choice([True, False])
-            }
+            # GUARANTEE AT LEAST ONE POWERUP IS AVAILABLE
+            powerup_scenario = random.choice(['single', 'two', 'all'])
+            
+            if powerup_scenario == 'single':
+                # Exactly one powerup available
+                available_powerup = random.choice(['bottom_clear', 'gravity', 'bomb'])
+                powerups = {
+                    'bottom_clear': available_powerup == 'bottom_clear',
+                    'gravity': available_powerup == 'gravity',
+                    'bomb': available_powerup == 'bomb'
+                }
+            elif powerup_scenario == 'two':
+                # Exactly two powerups available
+                available_powerups = random.sample(['bottom_clear', 'gravity', 'bomb'], 2)
+                powerups = {
+                    'bottom_clear': 'bottom_clear' in available_powerups,
+                    'gravity': 'gravity' in available_powerups,
+                    'bomb': 'bomb' in available_powerups
+                }
+            else:  # 'all'
+                # All three powerups available
+                powerups = {
+                    'bottom_clear': True,
+                    'gravity': True,
+                    'bomb': True
+                }
+            
+            # SAFETY CHECK: Ensure at least one powerup is True
+            if not any(powerups.values()):
+                # This should never happen with above logic, but just in case
+                forced_powerup = random.choice(['bottom_clear', 'gravity', 'bomb'])
+                powerups[forced_powerup] = True
+                print(f"  SAFETY: Forced {forced_powerup} to be available")
             
             dataset.append({
-                'board': board.tolist(),  # Convert to list for JSON serialization
+                'board': board.tolist(),
                 'powerups': powerups,
-                'board_type': board_type
+                'board_type': board_type,
+                'powerup_scenario': powerup_scenario
             })
             
             if (i + 1) % 100 == 0:
                 print(f"Generated {i + 1}/{num_samples} boards")
         
+        # VERIFY DATASET POWERUP DISTRIBUTION
+        powerup_stats = {'bottom_clear': 0, 'gravity': 0, 'bomb': 0}
+        scenario_stats = {'single': 0, 'two': 0, 'all': 0}
+        none_scenarios = 0
+        
+        for sample in dataset:
+            # Count each powerup availability
+            for powerup, available in sample['powerups'].items():
+                if available:
+                    powerup_stats[powerup] += 1
+            
+            # Count scenarios
+            scenario_stats[sample['powerup_scenario']] += 1
+            
+            # Check for no powerups (should be 0)
+            if not any(sample['powerups'].values()):
+                none_scenarios += 1
+        
+        print(f"\n📊 DATASET POWERUP STATISTICS:")
+        print(f"  Total samples: {num_samples}")
+        print(f"  Scenarios with NO powerups: {none_scenarios} (should be 0)")
+        print(f"\n  Powerup Availability:")
+        for powerup, count in powerup_stats.items():
+            percentage = (count / num_samples) * 100
+            print(f"    {powerup}: {count} ({percentage:.1f}%)")
+        
+        print(f"\n  Scenario Distribution:")
+        for scenario, count in scenario_stats.items():
+            percentage = (count / num_samples) * 100
+            print(f"    {scenario}: {count} ({percentage:.1f}%)")
+        
         # Save dataset
         with open(save_path, 'wb') as f:
             pickle.dump(dataset, f)
         
-        print(f"Dataset saved to {save_path}")
+        print(f"\nDataset saved to {save_path}")
+        print("✅ GUARANTEED: Every scenario has at least 1 powerup available")
         return dataset
