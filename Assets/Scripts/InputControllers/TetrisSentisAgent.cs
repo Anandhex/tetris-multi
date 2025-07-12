@@ -271,11 +271,7 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
     }
 
 
-    private IEnumerator ExecuteMoveWithDelay(string move, float delaySeconds)
-    {
-        yield return new WaitForSeconds(delaySeconds);
-        ExecuteMove(move);
-    }
+
     private void ProcessInferenceOutput(Tensor<float> outputTensor, Dictionary<string, float[]> possibleMoves)
     {
         try
@@ -308,7 +304,7 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
 
 
             // Execute the move
-            StartCoroutine(ExecuteMoveWithDelay(bestMove, 0.5f));
+            StartCoroutine(ExecuteMove(bestMove));
 
         }
         catch (System.Exception e)
@@ -339,66 +335,60 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
     /// <summary>
     /// Execute move using simple col:rot format (like Python trainer)
     /// </summary>
-    private void ExecuteMove(string move)
+    private IEnumerator ExecuteMove(string move)
     {
         if (currentPiece?.data == null || board == null)
         {
             Debug.LogWarning("TetrisSentisAgent: Cannot execute move - invalid piece or board");
-            return;
+            yield break;
         }
 
-        try
+        var parts = move.Split(':');
+        int targetCol = int.Parse(parts[0]);
+        int targetRot = int.Parse(parts[1]);
+
+        board.Clear(currentPiece);
+
+        int currentRotation = currentPiece.rotationIndex;
+        int rotCount = currentPiece.data.RotationCount;
+        int steps = (targetRot - currentRotation + rotCount) % rotCount;
+
+        for (int i = 0; i < steps; i++)
         {
-            var parts = move.Split(':');
-            int targetCol = int.Parse(parts[0]);
-            int targetRot = int.Parse(parts[1]);
+            currentPiece.Rotate(-1);
+            board.Set(currentPiece); // Update visual state
+            yield return new WaitForSeconds(0.05f);
+            board.Clear(currentPiece);
+        }
 
+        if (currentPiece.cells != null && currentPiece.cells.Length > 0)
+        {
+            int minX = currentPiece.cells.Min(c => c.x);
+            var newPosition = new Vector3Int(
+                targetCol + board.Bounds.xMin - minX,
+                currentPiece.position.y,
+                currentPiece.position.z
+            );
 
-
-            // Clear current piece from board
+            currentPiece.position = newPosition;
+            board.Set(currentPiece); // Visualize horizontal move
+            yield return new WaitForSeconds(0.05f);
             board.Clear(currentPiece);
 
-            // Apply rotation
-            int currentRotation = currentPiece.rotationIndex;
-            int rotCount = currentPiece.data.RotationCount;
-            int steps = (targetRot - currentRotation + rotCount) % rotCount;
-
-            for (int i = 0; i < steps; i++)
+            while (board.IsValidPosition2(currentPiece, currentPiece.position + Vector3Int.down))
             {
-                currentPiece.Rotate(-1);
+                currentPiece.position += Vector3Int.down;
+                board.Set(currentPiece); // Show drop step
+                yield return new WaitForSeconds(0.02f);
+                board.Clear(currentPiece);
             }
-
-            // Move horizontally
-            if (currentPiece.cells != null && currentPiece.cells.Length > 0)
-            {
-                int minX = currentPiece.cells.Min(c => c.x);
-                var newPosition = new Vector3Int(
-                    targetCol + board.Bounds.xMin - minX,
-                    currentPiece.position.y,
-                    currentPiece.position.z
-                );
-
-                currentPiece.position = newPosition;
-
-                // Hard drop
-                while (board.IsValidPosition2(currentPiece, currentPiece.position + Vector3Int.down))
-                {
-                    currentPiece.position += Vector3Int.down;
-                }
-            }
-
-            // Place piece on board
-            board.Set(currentPiece);
-            board.ClearLines();
-            board.SpawnPiece();
-
-
         }
-        catch (System.Exception e)
-        {
-            Debug.LogError($"TetrisSentisAgent: Error executing move: {e.Message}");
-        }
+
+        board.Set(currentPiece);
+        board.ClearLines();
+        board.SpawnPiece();
     }
+
 
 
 

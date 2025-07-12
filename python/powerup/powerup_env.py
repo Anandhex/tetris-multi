@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import random
 
 
 class PowerupEnv:
@@ -7,7 +8,7 @@ class PowerupEnv:
         self.board_width = 10
         self.board_height = 20
         self.num_powerups = 4
-        self.max_steps = 200
+        self.max_steps = 20
         self.reset()
 
     def reset(self):
@@ -44,7 +45,9 @@ class PowerupEnv:
         plt.tight_layout()
         plt.show()
 
-    def generate_random_board(self, density=0.5, protected_top_rows=5):
+    def generate_random_board(self, density=None, protected_top_rows=5):
+        if density is None:
+            density = random.uniform(0.2, 0.6)
         board = np.zeros((self.board_height, self.board_width), dtype=np.float32)
         for y in range(protected_top_rows, self.board_height):  # start from row 5
             if np.random.rand() < density:
@@ -83,7 +86,7 @@ class PowerupEnv:
             holes += col_holes
 
         bumpiness = np.sum(np.abs(np.diff(heights)))
-        return heights, holes, bumpiness
+        return heights.sum(), holes, bumpiness
     
     def clear_full_lines(self, board):
         full_lines = np.all(board == 1, axis=1)
@@ -103,7 +106,14 @@ class PowerupEnv:
         return np.sum(np.all(board == 1, axis=1))
 
     def get_state(self):
+        # player_board_features = self.extract_board_features(self.player_board)
+        # opponent_board_features = self.extract_board_features(self.opponent_board)
         return np.concatenate([self.player_board.copy().flatten(), self.opponent_board.copy().flatten(), self.powerups.copy().flatten()])
+        return np.concatenate([
+    np.array(player_board_features, dtype=np.float32), 
+    np.array(opponent_board_features, dtype=np.float32), 
+    self.powerups.copy().flatten()
+]) 
 
     def board_quality(self, board):
         heights = np.zeros(board.shape[1])
@@ -133,6 +143,8 @@ class PowerupEnv:
         return score
 
     def step(self, action):
+        quality_multiplier = 1.0
+        opponent_multiplier = 1.0
         if self.done:
             return self.get_state(), 0, True, {}
 
@@ -141,18 +153,16 @@ class PowerupEnv:
         reward = 0
         powerup_used = False
         powerup_had_effect = False
+        reward_components = {}
 
         old_quality = self.board_quality(self.player_board)
         old_opponent_quality = self.board_quality(self.opponent_board)
-        # self.show_boards_side_by_side(self.player_board,self.opponent_board)
-        
-
 
         # No-op
         if action == 0:
-            reward = 0  # neutral
+            reward+=-1
+            reward_components["noop"] = 0
 
-        # Clear bottom line
         elif action == 1 and self.powerups[0] == 1:
             powerup_used = True
             before = np.sum(self.player_board[0, :])
@@ -160,66 +170,85 @@ class PowerupEnv:
             self.powerups[0] = 0
             after = np.sum(self.player_board[0, :])
             powerup_had_effect = before > after
+            reward_components["clear_bottom_line"] = 0
 
-        # Gravity
         elif action == 2 and self.powerups[1] == 1:
             powerup_used = True
-            before = self.player_board.copy()
+            before_board = self.player_board.copy()
+            old_quality = self.board_quality(self.player_board)
+            old_line_count = self.count_full_lines(self.player_board)
+
             self.gravity_push()
-            self.powerups[1] = 0
-            powerup_had_effect = not np.array_equal(before, self.player_board)
+            self.player_board = self.clear_full_lines(self.player_board)
 
-        # Bomb (cols 0–9)
-        elif 3 <= action <= 12:
+            new_quality = self.board_quality(self.player_board)
+            new_line_count = self.count_full_lines(self.player_board)
+
+            lines_cleared = old_line_count - new_line_count
+
+            powerup_had_effect = not np.array_equal(before_board, self.player_board)
+
+            if lines_cleared > 0:
+                reward += lines_cleared * 1.0
+                reward_components["gravity_lines_cleared"] = lines_cleared * 1.0
+
+        elif 3 <= action <= 12 and self.powerups[2] == 1:
+            powerup_used = True
             col = action - 3
-            if self.powerups[2] == 1:
-                powerup_used = True
-                powerup_had_effect = self.place_bomb(col)
-                self.powerups[2] = 0
+            cleared_block = self.place_bomb(col)
+            self.powerups[2] = 0
+            powerup_had_effect = cleared_block > 0
+            if cleared_block > 0:
+                bomb_reward = cleared_block * 0.3
+                reward += bomb_reward
+                reward_components["bomb"] = bomb_reward
 
-        # Wild card (cols 0–9)
-        elif 13 <= action <= 22:
+        elif 13 <= action <= 22 and self.powerups[3] == 1:
+            powerup_used = True
             col = action - 13
-            if self.powerups[3] == 1:
-                powerup_used = True
-                before = self.opponent_board.copy()
-                self.place_wild_card_opponent(col)
-                self.powerups[3] = 0
-                powerup_had_effect = not np.array_equal(before, self.opponent_board)
-                if np.any(self.opponent_board[-1, :]):
-                    self.opponent_board = self.generate_random_board(protected_top_rows=5)
-                    reward += 10
+            before = self.opponent_board.copy()
+            self.place_wild_card_opponent(col)
+            self.powerups[3] = 0
+            powerup_had_effect = not np.array_equal(before, self.opponent_board)
 
-        # Invalid action
-        else:
-            reward = -1  # wrong action or unavailable power-up
+            if np.any(self.opponent_board[-1, :]):
+                self.opponent_board = self.generate_random_board(protected_top_rows=5)
+                reward += 10
+                reward_components["wildcard_full"] = 10
 
-        # Penalize ineffective power-up usage
+        # Ineffective use penalty
         if powerup_used and not powerup_had_effect:
-            reward -= 2
+            reward -= 1.0
+            reward_components["ineffective_penalty"] = -1.0
 
-        # Reward for player board quality improvement
+        # Player board quality improvement (always applies)
         new_quality = self.board_quality(self.player_board)
-        reward += (new_quality - old_quality) * 3
+        quality_reward = (new_quality - old_quality) * quality_multiplier
+        reward += quality_reward
+        reward_components["player_quality_improvement"] = quality_reward
 
-        # Reward for worsening opponent board (only after wild card use)
-        if action >= 13 and action <= 22 and not self.powerups[3]:  # wild card used
+        # Opponent penalty
+        if 13 <= action <= 22 and not self.powerups[3]:
             new_opponent_quality = self.board_quality(self.opponent_board)
-            reward += (old_opponent_quality - new_opponent_quality) * 5
-       
-        # self.show_boards_side_by_side(self.player_board,self.opponent_board,action)
-        self.done = self.steps >= self.max_steps
+            opponent_penalty = (new_opponent_quality-old_opponent_quality ) * opponent_multiplier
+            reward += opponent_penalty
+            reward_components["opponent_quality_penalty"] = opponent_penalty
+
         if np.sum(self.powerups) == 0:
-            self.powerups = self.generate_powerup_vector()    
+            self.powerups = self.generate_powerup_vector()
 
         if np.sum(self.player_board) == 0:
             self.done = True
-            reward += 10  # Optional: give bonus reward for clearing board (or adjust as needed)
+            reward += 10
+            reward_components["board_clear_bonus"] = 10
+            print(f"Step {self.steps} | Action: {action} | Final Reward: {reward:.2f} | Components: {reward_components}")
+            return self.get_state(), reward, self.done, {}
 
-            # Return immediately with done=True
-            return self.get_state(), reward, self.done, {}    
-
+        self.done = self.steps >= self.max_steps
+        print(f"Step {self.steps} | Action: {action} | Final Reward: {reward:.2f} | Components: {reward_components}")
+        reward = np.clip(reward, -500, 500)
         return self.get_state(), reward, self.done, {}
+
 
 
     def clear_bottom_line(self):
@@ -267,7 +296,7 @@ class PowerupEnv:
 
        
         
-        return before > 0
+        return before
 
 
 
