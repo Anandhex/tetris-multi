@@ -1,4 +1,4 @@
-# optimized_cnn_dqn_agent.py - Surface-only bomb targeting + WildBlocks
+# optimized_cnn_dqn_wildblock_agent.py - Multi-board with wildblock support
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -8,88 +8,96 @@ import numpy as np
 import random
 import os
 from typing import Dict, List, Tuple, Optional
-from powerup_training_visualizer import TrainingVisualizer, TrainingLogger
+from powerup_training_visualizer2 import EnhancedTrainingVisualizer, EnhancedTrainingLogger
 
-class OptimizedCNNDQN(nn.Module):
+class OptimizedCNNDQNWildblock(nn.Module):
     """
-    Optimized CNN with surface-only bomb targeting + WildBlocks
+    Optimized CNN with wildblock support for dual-board input
+    Input: 8 channels (self_board + opponent_board + powerups)
     Output: 5 action types + 10 bomb columns + 8 wildblock columns = 23 total outputs
     """
     
     def __init__(self, board_height=20, board_width=10):
-        super(OptimizedCNNDQN, self).__init__()
+        super(OptimizedCNNDQNWildblock, self).__init__()
         
         self.board_height = board_height
         self.board_width = board_width
         
-        # Shared convolutional backbone (6 channels: own + opponent + 4 powerups)
+        # Shared convolutional backbone (8 input channels for dual boards)
         self.conv_layers = nn.Sequential(
-            nn.Conv2d(6, 32, kernel_size=3, padding=1),
+            nn.Conv2d(8, 32, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(128, 256, kernel_size=3, padding=1),
             nn.ReLU()
         )
         
         # Global features for action type
         self.global_pool = nn.AdaptiveAvgPool2d((2, 2))
         
-        # Action type branch (5 outputs: none, bottom_clear, gravity, bomb, wildblocks)
+        # Action type branch (5 outputs: none, bottom_clear, gravity, bomb, wildblock)
         self.action_branch = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(128 * 4, 128),
+            nn.Linear(256 * 4, 256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 5)
+        )
+        
+        # Bomb column branch (10 outputs: single cell placement, any column)
+        self.bomb_column_branch = nn.Sequential(
+            nn.AdaptiveAvgPool2d((1, 10)),  # Pool to (1, 10) - one value per column
+            nn.Flatten(),
+            nn.Linear(256 * 10, 128),
             nn.ReLU(),
             nn.Dropout(0.3),
             nn.Linear(128, 64),
             nn.ReLU(),
-            nn.Linear(64, 5)  # Added wildblocks
+            nn.Linear(64, 10)  # Q-value for bombing each column (0-9)
         )
         
-        # Bomb column branch (10 outputs: one per column)
-        self.bomb_column_branch = nn.Sequential(
-            nn.AdaptiveAvgPool2d((1, 10)),  # Pool to (1, 10) - one value per column
-            nn.Flatten(),
-            nn.Linear(128 * 10, 64),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(64, 10)  # Q-value for bombing each column
-        )
-        
-        # WildBlocks column branch (8 outputs: columns 1-8)
+        # Wildblock column branch (8 outputs: columns 1-8 only, since 3x3 needs center space)
         self.wildblock_column_branch = nn.Sequential(
-            nn.AdaptiveAvgPool2d((1, 8)),  # Pool to (1, 8) - middle columns
+            nn.AdaptiveAvgPool2d((1, 8)),  # Pool to (1, 8) - valid wildblock columns
             nn.Flatten(),
-            nn.Linear(128 * 8, 64),
+            nn.Linear(256 * 8, 128),
             nn.ReLU(),
             nn.Dropout(0.3),
-            nn.Linear(64, 8)  # Q-value for wildblock columns 1-8
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, 8)  # Q-value for wildblock placement in each valid column (1-8)
         )
         
     def forward(self, x):
         # Shared features from conv layers
-        features = self.conv_layers(x)  # (batch, 128, 20, 10)
+        features = self.conv_layers(x)  # (batch, 256, 20, 10)
         
         # Action type Q-values
         pooled_features = self.global_pool(features)
         action_q = self.action_branch(pooled_features)  # (batch, 5)
         
-        # Bomb column Q-values
+        # Bomb column Q-values (all 10 columns)
         bomb_col_q = self.bomb_column_branch(features)  # (batch, 10)
         
-        # WildBlocks column Q-values
-        wild_col_q = self.wildblock_column_branch(features)  # (batch, 8)
+        # Wildblock column Q-values (columns 1-8 only for 3x3 placement)
+        valid_features = features[:, :, :, 1:9]  # (batch, 256, 20, 8)
+        wildblock_col_q = self.wildblock_column_branch(valid_features)  # (batch, 8)
         
-        # Concatenate outputs: [action_q, bomb_col_q, wild_col_q]
+        # Concatenate outputs: [action_q, bomb_col_q, wildblock_col_q]
         # Output shape: (batch, 23) = 5 actions + 10 bomb columns + 8 wildblock columns
-        output = torch.cat([action_q, bomb_col_q, wild_col_q], dim=1)
+        output = torch.cat([action_q, bomb_col_q, wildblock_col_q], dim=1)
         
         return output
 
 
-class OptimizedBombAgent:
+class OptimizedWildblockAgent:
     """
-    Optimized agent with surface-only bomb targeting + WildBlocks
+    Optimized agent with wildblock support for dual-board gameplay
     """
     
     def __init__(self, board_height=20, board_width=10, **kwargs):
@@ -105,31 +113,74 @@ class OptimizedBombAgent:
         self.tau = kwargs.get('tau', 0.005)
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Optimized CNN DQN using device: {self.device}")
+        print(f"Optimized CNN DQN with Wildblock using device: {self.device}")
         
         self.memory = deque(maxlen=kwargs.get('memory_size', 10000))
         
         # Networks
-        self.q_network = OptimizedCNNDQN(board_height, board_width).to(self.device)
-        self.target_network = OptimizedCNNDQN(board_height, board_width).to(self.device)
+        self.q_network = OptimizedCNNDQNWildblock(board_height, board_width).to(self.device)
+        self.target_network = OptimizedCNNDQNWildblock(board_height, board_width).to(self.device)
         
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=self.learning_rate)
         self.hard_update()
         
         print(f"Model parameters: {sum(p.numel() for p in self.q_network.parameters()):,}")
     
-    def prepare_state(self, own_board: np.ndarray, opponent_board: np.ndarray, powerups: Dict[str, bool]) -> torch.Tensor:
-        """Convert dual boards + powerups to 6-channel tensor"""
-        own_board_channel = own_board.astype(np.float32)
+    def prepare_dual_state(self, self_board: np.ndarray, opponent_board: np.ndarray, 
+                          powerups: Dict[str, bool]) -> torch.Tensor:
+        """Convert dual boards + powerups to 8-channel tensor"""
+        # Board channels
+        self_board_channel = self_board.astype(np.float32)
         opponent_board_channel = opponent_board.astype(np.float32)
-        bottom_clear_channel = np.full_like(own_board, 1.0 if powerups.get('bottom_clear', False) else 0.0, dtype=np.float32)
-        gravity_channel = np.full_like(own_board, 1.0 if powerups.get('gravity', False) else 0.0, dtype=np.float32)
-        bomb_channel = np.full_like(own_board, 1.0 if powerups.get('bomb', False) else 0.0, dtype=np.float32)
-        wildblocks_channel = np.full_like(own_board, 1.0 if powerups.get('wildblocks', False) else 0.0, dtype=np.float32)
         
-        state = np.stack([own_board_channel, opponent_board_channel, bottom_clear_channel, 
-                         gravity_channel, bomb_channel, wildblocks_channel])
+        # Powerup channels (applied to both boards for context)
+        bottom_clear_channel = np.full_like(self_board, 1.0 if powerups.get('bottom_clear', False) else 0.0, dtype=np.float32)
+        gravity_channel = np.full_like(self_board, 1.0 if powerups.get('gravity', False) else 0.0, dtype=np.float32)
+        bomb_channel = np.full_like(self_board, 1.0 if powerups.get('bomb', False) else 0.0, dtype=np.float32)
+        wildblock_channel = np.full_like(self_board, 1.0 if powerups.get('wildblock', False) else 0.0, dtype=np.float32)
+        
+        # Additional context channels
+        height_diff_channel = self._calculate_height_advantage(self_board, opponent_board)
+        threat_level_channel = self._calculate_threat_level(opponent_board)
+        
+        state = np.stack([
+            self_board_channel, opponent_board_channel, 
+            bottom_clear_channel, gravity_channel, bomb_channel, wildblock_channel,
+            height_diff_channel, threat_level_channel
+        ])
+        
         return torch.FloatTensor(state).to(self.device)
+    
+    def _calculate_height_advantage(self, self_board: np.ndarray, opponent_board: np.ndarray) -> np.ndarray:
+        """Calculate height advantage map"""
+        self_heights = self._get_column_heights(self_board)
+        opp_heights = self._get_column_heights(opponent_board)
+        
+        # Positive values = we have advantage, negative = opponent has advantage
+        height_diff = opp_heights - self_heights
+        height_diff_normalized = np.tanh(height_diff / 10.0)  # Normalize to [-1, 1]
+        
+        return np.broadcast_to(height_diff_normalized.reshape(1, -1), self_board.shape).astype(np.float32)
+    
+    def _calculate_threat_level(self, opponent_board: np.ndarray) -> np.ndarray:
+        """Calculate threat level based on opponent board state"""
+        heights = self._get_column_heights(opponent_board)
+        max_height = np.max(heights)
+        
+        # Higher threat when opponent has tall columns (closer to losing)
+        threat_level = max_height / self.board_height
+        
+        return np.full_like(opponent_board, threat_level, dtype=np.float32)
+    
+    def _get_column_heights(self, board: np.ndarray) -> np.ndarray:
+        """Get height of each column"""
+        heights = np.zeros(self.board_width)
+        for col in range(self.board_width):
+            for row in range(self.board_height):
+                if board[row, col] == 1:
+                    heights[col] = self.board_height - row
+                    break
+        return heights
     
     def find_surface_blocks(self, board: np.ndarray) -> Dict[int, Optional[int]]:
         """Find surface block (topmost block) in each column"""
@@ -145,69 +196,159 @@ class OptimizedBombAgent:
         
         return surface_blocks
     
-    def find_wildblock_surface(self, opponent_board: np.ndarray, center_col: int) -> int:
-        """Find where 3×3 WildBlocks will land when centered at center_col"""
-        left_col = center_col - 1
-        right_col = center_col + 1
+    def find_valid_wildblock_positions(self, board: np.ndarray) -> Dict[int, Optional[int]]:
+        """
+        Find valid positions for 3x3 wildblock placement
+        Only columns 1-8 are valid (to avoid edge overflow)
+        """
+        valid_positions = {}
         
-        # Find surface blocks in all three columns
-        surfaces = []
-        for col in [left_col, center_col, right_col]:
-            if 0 <= col < self.board_width:
+        for center_col in range(1, 9):  # Columns 1-8 only
+            # Check surface blocks in the 3 columns that the wildblock will span
+            left_col = center_col - 1
+            right_col = center_col + 1
+            
+            # Find surface blocks in all three columns
+            surface_rows = []
+            for col in [left_col, center_col, right_col]:
                 for row in range(self.board_height):
-                    if opponent_board[row, col] == 1:
-                        surfaces.append(row)
+                    if board[row, col] == 1:
+                        surface_rows.append(row)
                         break
+                else:
+                    surface_rows.append(self.board_height)  # Empty column
+            
+            # The wildblock should be placed on top of the highest surface block
+            # in the three columns (to ensure it sits on top of existing blocks)
+            highest_surface = min(surface_rows)  # Lowest row index = highest position
+            
+            # Place wildblock on top of the highest surface
+            placement_row = max(0, highest_surface - 1)
+            
+            # Check if placement is valid (not too high)
+            if placement_row >= 0 and placement_row < self.board_height - 1:
+                valid_positions[center_col] = placement_row
+            else:
+                valid_positions[center_col] = None
         
-        if not surfaces:
-            return -1  # No surface blocks
-        
-        # Return the highest surface (minimum row number)
-        return min(surfaces)
+        return valid_positions
     
-    def find_valid_wildblock_columns(self, opponent_board: np.ndarray) -> List[int]:
-        """Find valid center columns for 3×3 WildBlocks placement"""
-        valid_columns = []
+    def calculate_wildblock_damage(self, board: np.ndarray, placement_row: int, placement_col: int) -> float:
+        """
+        Calculate damage score for placing 3x3 wildblock centered at given position
+        Higher score = more damage to opponent
+        """
+        damage_score = 0.0
         
-        for center_col in range(1, 9):  # Columns 1-8
-            surface_row = self.find_wildblock_surface(opponent_board, center_col)
-            if surface_row != -1 and surface_row >= 1:  # Has surface and some space
-                valid_columns.append(center_col)
+        # Simulate 3x3 wildblock placement
+        temp_board = board.copy()
         
-        return valid_columns
+        # Place 3x3 wildblock centered at (placement_row, placement_col)
+        for dr in [-1, 0, 1]:
+            for dc in [-1, 0, 1]:
+                r, c = placement_row + dr, placement_col + dc
+                if 0 <= r < self.board_height and 0 <= c < self.board_width:
+                    temp_board[r, c] = 1
+        
+        # Calculate damage metrics
+        
+        # 1. Height increase (primary factor)
+        original_heights = self._get_column_heights(board)
+        new_heights = self._get_column_heights(temp_board)
+        height_increase = np.sum(new_heights - original_heights)
+        damage_score += height_increase * 2.0
+        
+        # 2. Maximum height penalty (dangerous for opponent)
+        max_height = np.max(new_heights)
+        if max_height > 15:  # Close to losing
+            damage_score += (max_height - 15) * 5.0
+        
+        # 3. Surface roughness (harder to clear lines)
+        height_variance = np.var(new_heights)
+        damage_score += height_variance * 0.8
+        
+        # 4. Hole creation above existing blocks
+        holes_created = 0
+        for col in range(max(0, placement_col-1), min(self.board_width, placement_col+2)):
+            for row in range(placement_row + 1, self.board_height-1):
+                if temp_board[row, col] == 0 and temp_board[row+1, col] == 1:
+                    holes_created += 1
+        damage_score += holes_created * 2.0
+        
+        # 5. Line blocking potential (blocks that prevent line clearing)
+        blocked_lines = 0
+        for row in range(max(0, placement_row-1), min(self.board_height, placement_row+2)):
+            blocks_in_row = np.sum(temp_board[row, :])
+            if 7 <= blocks_in_row < 10:  # Almost full lines that are now harder to clear
+                blocked_lines += 1
+        damage_score += blocked_lines * 3.0
+        
+        # 6. Strategic placement bonus (targeting center columns)
+        center_bonus = 0.0
+        if 3 <= placement_col <= 6:  # Center columns are more disruptive
+            center_bonus = 1.0
+        damage_score += center_bonus
+        
+        return damage_score
     
-    def predict_unity(self, own_board: np.ndarray, opponent_board: np.ndarray, powerups: Dict[str, bool]) -> Dict:
-        """MAIN METHOD FOR UNITY: Dual board prediction"""
+    def calculate_bomb_impact(self, board: np.ndarray, bomb_row: int, bomb_col: int) -> int:
+        """Calculate how many blocks would be destroyed by bomb at position (unchanged)"""
+        blocks_destroyed = 0
+        
+        # 3x3 area around bomb
+        for dr in [-1, 0, 1]:
+            for dc in [-1, 0, 1]:
+                r, c = bomb_row + dr, bomb_col + dc
+                if 0 <= r < self.board_height and 0 <= c < self.board_width:
+                    if board[r, c] == 1:
+                        blocks_destroyed += 1
+        
+        return blocks_destroyed
+    
+    def predict_unity(self, self_board: np.ndarray, opponent_board: np.ndarray, 
+                     powerups: Dict[str, bool]) -> Dict:
+        """
+        MAIN METHOD FOR UNITY: Optimized dual-board prediction with wildblock
+        
+        Returns:
+            {
+                'action_type': 0-4,
+                'action_name': string,
+                'bomb_column': 0-9 (if bomb selected),
+                'bomb_row': actual row (if bomb selected),
+                'wildblock_column': 1-8 (if wildblock selected),
+                'wildblock_row': actual row (if wildblock selected),
+                'confidence': float,
+                'valid_bomb_columns': list,
+                'valid_wildblock_columns': list
+            }
+        """
         
         # Prepare input
-        state = self.prepare_state(own_board, opponent_board, powerups).unsqueeze(0)
+        state = self.prepare_dual_state(self_board, opponent_board, powerups).unsqueeze(0)
         
         # Single forward pass
         with torch.no_grad():
             output = self.q_network(state).cpu().numpy()[0]  # Shape: (23,)
         
         # Split output
-        action_q = output[:5]       # Actions: [none, bottom_clear, gravity, bomb, wildblocks]
-        bomb_col_q = output[5:15]   # Bomb columns
-        wild_col_q = output[15:23]  # WildBlock columns
+        action_q = output[:5]        # Action types [none, bottom_clear, gravity, bomb, wildblock]
+        bomb_col_q = output[5:15]    # Bomb columns (0-9)
+        wildblock_col_q = output[15:] # Wildblock columns (1-8)
         
-        # Find surface blocks and valid columns
-        surface_blocks = self.find_surface_blocks(own_board)
-        valid_bomb_columns = [col for col, row in surface_blocks.items() if row is not None]
-        valid_wild_columns = self.find_valid_wildblock_columns(opponent_board)
+        # Find valid columns
+        self_surface_blocks = self.find_surface_blocks(self_board)
+        valid_bomb_columns = [col for col, row in self_surface_blocks.items() if row is not None]
         
-        # LOG: Show available powerups and valid placements
-        available_powerups = [k for k, v in powerups.items() if v]
-        print(f"PREDICT: Available powerups: {available_powerups}")
-        print(f"PREDICT: Valid bomb columns: {valid_bomb_columns}")
-        print(f"PREDICT: Valid wildblock columns: {valid_wild_columns}")
+        opp_wildblock_positions = self.find_valid_wildblock_positions(opponent_board)
+        valid_wildblock_columns = [col for col, row in opp_wildblock_positions.items() if row is not None]
         
         # Mask invalid actions
-        masked_action_q = self._mask_actions(action_q, powerups, valid_bomb_columns, valid_wild_columns)
+        masked_action_q = self._mask_actions(action_q, powerups, valid_bomb_columns, valid_wildblock_columns)
         
         # Select best action
         best_action_id = np.argmax(masked_action_q)
-        action_names = ['none', 'bottom_clear', 'gravity', 'bomb', 'wildblocks']
+        action_names = ['none', 'bottom_clear', 'gravity', 'bomb', 'wildblock']
         action_name = action_names[best_action_id]
         
         # Calculate confidence
@@ -219,54 +360,76 @@ class OptimizedBombAgent:
             'action_name': action_name,
             'confidence': float(confidence),
             'valid_bomb_columns': valid_bomb_columns,
-            'valid_wild_columns': valid_wild_columns
+            'valid_wildblock_columns': valid_wildblock_columns
         }
         
-        # Handle bomb placement (on own board)
+        # Handle bomb action
         if best_action_id == 3:  # bomb action
-            if valid_bomb_columns:
-                masked_bomb_col_q = self._mask_bomb_columns(bomb_col_q, valid_bomb_columns)
-                best_col = np.argmax(masked_bomb_col_q)
-                bomb_row = surface_blocks[best_col] if best_col in surface_blocks else 0
-                
-                result.update({
-                    'bomb_column': int(best_col),
-                    'bomb_row': int(bomb_row) if bomb_row is not None else -1,
-                    'bomb_confidence': float(self._softmax(masked_bomb_col_q)[best_col])
-                })
-                print(f"PREDICT: Bomb selected -> Column {best_col}, Row {bomb_row}")
-            else:
-                result.update({'bomb_column': -1, 'bomb_row': -1, 'bomb_confidence': 0.0})
-        
-        # Handle wildblocks placement (on opponent board)
-        elif best_action_id == 4:  # wildblocks action
-            if valid_wild_columns:
-                masked_wild_col_q = self._mask_wildblock_columns(wild_col_q, valid_wild_columns)
-                best_wild_col_idx = np.argmax(masked_wild_col_q)
-                actual_column = best_wild_col_idx + 1  # Convert to actual column (1-8)
-                wild_row = self.find_wildblock_surface(opponent_board, actual_column)
-                
-                result.update({
-                    'wildblock_column': int(actual_column),
-                    'wildblock_row': int(wild_row),
-                    'wildblock_confidence': float(self._softmax(masked_wild_col_q)[best_wild_col_idx])
-                })
-                print(f"PREDICT: WildBlocks selected -> Column {actual_column}, Row {wild_row}")
-            else:
-                result.update({'wildblock_column': -1, 'wildblock_row': -1, 'wildblock_confidence': 0.0})
-        
-        else:
-            # No bomb or wildblocks
+            masked_bomb_col_q = self._mask_bomb_columns(bomb_col_q, valid_bomb_columns)
+            best_bomb_col = np.argmax(masked_bomb_col_q)
+            bomb_row = self_surface_blocks[best_bomb_col] if best_bomb_col in self_surface_blocks else 0
+            
             result.update({
-                'bomb_column': -1, 'bomb_row': -1, 'bomb_confidence': 0.0,
-                'wildblock_column': -1, 'wildblock_row': -1, 'wildblock_confidence': 0.0
+                'bomb_column': int(best_bomb_col),
+                'bomb_row': int(bomb_row) if bomb_row is not None else -1,
+                'bomb_confidence': float(self._softmax(masked_bomb_col_q)[best_bomb_col]),
+                'wildblock_column': -1,
+                'wildblock_row': -1,
+                'wildblock_confidence': 0.0
+            })
+            
+        elif best_action_id == 4:  # wildblock action
+            if valid_wildblock_columns:
+                # Evaluate damage for each valid position and combine with neural network output
+                damage_scores = np.full(8, -np.inf)  # 8 possible columns (1-8)
+                
+                for i, center_col in enumerate(range(1, 9)):  # Columns 1-8
+                    if center_col in valid_wildblock_columns:
+                        placement_row = opp_wildblock_positions[center_col]
+                        if placement_row is not None:
+                            damage = self.calculate_wildblock_damage(opponent_board, placement_row, center_col)
+                            damage_scores[i] = damage
+                
+                # Combine neural network output with damage calculation
+                combined_scores = wildblock_col_q + damage_scores * 0.1  # Weight damage calculation
+                masked_wildblock_q = self._mask_wildblock_columns(combined_scores, valid_wildblock_columns)
+                best_wildblock_idx = np.argmax(masked_wildblock_q)
+                best_wildblock_col = best_wildblock_idx + 1  # Convert back to actual column (1-8)
+                wildblock_row = opp_wildblock_positions.get(best_wildblock_col, 0)
+                
+                result.update({
+                    'bomb_column': -1,
+                    'bomb_row': -1,
+                    'bomb_confidence': 0.0,
+                    'wildblock_column': int(best_wildblock_col),
+                    'wildblock_row': int(wildblock_row) if wildblock_row is not None else -1,
+                    'wildblock_confidence': float(self._softmax(masked_wildblock_q)[best_wildblock_idx]),
+                    'expected_damage': float(damage_scores[best_wildblock_idx]) if best_wildblock_idx < len(damage_scores) else 0.0
+                })
+            else:
+                result.update({
+                    'bomb_column': -1,
+                    'bomb_row': -1,
+                    'bomb_confidence': 0.0,
+                    'wildblock_column': -1,
+                    'wildblock_row': -1,
+                    'wildblock_confidence': 0.0,
+                    'expected_damage': 0.0
+                })
+        else:
+            result.update({
+                'bomb_column': -1,
+                'bomb_row': -1,
+                'bomb_confidence': 0.0,
+                'wildblock_column': -1,
+                'wildblock_row': -1,
+                'wildblock_confidence': 0.0
             })
         
-        print(f"PREDICT: Final decision -> {action_name} (confidence: {confidence:.3f})")
         return result
     
     def _mask_actions(self, action_q: np.ndarray, powerups: Dict[str, bool], 
-                     valid_bomb_columns: List[int], valid_wild_columns: List[int]) -> np.ndarray:
+                     valid_bomb_columns: List[int], valid_wildblock_columns: List[int]) -> np.ndarray:
         """Mask invalid actions"""
         masked = action_q.copy()
         
@@ -277,28 +440,27 @@ class OptimizedBombAgent:
             masked[2] = -np.inf
         if not powerups.get('bomb', False) or len(valid_bomb_columns) == 0:
             masked[3] = -np.inf
-        if not powerups.get('wildblocks', False) or len(valid_wild_columns) == 0:
+        if not powerups.get('wildblock', False) or len(valid_wildblock_columns) == 0:
             masked[4] = -np.inf
         
         return masked
     
-    def _mask_bomb_columns(self, bomb_col_q: np.ndarray, valid_columns: List[int]) -> np.ndarray:
-        """Mask invalid bomb columns"""
+    def _mask_bomb_columns(self, bomb_col_q: np.ndarray, valid_bomb_columns: List[int]) -> np.ndarray:
+        """Mask invalid bomb columns (those without surface blocks)"""
         masked = bomb_col_q.copy()
         
         for col in range(len(bomb_col_q)):
-            if col not in valid_columns:
+            if col not in valid_bomb_columns:
                 masked[col] = -np.inf
         
         return masked
     
-    def _mask_wildblock_columns(self, wild_col_q: np.ndarray, valid_columns: List[int]) -> np.ndarray:
+    def _mask_wildblock_columns(self, wildblock_col_q: np.ndarray, valid_wildblock_columns: List[int]) -> np.ndarray:
         """Mask invalid wildblock columns"""
-        masked = wild_col_q.copy()
+        masked = wildblock_col_q.copy()
         
-        for i in range(len(wild_col_q)):
-            actual_col = i + 1  # Convert index to actual column (1-8)
-            if actual_col not in valid_columns:
+        for i, center_col in enumerate(range(1, 9)):  # Columns 1-8
+            if center_col not in valid_wildblock_columns:
                 masked[i] = -np.inf
         
         return masked
@@ -316,32 +478,22 @@ class OptimizedBombAgent:
         
         return probs
     
-    def calculate_bomb_impact(self, board: np.ndarray, bomb_row: int, bomb_col: int) -> int:
-        """Calculate how many blocks would be destroyed by bomb at position"""
-        blocks_destroyed = 0
-        
-        # 3x3 area around bomb
-        for dr in [-1, 0, 1]:
-            for dc in [-1, 0, 1]:
-                r, c = bomb_row + dr, bomb_col + dc
-                if 0 <= r < self.board_height and 0 <= c < self.board_width:
-                    if board[r, c] == 1:
-                        blocks_destroyed += 1
-        
-        return blocks_destroyed
-    
-    def choose_action_training(self, own_board: np.ndarray, opponent_board: np.ndarray, powerups: Dict[str, bool]) -> Dict:
+    def choose_action_training(self, self_board: np.ndarray, opponent_board: np.ndarray, 
+                             powerups: Dict[str, bool]) -> Dict:
         """Training version with epsilon-greedy exploration"""
         if np.random.random() <= self.epsilon:
-            return self._random_action(own_board, opponent_board, powerups)
+            return self._random_action(self_board, opponent_board, powerups)
         else:
-            return self.predict_unity(own_board, opponent_board, powerups)
+            return self.predict_unity(self_board, opponent_board, powerups)
     
-    def _random_action(self, own_board: np.ndarray, opponent_board: np.ndarray, powerups: Dict[str, bool]) -> Dict:
+    def _random_action(self, self_board: np.ndarray, opponent_board: np.ndarray, 
+                      powerups: Dict[str, bool]) -> Dict:
         """Random valid action for training"""
-        surface_blocks = self.find_surface_blocks(own_board)
-        valid_bomb_columns = [col for col, row in surface_blocks.items() if row is not None]
-        valid_wild_columns = self.find_valid_wildblock_columns(opponent_board)
+        self_surface_blocks = self.find_surface_blocks(self_board)
+        valid_bomb_columns = [col for col, row in self_surface_blocks.items() if row is not None]
+        
+        opp_wildblock_positions = self.find_valid_wildblock_positions(opponent_board)
+        valid_wildblock_columns = [col for col, row in opp_wildblock_positions.items() if row is not None]
         
         valid_actions = [0]  # none always valid
         if powerups.get('bottom_clear', False):
@@ -350,52 +502,62 @@ class OptimizedBombAgent:
             valid_actions.append(2)
         if powerups.get('bomb', False) and len(valid_bomb_columns) > 0:
             valid_actions.append(3)
-        if powerups.get('wildblocks', False) and len(valid_wild_columns) > 0:
+        if powerups.get('wildblock', False) and len(valid_wildblock_columns) > 0:
             valid_actions.append(4)
         
         action_type = random.choice(valid_actions)
-        action_names = ['none', 'bottom_clear', 'gravity', 'bomb', 'wildblocks']
+        action_names = ['none', 'bottom_clear', 'gravity', 'bomb', 'wildblock']
         
         result = {
             'action_type': action_type,
             'action_name': action_names[action_type],
             'confidence': 1.0,
             'valid_bomb_columns': valid_bomb_columns,
-            'valid_wild_columns': valid_wild_columns
+            'valid_wildblock_columns': valid_wildblock_columns
         }
         
         if action_type == 3:  # bomb
             bomb_col = random.choice(valid_bomb_columns)
-            bomb_row = surface_blocks[bomb_col]
+            bomb_row = self_surface_blocks[bomb_col]
             
             result.update({
                 'bomb_column': bomb_col,
                 'bomb_row': bomb_row if bomb_row is not None else -1,
-                'bomb_confidence': 1.0
+                'bomb_confidence': 1.0,
+                'wildblock_column': -1,
+                'wildblock_row': -1,
+                'wildblock_confidence': 0.0
             })
-        elif action_type == 4:  # wildblocks
-            wild_col = random.choice(valid_wild_columns)
-            wild_row = self.find_wildblock_surface(opponent_board, wild_col)
+        elif action_type == 4:  # wildblock
+            wildblock_col = random.choice(valid_wildblock_columns)
+            wildblock_row = opp_wildblock_positions[wildblock_col]
             
             result.update({
-                'wildblock_column': wild_col,
-                'wildblock_row': wild_row,
+                'bomb_column': -1,
+                'bomb_row': -1,
+                'bomb_confidence': 0.0,
+                'wildblock_column': wildblock_col,
+                'wildblock_row': wildblock_row if wildblock_row is not None else -1,
                 'wildblock_confidence': 1.0
             })
         else:
             result.update({
-                'bomb_column': -1, 'bomb_row': -1, 'bomb_confidence': 0.0,
-                'wildblock_column': -1, 'wildblock_row': -1, 'wildblock_confidence': 0.0
+                'bomb_column': -1,
+                'bomb_row': -1,
+                'bomb_confidence': 0.0,
+                'wildblock_column': -1,
+                'wildblock_row': -1,
+                'wildblock_confidence': 0.0
             })
         
         return result
     
-    def remember(self, own_board: np.ndarray, opponent_board: np.ndarray, powerups: Dict[str, bool], action: Dict, 
-                 reward: float, next_own_board: np.ndarray, next_opponent_board: np.ndarray, 
-                 next_powerups: Dict[str, bool], done: bool):
+    def remember(self, self_board: np.ndarray, opponent_board: np.ndarray, powerups: Dict[str, bool], 
+                action: Dict, reward: float, next_self_board: np.ndarray, next_opponent_board: np.ndarray, 
+                next_powerups: Dict[str, bool], done: bool):
         """Store experience for training"""
-        state = self.prepare_state(own_board, opponent_board, powerups).cpu().numpy()
-        next_state = self.prepare_state(next_own_board, next_opponent_board, next_powerups).cpu().numpy()
+        state = self.prepare_dual_state(self_board, opponent_board, powerups).cpu().numpy()
+        next_state = self.prepare_dual_state(next_self_board, next_opponent_board, next_powerups).cpu().numpy()
         
         action_encoded = {
             'action_type': action['action_type'],
@@ -448,22 +610,23 @@ class OptimizedBombAgent:
             
             bomb_loss = F.mse_loss(current_bomb_q, target_bomb_q)
         
-        # WildBlocks column loss (only for wildblocks actions)
-        wild_loss = 0.0
-        wild_indices = [i for i, a in enumerate(actions) if a['action_type'] == 4 and a['wildblock_column'] >= 1]
+        # Wildblock column loss (only for wildblock actions)
+        wildblock_loss = 0.0
+        wildblock_indices = [i for i, a in enumerate(actions) if a['action_type'] == 4 and a['wildblock_column'] >= 1]
         
-        if wild_indices:
-            wild_columns = torch.LongTensor([actions[i]['wildblock_column'] - 1 for i in wild_indices]).to(self.device)
-            current_wild_q = current_q[wild_indices, 15:23].gather(1, wild_columns.unsqueeze(1)).squeeze(1)
+        if wildblock_indices:
+            # Convert wildblock columns (1-8) to indices (0-7) for tensor indexing
+            wildblock_columns = torch.LongTensor([actions[i]['wildblock_column'] - 1 for i in wildblock_indices]).to(self.device)
+            current_wildblock_q = current_q[wildblock_indices, 15:23].gather(1, wildblock_columns.unsqueeze(1)).squeeze(1)
             
             with torch.no_grad():
-                next_wild_q = next_q[wild_indices, 15:23].max(1)[0]
-                target_wild_q = rewards[wild_indices] + (self.gamma * next_wild_q * ~dones[wild_indices])
+                next_wildblock_q = next_q[wildblock_indices, 15:23].max(1)[0]
+                target_wildblock_q = rewards[wildblock_indices] + (self.gamma * next_wildblock_q * ~dones[wildblock_indices])
             
-            wild_loss = F.mse_loss(current_wild_q, target_wild_q)
+            wildblock_loss = F.mse_loss(current_wildblock_q, target_wildblock_q)
         
         # Total loss
-        total_loss = action_loss + bomb_loss + wild_loss
+        total_loss = action_loss + bomb_loss + wildblock_loss
         
         # Optimize
         self.optimizer.zero_grad()
@@ -496,18 +659,18 @@ class OptimizedBombAgent:
             'model_state_dict': self.q_network.state_dict(),
             'board_height': self.board_height,
             'board_width': self.board_width,
-            'model_type': 'optimized_surface_bomb_wildblocks'
+            'model_type': 'optimized_wildblock_dual_board'
         }
         
         torch.save(checkpoint, filepath)
-        print(f"Optimized WildBlocks model saved to {filepath}")
+        print(f"Optimized wildblock model saved to {filepath}")
     
     def load_model(self, filepath: str):
         """Load model"""
         checkpoint = torch.load(filepath, map_location=self.device)
         self.q_network.load_state_dict(checkpoint['model_state_dict'])
         self.epsilon = 0.0
-        print(f"Optimized WildBlocks model loaded from {filepath}")
+        print(f"Optimized wildblock model loaded from {filepath}")
     
     def set_eval_mode(self):
         """Set to evaluation mode"""
@@ -515,243 +678,15 @@ class OptimizedBombAgent:
         self.epsilon = 0.0
 
 
-# Updated Training Environment to handle WildBlocks
-class OptimizedTrainingEnvironment:
-    """Your original training environment + WildBlocks support"""
+# Optimized trainer with wildblock support
+class OptimizedWildblockTrainer:
+    """Trainer for optimized wildblock model with dual-board support"""
     
-    def __init__(self, dataset_path: str):
-        import pickle
-        with open(dataset_path, 'rb') as f:
-            self.dataset = pickle.load(f)
+    def __init__(self, dataset_path: str, save_dir: str = "optimized_wildblock_models"):
+        from environments import TrainingEnvironment
         
-        from feature_extractor import UniversalFeatureExtractor
-        self.feature_extractor = UniversalFeatureExtractor()
-        
-        self.current_own_board = None
-        self.current_opponent_board = None
-        self.current_powerups = None
-        
-        print(f"Loaded dataset with {len(self.dataset)} board configurations")
-    
-    def reset(self):
-        """Load random boards"""
-        sample = random.choice(self.dataset)
-        
-        if isinstance(sample, dict):
-            board_data = np.array(sample['board'], dtype=np.int32)
-            if 'powerups' in sample:
-                self.current_powerups = sample['powerups'].copy()
-            else:
-                self.current_powerups = {
-                    'bottom_clear': random.choice([True, False]),
-                    'gravity': random.choice([True, False]),
-                    'bomb': random.choice([True, False]),
-                    'wildblocks': random.choice([True, False])
-                }
-        else:
-            board_data = np.array(sample, dtype=np.int32)
-            self.current_powerups = {
-                'bottom_clear': random.choice([True, False]),
-                'gravity': random.choice([True, False]),
-                'bomb': random.choice([True, False]),
-                'wildblocks': random.choice([True, False])
-            }
-        
-        # Use same board for both (for training)
-        self.current_own_board = board_data.copy()
-        self.current_opponent_board = board_data.copy()
-        
-        # Ensure at least one powerup is available
-        if not any(self.current_powerups.values()):
-            powerup_to_enable = random.choice(['bottom_clear', 'gravity', 'bomb', 'wildblocks'])
-            self.current_powerups[powerup_to_enable] = True
-        
-        # LOG: Show powerup availability
-        available_powerups = [k for k, v in self.current_powerups.items() if v]
-        print(f"RESET: Powerups available: {available_powerups}")
-        
-        return self.current_own_board, self.current_opponent_board
-    
-    def get_state(self):
-        """Get current state"""
-        return self.current_own_board, self.current_opponent_board, self.current_powerups
-    
-    def apply_powerup(self, action: Dict):
-        """Apply powerup action and return new states + reward"""
-        old_own_board = self.current_own_board.copy()
-        old_opponent_board = self.current_opponent_board.copy()
-        
-        new_own_board = old_own_board.copy()
-        new_opponent_board = old_opponent_board.copy()
-        
-        action_type = action.get('action_name', 'none')
-        
-        print(f"APPLY: Action {action_type} being applied...")
-        
-        if action_type == 'bottom_clear':
-            new_own_board[-1, :] = 0
-            self.current_powerups['bottom_clear'] = False
-            
-        elif action_type == 'gravity':
-            new_own_board = self._apply_gravity(new_own_board)
-            self.current_powerups['gravity'] = False
-            
-        elif action_type == 'bomb':
-            if action.get('bomb_row', -1) != -1 and action.get('bomb_column', -1) != -1:
-                new_own_board = self._apply_bomb(new_own_board, action['bomb_row'], action['bomb_column'])
-                self.current_powerups['bomb'] = False
-                print(f"APPLY: Bomb applied at ({action['bomb_row']}, {action['bomb_column']})")
-        
-        elif action_type == 'wildblocks':
-            if action.get('wildblock_row', -1) != -1 and action.get('wildblock_column', -1) != -1:
-                new_opponent_board = self._apply_wildblocks(new_opponent_board, 
-                                                          action['wildblock_row'], 
-                                                          action['wildblock_column'])
-                self.current_powerups['wildblocks'] = False
-        elif action_type == 'wildblocks':
-            if action.get('wildblock_row', -1) != -1 and action.get('wildblock_column', -1) != -1:
-                new_opponent_board = self._apply_wildblocks(new_opponent_board, 
-                                                          action['wildblock_row'], 
-                                                          action['wildblock_column'])
-                self.current_powerups['wildblocks'] = False
-                print(f"APPLY: WildBlocks applied at ({action['wildblock_row']}, {action['wildblock_column']})")
-        
-        # Update current state
-        self.current_own_board = new_own_board
-        self.current_opponent_board = new_opponent_board
-        
-        # Calculate reward
-        reward = self._calculate_reward(old_own_board, new_own_board, 
-                                      old_opponent_board, new_opponent_board, action)
-        
-        print(f"APPLY: Reward calculated: {reward:.2f}")
-        
-        return new_own_board, new_opponent_board, reward
-    
-    def _apply_gravity(self, board: np.ndarray) -> np.ndarray:
-        """Apply gravity effect - move blocks down to fill holes"""
-        new_board = board.copy()
-        rows, cols = new_board.shape
-        
-        for col in range(cols):
-            # Extract all blocks in this column
-            blocks = []
-            for row in range(rows-1, -1, -1):  # Bottom to top
-                if new_board[row, col] == 1:
-                    blocks.append(1)
-                    new_board[row, col] = 0
-            
-            # Place blocks at bottom
-            for i, block in enumerate(blocks):
-                new_board[rows-1-i, col] = block
-        
-        return new_board
-    
-    def _apply_bomb(self, board: np.ndarray, bomb_row: int, bomb_col: int) -> np.ndarray:
-        """Apply bomb effect - clear 3x3 area"""
-        new_board = board.copy()
-        
-        for dr in [-1, 0, 1]:
-            for dc in [-1, 0, 1]:
-                r, c = bomb_row + dr, bomb_col + dc
-                if 0 <= r < board.shape[0] and 0 <= c < board.shape[1]:
-                    new_board[r, c] = 0
-        
-        return new_board
-    
-    def _apply_wildblocks(self, board: np.ndarray, surface_row: int, center_col: int) -> np.ndarray:
-        """Apply wildblocks effect - place 3x3 block on opponent board"""
-        new_board = board.copy()
-        
-        # Place 3×3 block starting from surface_row going up
-        for dr in range(3):  # 3 rows
-            for dc in range(-1, 2):  # 3 columns: -1, 0, +1
-                place_row = surface_row - dr  # Go upward from surface
-                place_col = center_col + dc
-                
-                if 0 <= place_row < board.shape[0] and 0 <= place_col < board.shape[1]:
-                    new_board[place_row, place_col] = 1
-        
-        return new_board
-    
-    def _calculate_reward(self, old_own: np.ndarray, new_own: np.ndarray,
-                         old_opp: np.ndarray, new_opp: np.ndarray, action: Dict) -> float:
-        """Calculate reward - using your original reward structure + wildblocks"""
-        
-        action_type = action.get('action_name', 'none')
-        
-        if action_type == 'bottom_clear':
-            bottom_blocks = np.sum(old_own[-1, :])
-            reward = 4.0 + bottom_blocks * 0.4
-            
-        elif action_type == 'gravity':
-            blocks_removed = np.sum(old_own) - np.sum(new_own)
-            reward = 3.0 + blocks_removed * 0.3
-            
-        elif action_type == 'bomb':
-            blocks_destroyed = np.sum(old_own) - np.sum(new_own)
-            reward = 5.0 + blocks_destroyed * 0.5
-            
-        elif action_type == 'wildblocks':
-            # Calculate opponent damage (similar to bomb reward structure)
-            opponent_damage = self._evaluate_opponent_damage(old_opp, new_opp)
-            reward = 5.0 + opponent_damage * 0.5
-            
-        elif action_type == 'none':
-            reward = -0.5  # Same as your original
-            
-        return np.clip(reward, -5, 20)
-    
-    def _evaluate_opponent_damage(self, old_board: np.ndarray, new_board: np.ndarray) -> float:
-        """Evaluate damage dealt to opponent board"""
-        old_holes = self._count_holes(old_board)
-        new_holes = self._count_holes(new_board)
-        holes_increase = new_holes - old_holes
-        
-        old_bumpiness = self._calculate_bumpiness(old_board)
-        new_bumpiness = self._calculate_bumpiness(new_board)
-        bumpiness_increase = new_bumpiness - old_bumpiness
-        
-        damage = holes_increase * 3.0 + bumpiness_increase * 1.0
-        return damage
-    
-    def _count_holes(self, board: np.ndarray) -> int:
-        """Count holes in board"""
-        holes = 0
-        for col in range(board.shape[1]):
-            found_block = False
-            for row in range(board.shape[0]):
-                if board[row, col] == 1:
-                    found_block = True
-                elif found_block and board[row, col] == 0:
-                    holes += 1
-        return holes
-    
-    def _calculate_bumpiness(self, board: np.ndarray) -> int:
-        """Calculate bumpiness"""
-        heights = []
-        for col in range(board.shape[1]):
-            height = 0
-            for row in range(board.shape[0]):
-                if board[row, col] == 1:
-                    height = board.shape[0] - row
-                    break
-            heights.append(height)
-        
-        bumpiness = 0
-        for i in range(len(heights) - 1):
-            bumpiness += abs(heights[i] - heights[i + 1])
-        
-        return bumpiness
-
-
-# Updated trainer with minimal changes to your original
-class OptimizedBombTrainer:
-    """Trainer for optimized surface-bomb model + WildBlocks"""
-    
-    def __init__(self, dataset_path: str, save_dir: str = "optimized_models"):
-        self.environment = OptimizedTrainingEnvironment(dataset_path)
-        self.agent = OptimizedBombAgent(
+        self.environment = TrainingEnvironment(dataset_path)
+        self.agent = OptimizedWildblockAgent(
             learning_rate=0.0001,
             epsilon=1.0,
             epsilon_min=0.02,
@@ -764,104 +699,142 @@ class OptimizedBombTrainer:
         os.makedirs(save_dir, exist_ok=True)
         
         self.episode_rewards = []
-        self.action_usage = {'none': 0, 'bottom_clear': 0, 'gravity': 0, 'bomb': 0, 'wildblocks': 0}
+        self.action_usage = {'none': 0, 'bottom_clear': 0, 'gravity': 0, 'bomb': 0, 'wildblock': 0}
         self.bomb_column_usage = [0] * 10  # Track which columns are bombed
-        self.wildblock_column_usage = [0] * 8  # Track wildblock column usage (1-8)
+        self.wildblock_column_usage = [0] * 8  # Track which wildblock columns are used (1-8)
 
-        ## visualization code 
-        self.visualizer = TrainingVisualizer()
-        self.logger = TrainingLogger(self.visualizer)
+        # Visualization code 
+        self.visualizer = EnhancedTrainingVisualizer()
+        self.logger = EnhancedTrainingLogger(self.visualizer)
     
-    def enhanced_reward_function(self, old_own_board: np.ndarray, new_own_board: np.ndarray, 
-                                old_opp_board: np.ndarray, new_opp_board: np.ndarray, action: Dict) -> float:
-        """Enhanced reward function - keeping your original structure + wildblocks"""
+    def enhanced_reward_function(self, old_self_board: np.ndarray, new_self_board: np.ndarray,
+                                old_opponent_board: np.ndarray, new_opponent_board: np.ndarray, 
+                                action: Dict) -> float:
+        """Enhanced reward function for dual-board with wildblock"""
         
-        action_type = action.get('action_name', 'none')
-        
-        if action_type == 'bomb':
-            blocks_removed = np.sum(old_own_board) - np.sum(new_own_board)
+        if action['action_name'] == 'wildblock':
+            # Reward based on damage inflicted on opponent
+            if action['wildblock_row'] != -1:
+                damage_score = self.agent.calculate_wildblock_damage(
+                    old_opponent_board, action['wildblock_row'], action['wildblock_column']
+                )
+                
+                # Base reward for wildblock usage
+                base_reward = 8.0
+                
+                # Bonus for effective damage
+                damage_bonus = damage_score * 0.5
+                
+                # Bonus for strategic timing (when opponent is vulnerable)
+                opp_heights = self.agent._get_column_heights(old_opponent_board)
+                vulnerability_bonus = np.max(opp_heights) * 0.2
+                
+                reward = base_reward + damage_bonus + vulnerability_bonus
+            else:
+                reward = 2.0  # Small reward for attempting wildblock
+                
+        elif action['action_name'] == 'bomb':
+            # Existing bomb logic (unchanged)
+            blocks_removed = np.sum(old_self_board) - np.sum(new_self_board)
             base_reward = 5.0 + blocks_removed * 0.5
             
-            # Bonus for strategic bomb placement (your original logic)
-            if action.get('bomb_row', -1) != -1:
-                bomb_impact = self.agent.calculate_bomb_impact(old_own_board, action['bomb_row'], action['bomb_column'])
+            if action['bomb_row'] != -1:
+                bomb_impact = self.agent.calculate_bomb_impact(old_self_board, action['bomb_row'], action['bomb_column'])
                 efficiency_bonus = bomb_impact * 0.3
-                column_blocks = np.sum(old_own_board[:, action['bomb_column']])
+                column_blocks = np.sum(old_self_board[:, action['bomb_column']])
                 column_bonus = column_blocks * 0.1
                 reward = base_reward + efficiency_bonus + column_bonus
             else:
                 reward = base_reward
                 
-        elif action_type == 'bottom_clear':
-            bottom_blocks = np.sum(old_own_board[-1, :])
-            reward = 4.0 + bottom_blocks * 0.4
+        elif action['action_name'] == 'bottom_clear':
+            blocks_removed = np.sum(old_self_board) - np.sum(new_self_board)
+            bottom_blocks = np.sum(old_self_board[-1, :])
+            reward = 4.0 + bottom_blocks * 0.4 + blocks_removed * 0.2
             
-        elif action_type == 'gravity':
-            blocks_removed = np.sum(old_own_board) - np.sum(new_own_board)
+        elif action['action_name'] == 'gravity':
+            blocks_removed = np.sum(old_self_board) - np.sum(new_self_board)
             reward = 3.0 + blocks_removed * 0.3
             
-        elif action_type == 'wildblocks':
-            # Calculate opponent damage like bomb logic
-            opponent_damage = self.environment._evaluate_opponent_damage(old_opp_board, new_opp_board)
-            base_reward = 5.0 + opponent_damage * 0.5
-            
-            # Bonus for strategic wildblock placement
-            if action.get('wildblock_row', -1) != -1:
-                strategic_bonus = opponent_damage * 0.3
-                reward = base_reward + strategic_bonus
-            else:
-                reward = base_reward
-            
         else:  # 'none'
-            reward = -0.5  # Your original
+            reward = -0.5
         
-        return np.clip(reward, -5, 20)
+        return np.clip(reward, -5, 25)
     
     def train(self, episodes: int = 5000):
-        """Train optimized model with WildBlocks"""
-        print(f"Training optimized surface-bomb + WildBlocks model for {episodes} episodes...")
+        """Train optimized wildblock model"""
+        print(f"Training optimized wildblock model for {episodes} episodes...")
         
         for episode in range(episodes):
-            own_board, opponent_board = self.environment.reset()
+            self.environment.reset()
             episode_reward = 0
             
             for step in range(8):
-                current_own, current_opponent, current_powerups = self.environment.get_state()
+                current_board = self.environment.get_board_state()
+                current_powerups = self.environment.get_powerup_availability()
                 
-                # LOG: Show available powerups before choosing action
-                available_powerups = [k for k, v in current_powerups.items() if v]
-                if episode % 100 == 0 and step == 0:
-                    print(f"TRAIN Episode {episode}: Available powerups: {available_powerups}")
+                # For training, use same board as both self and opponent
+                # In actual gameplay, these would be different
+                opponent_board = current_board.copy()
                 
                 # Choose action
-                action = self.agent.choose_action_training(current_own, current_opponent, current_powerups)
+                action = self.agent.choose_action_training(current_board, opponent_board, current_powerups)
                 
                 # Apply action
-                old_own_board = current_own.copy()
-                old_opponent_board = current_opponent.copy()
+                old_self_board = current_board.copy()
+                old_opponent_board = opponent_board.copy()
                 
-                new_own, new_opponent, _ = self.environment.apply_powerup(action)
-                new_own_state, new_opponent_state, new_powerups = self.environment.get_state()
+                # Format action for environment compatibility
+                if action['action_name'] == 'bomb' and action['bomb_row'] != -1:
+                    action_for_env = {
+                        'type': action['action_name'],
+                        'row': action['bomb_row'],
+                        'col': action['bomb_column']
+                    }
+                elif action['action_name'] == 'wildblock' and action['wildblock_row'] != -1:
+                    # For training, apply wildblock to same board (simulating opponent effect)
+                    action_for_env = {
+                        'type': 'wildblock',
+                        'row': action['wildblock_row'],
+                        'col': action['wildblock_column']
+                    }
+                else:
+                    action_for_env = {
+                        'type': action['action_name']
+                    }
                 
-                # Calculate reward using enhanced function
-                reward = self.enhanced_reward_function(old_own_board, new_own_state, 
-                                                     old_opponent_board, new_opponent_state, action)
+                # Apply action to environment
+                new_self_board, _ = self.environment.apply_powerup(action_for_env)
+                new_opponent_board = opponent_board.copy()  # In training, opponent board doesn't change
+                
+                # If wildblock was used, simulate its effect on opponent board
+                if action['action_name'] == 'wildblock' and action['wildblock_row'] != -1:
+                    # Apply 3x3 wildblock to opponent board
+                    for dr in [-1, 0, 1]:
+                        for dc in [-1, 0, 1]:
+                            r, c = action['wildblock_row'] + dr, action['wildblock_column'] + dc
+                            if 0 <= r < self.agent.board_height and 0 <= c < self.agent.board_width:
+                                new_opponent_board[r, c] = 1
+                
+                new_powerups = self.environment.get_powerup_availability()
+                
+                # Calculate reward
+                reward = self.enhanced_reward_function(old_self_board, new_self_board, 
+                                                     old_opponent_board, new_opponent_board, action)
                 done = not any(new_powerups.values())
                 
                 # Store experience
-                self.agent.remember(current_own, current_opponent, current_powerups, action,
-                                  reward, new_own_state, new_opponent_state, new_powerups, done)
+                self.agent.remember(current_board, opponent_board, current_powerups, action, 
+                                  reward, new_self_board, new_opponent_board, new_powerups, done)
                 
                 episode_reward += reward
                 self.action_usage[action['action_name']] += 1
                 
-                # Track column usage
-                if action['action_name'] == 'bomb' and action.get('bomb_column', -1) >= 0:
+                # Track usage statistics
+                if action['action_name'] == 'bomb' and action['bomb_column'] >= 0:
                     self.bomb_column_usage[action['bomb_column']] += 1
-                elif action['action_name'] == 'wildblocks' and action.get('wildblock_column', -1) >= 1:
-                    col_idx = action['wildblock_column'] - 1  # Convert to 0-7 index
-                    if 0 <= col_idx < 8:
-                        self.wildblock_column_usage[col_idx] += 1
+                elif action['action_name'] == 'wildblock' and action['wildblock_column'] >= 1:
+                    self.wildblock_column_usage[action['wildblock_column'] - 1] += 1  # Convert to 0-7 index
                 
                 if done:
                     break
@@ -877,7 +850,8 @@ class OptimizedBombTrainer:
                     loss=loss,
                     action_usage=self.action_usage,
                     epsilon=self.agent.epsilon,
-                    bomb_column_usage=self.bomb_column_usage
+                    bomb_column_usage=self.bomb_column_usage,
+                    wildblock_column_usage=self.wildblock_column_usage
                 )
             
             self.episode_rewards.append(episode_reward)
@@ -890,33 +864,33 @@ class OptimizedBombTrainer:
                 
                 print(f"Episode {episode}: Avg Reward: {avg_reward:.2f}")
                 print(f"  Actions: {action_dist}")
-                print(f"  Epsilon: {self.agent.epsilon:.3f}")
                 
-                # Show column preferences
+                # Show bomb column preferences
                 total_bombs = sum(self.bomb_column_usage)
                 if total_bombs > 0:
                     bomb_prefs = [f"Col{i}:{(count/total_bombs)*100:.1f}%" 
                                  for i, count in enumerate(self.bomb_column_usage) if count > 0]
                     print(f"  Bomb columns: {bomb_prefs[:5]}")
                 
+                # Show wildblock column preferences
                 total_wildblocks = sum(self.wildblock_column_usage)
                 if total_wildblocks > 0:
-                    wild_prefs = [f"Col{i+1}:{(count/total_wildblocks)*100:.1f}%" 
-                                 for i, count in enumerate(self.wildblock_column_usage) if count > 0]
-                    print(f"  WildBlock columns: {wild_prefs}")
+                    wildblock_prefs = [f"Col{i+1}:{(count/total_wildblocks)*100:.1f}%" 
+                                     for i, count in enumerate(self.wildblock_column_usage) if count > 0]
+                    print(f"  Wildblock columns: {wildblock_prefs[:5]}")
             
             # Save periodically
             if episode % 500 == 0 and episode > 0:
-                model_path = os.path.join(self.save_dir, f"optimized_wildblocks_model_ep{episode}.pth")
+                model_path = os.path.join(self.save_dir, f"wildblock_model_ep{episode}.pth")
                 self.agent.save_model(model_path)
         
         # Final save
-        final_path = os.path.join(self.save_dir, "optimized_wildblocks_model_final.pth")
+        final_path = os.path.join(self.save_dir, "wildblock_model_final.pth")
         self.agent.save_model(final_path)
 
         # Final Visualization dashboard
-        self.visualizer.create_training_dashboard("final_wildblocks_training_dashboard.png")
-        self.visualizer.plot_bomb_column_analysis("final_wildblocks_analysis.png")
+        self.visualizer.create_enhanced_dashboard("final_wildblock_training_dashboard.png")
+        # self.visualizer.plot_bomb_column_analysis("final_wildblock_bomb_analysis.png")
         
         return final_path
     
@@ -927,7 +901,8 @@ class OptimizedBombTrainer:
         # ONNX export
         onnx_path = model_path.replace('.pth', '.onnx')
         
-        dummy_input = torch.randn(1, 6, self.agent.board_height, self.agent.board_width).to(self.agent.device)
+        # Dummy input: 8 channels for dual-board input
+        dummy_input = torch.randn(1, 8, self.agent.board_height, self.agent.board_width).to(self.agent.device)
         
         torch.onnx.export(
             self.agent.q_network,
@@ -936,16 +911,17 @@ class OptimizedBombTrainer:
             export_params=True,
             opset_version=11,
             input_names=['dual_board_state'],
-            output_names=['action_and_position_q_values']
+            output_names=['action_bomb_wildblock_q_values']
         )
         
-        print(f"Unity WildBlocks model exported: {onnx_path}")
+        print(f"Unity wildblock model exported: {onnx_path}")
         print("Unity integration info:")
-        print("- Input: (1, 6, 20, 10) tensor = 1200 floats")
-        print("- Output: (1, 23) tensor = 23 floats")
-        print("- Actions: [none, bottom_clear, gravity, bomb, wildblocks] (5)")
-        print("- Bomb columns: [col0, col1, ..., col9] (10)")
-        print("- WildBlock columns: [col1, col2, ..., col8] (8)")
+        print("- Input: (1, 8, 20, 10) tensor")
+        print("  - Channels: [self_board, opponent_board, bottom_clear, gravity, bomb, wildblock, height_diff, threat_level]")
+        print("- Output: (1, 23) tensor")
+        print("  - First 5 values: [none, bottom_clear, gravity, bomb, wildblock] Q-values")
+        print("  - Next 10 values: bomb column Q-values [col0, col1, ..., col9]")
+        print("  - Last 8 values: wildblock column Q-values [col1, col2, ..., col8]")
         
         return onnx_path
 
@@ -953,28 +929,28 @@ class OptimizedBombTrainer:
 # Usage example
 if __name__ == "__main__":
     # Train model
-    trainer = OptimizedBombTrainer("tetris_boards.pkl")
+    trainer = OptimizedWildblockTrainer("tetris_boards3.pkl")
     model_path = trainer.train(episodes=3000)
     
     # Export for Unity
     onnx_path = trainer.export_for_unity(model_path)
     
-    print(f"\nWildBlocks training complete!")
+    print(f"\nWildblock training complete!")
     print(f"PyTorch model: {model_path}")
     print(f"Unity ONNX model: {onnx_path}")
     
     # Demo prediction
-    agent = OptimizedBombAgent()
+    agent = OptimizedWildblockAgent()
     agent.load_model(model_path)
     
     # Create test boards
-    own_test_board = np.zeros((20, 10))
-    own_test_board[15:, [2, 5, 7]] = 1  # Own board
+    self_test_board = np.zeros((20, 10))
+    self_test_board[15:, [2, 5, 7]] = 1  # Add blocks in columns 2, 5, 7
     
     opponent_test_board = np.zeros((20, 10))
-    opponent_test_board[12:, [1, 3, 6, 8]] = 1  # Opponent board
+    opponent_test_board[12:, [1, 3, 6, 8]] = 1  # Opponent has blocks in columns 1, 3, 6, 8
     
-    test_powerups = {'bottom_clear': True, 'gravity': False, 'bomb': True, 'wildblocks': True}
+    test_powerups = {'bottom_clear': True, 'gravity': False, 'bomb': True, 'wildblock': True}
     
-    result = agent.predict_unity(own_test_board, opponent_test_board, test_powerups)
-    print(f"\nDemo WildBlocks prediction: {result}")
+    result = agent.predict_unity(self_test_board, opponent_test_board, test_powerups)
+    print(f"\nDemo prediction: {result}")
