@@ -77,12 +77,21 @@ class EnhancedTrainingVisualizer:
                         self.training_data['action_usage'][normalized_action] = int(count)
             
             # Update bomb column usage safely
-            if bomb_column_usage is not None and len(bomb_column_usage) == 10:
-                self.training_data['bomb_column_usage'] = list(bomb_column_usage)
+            if bomb_column_usage is not None:
+                if len(bomb_column_usage) == 10:
+                    self.training_data['bomb_column_usage'] = list(bomb_column_usage)
+                    print(f"DEBUG: Updated bomb usage: {self.training_data['bomb_column_usage']}")
+                else:
+                    print(f"WARNING: Invalid bomb_column_usage length: {len(bomb_column_usage)}, expected 10")
             
             # Update wildblock column usage safely
-            if wildblock_column_usage is not None and len(wildblock_column_usage) == 8:
-                self.training_data['wildblock_column_usage'] = list(wildblock_column_usage)
+            if wildblock_column_usage is not None:
+                if len(wildblock_column_usage) == 8:
+                    self.training_data['wildblock_column_usage'] = list(wildblock_column_usage)
+                    print(f"DEBUG: Updated wildblock usage: {self.training_data['wildblock_column_usage']}")
+                    print(f"DEBUG: Wildblock total: {sum(self.training_data['wildblock_column_usage'])}")
+                else:
+                    print(f"WARNING: Invalid wildblock_column_usage length: {len(wildblock_column_usage)}, expected 8")
             
             # Track powerup effectiveness
             if powerup_rewards:
@@ -96,17 +105,40 @@ class EnhancedTrainingVisualizer:
                         self.training_data['powerup_effectiveness'][normalized_powerup].append((episode, reward))
                 
         except Exception as e:
-            print(f"Warning: Error updating metrics: {e}")
+            print(f"ERROR: Error updating metrics: {e}")
             print(f"  Episode: {episode}, Reward: {episode_reward}, Loss: {loss}")
             print(f"  Action usage: {action_usage}")
             print(f"  Bomb usage: {bomb_column_usage}")
             print(f"  WildBlock usage: {wildblock_column_usage}")
+            import traceback
+            traceback.print_exc()
+    
+    def verify_data_integrity(self):
+        """Verify that all data is properly loaded"""
+        print(f"DEBUG: Data integrity check:")
+        print(f"  Episode rewards: {len(self.training_data['episode_rewards'])} entries")
+        print(f"  Action usage: {dict(self.training_data['action_usage'])}")
+        print(f"  Bomb column usage: {self.training_data['bomb_column_usage']} (sum: {sum(self.training_data['bomb_column_usage'])})")
+        print(f"  Wildblock column usage: {self.training_data['wildblock_column_usage']} (sum: {sum(self.training_data['wildblock_column_usage'])})")
+        print(f"  Wildblock any data: {any(self.training_data['wildblock_column_usage'])}")
+        
+        return {
+            'has_episode_data': len(self.training_data['episode_rewards']) > 0,
+            'has_action_data': len(self.training_data['action_usage']) > 0,
+            'has_bomb_data': any(self.training_data['bomb_column_usage']),
+            'has_wildblock_data': any(self.training_data['wildblock_column_usage'])
+        }
     
     def create_enhanced_dashboard(self, save_path: str = "enhanced_training_dashboard.png", 
                                  figsize: Tuple[int, int] = (20, 16)):
         """
         Create enhanced training dashboard with 6 subplots including wildblock
         """
+        
+        # Verify data before plotting
+        print(f"DEBUG: Creating dashboard...")
+        integrity = self.verify_data_integrity()
+        print(f"DEBUG: Data integrity: {integrity}")
         
         fig = plt.figure(figsize=figsize)
         gs = fig.add_gridspec(3, 2, hspace=0.3, wspace=0.3)
@@ -147,6 +179,10 @@ class EnhancedTrainingVisualizer:
         plt.show()
         
         print(f"Enhanced training dashboard saved to: {save_path}")
+        
+        # Final data verification
+        print(f"DEBUG: Final verification after plotting:")
+        self.verify_data_integrity()
     
     def _plot_training_validation_rewards(self, ax):
         """Plot 1: Training vs Validation Rewards"""
@@ -323,9 +359,13 @@ class EnhancedTrainingVisualizer:
     def _plot_wildblock_column_usage(self, ax):
         """Plot 6: WildBlock Column Usage (columns 1-8)"""
         
+        print(f"DEBUG: Plotting wildblock data: {self.training_data['wildblock_column_usage']}")
+        print(f"DEBUG: Any wildblock data? {any(self.training_data['wildblock_column_usage'])}")
+        
         if not any(self.training_data['wildblock_column_usage']):
             ax.text(0.5, 0.5, 'No WildBlock usage data available', 
                    ha='center', va='center', transform=ax.transAxes)
+            ax.set_title('WildBlock Column Usage Frequency', fontweight='bold')
             return
         
         columns = list(range(1, 9))  # Columns 1-8

@@ -8,7 +8,7 @@ import numpy as np
 import random
 import os
 from typing import Dict, List, Tuple, Optional
-from powerup_training_visualizer2 import EnhancedTrainingVisualizer, EnhancedTrainingLogger
+from powerup_training_visualizer2 import TrainingVisualizer, TrainingLogger
 
 class OptimizedCNNDQNWildblock(nn.Module):
     """
@@ -704,8 +704,8 @@ class OptimizedWildblockTrainer:
         self.wildblock_column_usage = [0] * 8  # Track which wildblock columns are used (1-8)
 
         # Visualization code 
-        self.visualizer = EnhancedTrainingVisualizer()
-        self.logger = EnhancedTrainingLogger(self.visualizer)
+        self.visualizer = TrainingVisualizer()
+        self.logger = TrainingLogger(self.visualizer)
     
     def enhanced_reward_function(self, old_self_board: np.ndarray, new_self_board: np.ndarray,
                                 old_opponent_board: np.ndarray, new_opponent_board: np.ndarray, 
@@ -853,6 +853,14 @@ class OptimizedWildblockTrainer:
                     bomb_column_usage=self.bomb_column_usage,
                     wildblock_column_usage=self.wildblock_column_usage
                 )
+                
+                # Debug: Print actual data being logged
+                if episode % 500 == 0:
+                    print(f"DEBUG Episode {episode}:")
+                    print(f"  Action usage being logged: {self.action_usage}")
+                    print(f"  Bomb column usage being logged: {self.bomb_column_usage}")
+                    print(f"  Wildblock column usage being logged: {self.wildblock_column_usage}")
+                    print(f"  Wildblock total: {sum(self.wildblock_column_usage)}")
             
             self.episode_rewards.append(episode_reward)
             
