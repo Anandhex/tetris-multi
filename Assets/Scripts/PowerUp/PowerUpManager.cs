@@ -30,21 +30,49 @@ public class PowerUpManager : MonoBehaviour
     // Inventory by power-up type
     public Dictionary<PowerUpType, int> powerUpInventory = new Dictionary<PowerUpType, int>();
     private Board ownerBoard;
-    private AudioSource audioSource;
+    // private AudioSource audioSource;
 
     // Time challenge tracking
     private List<float> linesClearedTimes = new List<float>();
     private float gameStartTime;
+
+    public List<PowerupKeyMapping> powerupKeyMappings;
 
     // Logging control
     private float lastLogTime = 0f;
     private float logInterval = 2f; // Log every 2 seconds
     private int lastLinesCount = 0;
 
-    private void Start()
+    private Board opponentBoard;
+
+    // private void Start()
+    // {
+    //     ownerBoard = GetComponent<Board>();
+    //     // audioSource = GetComponent<AudioSource>();
+    //     gameStartTime = Time.time;
+
+    //     // Debug.Log("🎮 === POWER-UP MANAGER INITIALIZED ===");
+    //     // Debug.Log($"⚙️ Settings: PowerUp Chance = {powerUpChance * 100}%");
+    //     // Debug.Log($"⏰ Time Window: {timeWindowMinutes} minutes for {requiredLinesInWindow} lines");
+    //     // Debug.Log($"🎯 Constraint 1: Clear 2+ lines = {powerUpChance * 100}% base chance");
+    //     // Debug.Log($"🎯 Constraint 2: Clear {requiredLinesInWindow} lines in {timeWindowMinutes} minutes = GUARANTEED");
+
+    //     // Initialize inventory
+    //     InitializeInventory();
+
+    //     // Initialize UI
+    //     InitializeUI();
+
+    //     // Initial status log
+    //     LogCurrentStatus();
+    // }
+
+    public void SetupPowerupManager(Board userBoard, Board opponentBoard, List<PowerupKeyMapping> powerupKeyMappings)
     {
-        ownerBoard = GetComponent<Board>();
-        audioSource = GetComponent<AudioSource>();
+        this.ownerBoard = userBoard;
+        this.opponentBoard = opponentBoard;
+        this.powerupKeyMappings = powerupKeyMappings;
+
         gameStartTime = Time.time;
 
         // Debug.Log("🎮 === POWER-UP MANAGER INITIALIZED ===");
@@ -61,13 +89,18 @@ public class PowerUpManager : MonoBehaviour
 
         // Initial status log
         LogCurrentStatus();
+
     }
 
     private void InitializeInventory()
     {
-        powerUpInventory[PowerUpType.LineBlaster] = 0;
-        powerUpInventory[PowerUpType.Gravity] = 0;
-        powerUpInventory[PowerUpType.Bomb] = 0;
+        powerUpInventory[PowerUpType.LineBlaster] = 5;
+        powerUpInventory[PowerUpType.Gravity] = 5;
+        powerUpInventory[PowerUpType.Bomb] = 5;
+        if (opponentBoard != null)
+        {
+            powerUpInventory[PowerUpType.WildCard] = 5;
+        }
 
         // Debug.Log("📦 Inventory initialized: LineBlaster=0, Gravity=0, Bomb=0");
     }
@@ -79,6 +112,10 @@ public class PowerUpManager : MonoBehaviour
         {
             keysText.text = "Keys:\n1=LineBlaster\n2=Gravity\n3=Bomb";
             // Debug.Log("✅ Keys UI initialized");
+            if (opponentBoard != null)
+            {
+                keysText.text += "\n4=WildCard";
+            }
         }
         else
         {
@@ -95,20 +132,13 @@ public class PowerUpManager : MonoBehaviour
     private void Update()
     {
         // INDIVIDUAL KEYS FOR EACH POWER-UP (AI-Friendly!)
-        if (Input.GetKeyDown(KeyCode.Alpha1))
+        foreach (var mapping in this.powerupKeyMappings)
         {
-            Debug.Log("🔑 Key 1 pressed - attempting LineBlaster");
-            UsePowerUp(PowerUpType.LineBlaster);
-        }
-        if (Input.GetKeyDown(KeyCode.Alpha2))
-        {
-            Debug.Log("🔑 Key 2 pressed - attempting Gravity");
-            UsePowerUp(PowerUpType.Gravity);
-        }
-        if (Input.GetKeyDown(KeyCode.Alpha3))
-        {
-            Debug.Log("🔑 Key 3 pressed - attempting Bomb");
-            UsePowerUp(PowerUpType.Bomb);
+            if (Input.GetKeyDown(mapping.key))
+            {
+                Debug.Log($"🔑 {mapping.key} pressed - attempting {mapping.powerupType}");
+                UsePowerUp(mapping.powerupType);
+            }
         }
 
         // Clean up old line clear times (outside the time window)
@@ -182,6 +212,10 @@ public class PowerUpManager : MonoBehaviour
         if (inventoryText != null)
         {
             string inventoryDisplay = $"Power-ups:\n[LineBlaster:{powerUpInventory[PowerUpType.LineBlaster]}]\n[Gravity:{powerUpInventory[PowerUpType.Gravity]}]\n[Bomb:{powerUpInventory[PowerUpType.Bomb]}]";
+            if (opponentBoard != null)
+            {
+                inventoryDisplay += $"\n[WildCard:{powerUpInventory[PowerUpType.WildCard]}]";
+            }
             inventoryText.text = inventoryDisplay;
         }
 
@@ -251,7 +285,7 @@ public class PowerUpManager : MonoBehaviour
 
             SafeExecutePowerUp(type);
             UpdatePowerUpUI();
-            PlaySound(powerUpUsedSound);
+            // PlaySound(powerUpUsedSound);
 
             // Log updated inventory
             // Debug.Log($"📦 New inventory: L={powerUpInventory[PowerUpType.LineBlaster]}, G={powerUpInventory[PowerUpType.Gravity]}, B={powerUpInventory[PowerUpType.Bomb]}");
@@ -274,6 +308,12 @@ public class PowerUpManager : MonoBehaviour
         if (type == PowerUpType.Bomb)
         {
             ExecuteBombImproved();
+            return;
+        }
+
+        if (type == PowerUpType.WildCard && this.opponentBoard != null)
+        {
+            ReplaceOpponentPieceWithWildcard();
             return;
         }
 
@@ -463,38 +503,45 @@ public class PowerUpManager : MonoBehaviour
 
     private void GenerateRandomPowerUp()
     {
-        // Debug.Log("🎰 === GENERATING RANDOM POWER-UP ===");
+        // Base types
+        List<PowerUpType> availableTypes = new List<PowerUpType>
+    {
+        PowerUpType.LineBlaster,
+        PowerUpType.Gravity,
+        PowerUpType.Bomb
+    };
 
-        // Only generate our 3 main power-ups
-        PowerUpType[] availableTypes = { PowerUpType.LineBlaster, PowerUpType.Gravity, PowerUpType.Bomb };
+        // Add WildCard if opponentBoard exists
+        if (opponentBoard != null)
+        {
+            availableTypes.Add(PowerUpType.WildCard);
+        }
 
-        // Weight-based selection
-        float[] weights = { 3f, 2f, 1f }; // LineBlaster most common, Bomb least common
+        // Corresponding weights (adjusted if WildCard is added)
+        List<float> weights = new List<float> { 3f, 2f, 1f };
+
+        if (opponentBoard != null)
+        {
+            weights.Add(1.5f); // or any weight you prefer for WildCard
+        }
+
+        // Weighted selection
         float totalWeight = weights.Sum();
-
-        // Debug.Log($"🎲 Weighted selection:");
-        // Debug.Log($"  LineBlaster: {weights[0]} ({weights[0] / totalWeight * 100:F1}%)");
-        // Debug.Log($"  Gravity: {weights[1]} ({weights[1] / totalWeight * 100:F1}%)");
-        // Debug.Log($"  Bomb: {weights[2]} ({weights[2] / totalWeight * 100:F1}%)");
-
         float randomValue = Random.Range(0f, totalWeight);
         float currentWeight = 0f;
 
-        // Debug.Log($"🎯 Random value: {randomValue:F2} / {totalWeight:F2}");
-
-        for (int i = 0; i < availableTypes.Length; i++)
+        for (int i = 0; i < availableTypes.Count; i++)
         {
             currentWeight += weights[i];
-            // Debug.Log($"  Checking {availableTypes[i]}: {currentWeight:F2}");
 
             if (randomValue <= currentWeight)
             {
-                // Debug.Log($"🎁 Selected: {availableTypes[i]}!");
                 AddPowerUp(availableTypes[i]);
                 break;
             }
         }
     }
+
 
     public void AddPowerUp(PowerUpType type)
     {
@@ -510,7 +557,7 @@ public class PowerUpManager : MonoBehaviour
             // Debug.Log($"  Count: {beforeCount} → {afterCount}");
 
             UpdatePowerUpUI();
-            PlaySound(powerUpObtainedSound);
+            // PlaySound(powerUpObtainedSound);
 
             // Log full inventory
             // Debug.Log($"📦 Full inventory: L={powerUpInventory[PowerUpType.LineBlaster]}, G={powerUpInventory[PowerUpType.Gravity]}, B={powerUpInventory[PowerUpType.Bomb]}");
@@ -577,73 +624,131 @@ public class PowerUpManager : MonoBehaviour
     {
         Debug.Log("💣 === EXECUTING BOMB POWER-UP ===");
 
+        // if (ownerBoard.activePiece != null)
+        // {
+        //     Vector3Int center = ownerBoard.activePiece.position;
+        //     Debug.Log($"💥 Bomb center: {center}");
+
+        //     ownerBoard.Clear(ownerBoard.activePiece);
+        //     int clearedCount = 0;
+        //     List<Vector3Int> clearedPositions = new List<Vector3Int>();
+
+        //     // Clear 3x3 area
+        //     for (int x = -1; x <= 1; x++)
+        //     {
+        //         for (int y = -1; y <= 1; y++)
+        //         {
+        //             Vector3Int pos = center + new Vector3Int(x, y, 0);
+        //             if (ownerBoard.tilemap.HasTile(pos))
+        //             {
+        //                 ownerBoard.tilemap.SetTile(pos, null);
+        //                 clearedPositions.Add(pos);
+        //                 clearedCount++;
+        //             }
+        //         }
+        //     }
+
+        //     // Clear falling piece cells
+        //     foreach (Vector3Int cell in ownerBoard.activePiece.cells)
+        //     {
+        //         Vector3Int pos = cell + center;
+        //         if (ownerBoard.tilemap.HasTile(pos))
+        //         {
+        //             ownerBoard.tilemap.SetTile(pos, null);
+        //             clearedPositions.Add(pos);
+        //             clearedCount++;
+        //         }
+        //     }
+
+        //     Debug.Log($"💥 Bomb cleared {clearedCount} tiles at positions:");
+        //     foreach (var pos in clearedPositions)
+        //     {
+        //         Debug.Log($"  - {pos}");
+        //     }
+
+        //     // Try to place piece back safely
+        //     bool placed = false;
+        //     for (int yOffset = 0; yOffset < 5; yOffset++)
+        //     {
+        //         Vector3Int newPos = new Vector3Int(center.x, center.y + yOffset, center.z);
+        //         if (ownerBoard.IsValidPosition(ownerBoard.activePiece, newPos))
+        //         {
+        //             ownerBoard.activePiece.position = newPos;
+        //             ownerBoard.Set(ownerBoard.activePiece);
+        //             placed = true;
+        //             Debug.Log($"✅ Active piece repositioned to {newPos}");
+        //             break;
+        //         }
+        //     }
+
+        //     if (!placed)
+        //     {
+        //         Debug.Log("🔄 Spawning new piece after bomb (couldn't reposition)");
+        //         ownerBoard.SpawnPiece();
+        //     }
+        // }
+        // else
+        // {
+        //     Debug.LogWarning("⚠️ No active piece to center bomb on!");
+        // }
+
         if (ownerBoard.activePiece != null)
         {
-            Vector3Int center = ownerBoard.activePiece.position;
-            Debug.Log($"💥 Bomb center: {center}");
-
-            ownerBoard.Clear(ownerBoard.activePiece);
-            int clearedCount = 0;
-            List<Vector3Int> clearedPositions = new List<Vector3Int>();
-
-            // Clear 3x3 area
-            for (int x = -1; x <= 1; x++)
             {
-                for (int y = -1; y <= 1; y++)
-                {
-                    Vector3Int pos = center + new Vector3Int(x, y, 0);
-                    if (ownerBoard.tilemap.HasTile(pos))
-                    {
-                        ownerBoard.tilemap.SetTile(pos, null);
-                        clearedPositions.Add(pos);
-                        clearedCount++;
-                    }
-                }
-            }
+                ownerBoard.Clear(ownerBoard.activePiece);
 
-            // Clear falling piece cells
-            foreach (Vector3Int cell in ownerBoard.activePiece.cells)
-            {
-                Vector3Int pos = cell + center;
-                if (ownerBoard.tilemap.HasTile(pos))
-                {
-                    ownerBoard.tilemap.SetTile(pos, null);
-                    clearedPositions.Add(pos);
-                    clearedCount++;
-                }
-            }
+                ownerBoard.activePiece.SetCells(new Vector3Int[] { Vector3Int.zero }); // single cell at center
+                ownerBoard.activePiece.tile = ownerBoard.bombTile;
+                ownerBoard.activePiece.isBomb = true;
 
-            Debug.Log($"💥 Bomb cleared {clearedCount} tiles at positions:");
-            foreach (var pos in clearedPositions)
-            {
-                Debug.Log($"  - {pos}");
-            }
-
-            // Try to place piece back safely
-            bool placed = false;
-            for (int yOffset = 0; yOffset < 5; yOffset++)
-            {
-                Vector3Int newPos = new Vector3Int(center.x, center.y + yOffset, center.z);
-                if (ownerBoard.IsValidPosition(ownerBoard.activePiece, newPos))
-                {
-                    ownerBoard.activePiece.position = newPos;
-                    ownerBoard.Set(ownerBoard.activePiece);
-                    placed = true;
-                    Debug.Log($"✅ Active piece repositioned to {newPos}");
-                    break;
-                }
-            }
-
-            if (!placed)
-            {
-                Debug.Log("🔄 Spawning new piece after bomb (couldn't reposition)");
-                ownerBoard.SpawnPiece();
+                ownerBoard.Set(ownerBoard.activePiece);
             }
         }
-        else
+    }
+
+    public void ReplaceOpponentPieceWithWildcard()
+    {
+        Piece oldPiece = opponentBoard.activePiece;
+        Piece userPiece = ownerBoard.activePiece;
+        if (oldPiece == null)
         {
-            Debug.LogWarning("⚠️ No active piece to center bomb on!");
+            Debug.LogWarning("Opponent has no active piece to replace.");
+            return;
         }
+
+        // Save the input controllers
+        var userInput = ownerBoard.inputController;
+        var opponentInput = opponentBoard.inputController;
+
+        // Clear old piece from tilemap
+        opponentBoard.Clear(oldPiece);
+
+        // Override cells with wildcard
+        oldPiece.SetCells(Data.WildcardCells); // You may need to expose this
+        oldPiece.tile = opponentBoard.bombTile;
+        oldPiece.isBomb = false;
+        oldPiece.inputController = userInput;
+        userPiece.inputController = null;
+        // oldPiece.isWildcard = true; // ← Add a new bool if you want to distinguish it
+
+        // Reset position (centered)
+        // oldPiece.position = new Vector3Int(opponentBoard.width / 2, opponentBoard.height - 2, 0);
+
+        // Change input control: opponent board is now player-controlled
+        opponentBoard.inputController = userInput;
+        ownerBoard.inputController = null; // disable own input
+
+        // When wildcard locks, restore everything
+        oldPiece.OnLockComplete = () =>
+        {
+            opponentBoard.inputController = opponentInput;
+            ownerBoard.inputController = userInput;
+            userPiece.inputController = userInput;
+
+        };
+
+        // Redraw
+        opponentBoard.Set(oldPiece);
     }
 
     public void ExecuteLineBlaster()
@@ -772,18 +877,18 @@ public class PowerUpManager : MonoBehaviour
         Debug.Log($"🔄 Moved {movedTiles} tiles down after line clear");
     }
 
-    private void PlaySound(AudioClip clip)
-    {
-        if (audioSource != null && clip != null)
-        {
-            audioSource.PlayOneShot(clip);
-            // Debug.Log($"🔊 Playing sound: {clip.name}");
-        }
-        else
-        {
-            // Debug.Log($"🔇 Cannot play sound: AudioSource={audioSource != null}, Clip={clip != null}");
-        }
-    }
+    // private void PlaySound(AudioClip clip)
+    // {
+    //     if (audioSource != null && clip != null)
+    //     {
+    //         audioSource.PlayOneShot(clip);
+    //         // Debug.Log($"🔊 Playing sound: {clip.name}");
+    //     }
+    //     else
+    //     {
+    //         // Debug.Log($"🔇 Cannot play sound: AudioSource={audioSource != null}, Clip={clip != null}");
+    //     }
+    // }
 
     public int GetPowerUpCount()
     {
@@ -800,4 +905,11 @@ public class PowerUpManager : MonoBehaviour
     {
         return GetPowerUpCount(type) > 0;
     }
+}
+
+
+public class PowerupKeyMapping
+{
+    public KeyCode key;
+    public PowerUpType powerupType;
 }

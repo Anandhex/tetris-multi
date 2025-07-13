@@ -65,7 +65,7 @@ public class MoveMetricsVisualizer : MonoBehaviour
         var data = board.tetrominoes[idx];
 
         // Initialize & place the active piece
-        board.activePiece.Initialize(board, board.spawnPosition, data, board.inputController);
+        board.activePiece.Initialize(board, board.spawnPosition, data, board.inputController, false);
         agent.SetCurrentPiece(board.activePiece);
 
         // Invoke the private metrics method

@@ -13,7 +13,6 @@ public class Board : MonoBehaviour
     public string playerTag;
     private bool gameOverTriggered = false;
     [Header("Power-ups")]
-    public MonoBehaviour powerUpManagerComponent;
     public TetrominoData[] tetrominoes;
     // public FireBorderController fireBorderController;
     [SerializeField] private GameObject debrisPrefab;
@@ -21,8 +20,16 @@ public class Board : MonoBehaviour
     [Header("Visual Grid")]
     public SpriteRenderer gridSpriteRenderer;
 
+    public List<PowerupKeyMapping> powerupKeyMapping;
+
+    public Board opponentBoard;
+
+    public Tile bombTile;
+
     private int lastBoardHeight = -1;
     public Vector3Int baseSpawnPosition;
+
+    private PowerUpManager powerUpManager;
 
     public Vector3Int spawnPosition
     {
@@ -124,6 +131,14 @@ public class Board : MonoBehaviour
     {
         this.playerScore = 0;
         this.gameStartTime = Time.time;
+
+        this.powerUpManager = GetComponent<PowerUpManager>();
+
+        if (this.powerUpManager != null)
+        {
+            powerUpManager.SetupPowerupManager(this, this.opponentBoard, this.powerupKeyMapping);
+        }
+
 
         if (inputController is SocketTetrisAgent socketAgent)
         {
@@ -241,7 +256,7 @@ public class Board : MonoBehaviour
         }
 
         // Initialize the piece but don't place it on the board yet
-        this.activePiece.Initialize(this, this.spawnPosition, pieceToUse, this.inputController);
+        this.activePiece.Initialize(this, this.spawnPosition, pieceToUse, this.inputController, false);
 
         // Generate the next piece for display
         GenerateNextPiece();
@@ -257,7 +272,7 @@ public class Board : MonoBehaviour
 
         TetrominoData pieceToUse = this.nextPieceData.Equals(default(TetrominoData)) ? data : this.nextPieceData;
 
-        this.activePiece.Initialize(this, this.spawnPosition, pieceToUse, this.inputController);
+        this.activePiece.Initialize(this, this.spawnPosition, pieceToUse, this.inputController, false);
 
         // Inform both types of ML agents about the new piece
         TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
@@ -384,10 +399,12 @@ public class Board : MonoBehaviour
 
     public void Set(Piece piece)
     {
+        Tile tileToUse = piece.tile != null ? piece.tile : piece.data.tile;
+
         for (int i = 0; i < piece.cells.Length; i++)
         {
             Vector3Int tilePosition = piece.cells[i] + piece.position;
-            this.tilemap.SetTile(tilePosition, piece.data.tile);
+            this.tilemap.SetTile(tilePosition, tileToUse);
         }
     }
 
@@ -487,10 +504,10 @@ public class Board : MonoBehaviour
         }
         if (linesCleared > 0)
         {
-            PowerUpManager powerUpMgr = GetComponent<PowerUpManager>();
-            if (powerUpMgr != null)
+
+            if (powerUpManager != null)
             {
-                powerUpMgr.OnLinesCleared(linesCleared);
+                powerUpManager.OnLinesCleared(linesCleared);
             }
         }
 
@@ -600,6 +617,25 @@ public class Board : MonoBehaviour
             }
             row++;
         }
+    }
+
+    public void ExecuteBombExplosion(Vector3Int center)
+    {
+        int cleared = 0;
+        for (int x = -1; x <= 1; x++)
+        {
+            for (int y = -1; y <= 1; y++)
+            {
+                Vector3Int pos = center + new Vector3Int(x, y, 0);
+                if (tilemap.HasTile(pos))
+                {
+                    tilemap.SetTile(pos, null);
+                    cleared++;
+                }
+            }
+        }
+
+        Debug.Log($"💣 Bomb exploded at {center}, cleared {cleared} tiles");
     }
 
 

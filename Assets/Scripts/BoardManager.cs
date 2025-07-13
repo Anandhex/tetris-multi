@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Unity.Sentis;
 using UnityEngine;
 
@@ -43,8 +44,21 @@ public class BoardManager : MonoBehaviour
 
     public void SetupGame()
     {
-        Data.gameMode = GameMode.AI;
+        Data.gameMode = GameMode.TwoPlayer;
         Debug.Log("GameMode:" + Data.gameMode);
+
+        var player1KeyMapping = new List<PowerupKeyMapping>
+    {
+        new PowerupKeyMapping { key = KeyCode.Alpha1, powerupType = PowerUpType.LineBlaster },
+        new PowerupKeyMapping { key = KeyCode.Alpha2, powerupType = PowerUpType.Gravity },
+        new PowerupKeyMapping { key = KeyCode.Alpha3, powerupType = PowerUpType.Bomb }
+    };
+        var player2KeyMapping = new List<PowerupKeyMapping>
+    {
+        new PowerupKeyMapping { key = KeyCode.Alpha7, powerupType = PowerUpType.LineBlaster },
+        new PowerupKeyMapping { key = KeyCode.Alpha8, powerupType = PowerUpType.Gravity },
+        new PowerupKeyMapping { key = KeyCode.Alpha9, powerupType = PowerUpType.Bomb }
+    };
         // Clear existing boards
         if (activeBoards != null)
         {
@@ -61,15 +75,24 @@ public class BoardManager : MonoBehaviour
         {
             activeBoards = new Board[1];
             activeBoards[0] = CreateBoard(singlePlayerPosition, new SinglePlayerInputController(), "Player");
+            activeBoards[0].powerupKeyMapping = player1KeyMapping;
         }
         else if (Data.gameMode == GameMode.VsAI)
         {
+            player1KeyMapping.Add(new PowerupKeyMapping { key = KeyCode.Alpha4, powerupType = PowerUpType.WildCard });
+            player2KeyMapping.Add(new PowerupKeyMapping { key = KeyCode.Alpha0, powerupType = PowerUpType.WildCard });
             activeBoards = new Board[2];
             activeBoards[0] = CreateBoard(player1Position, new Player1InputController(), "Human Player");
 
             // Use TetrisMLAgent instead of AIController
             TetrisSentisAgent mlAgent = gameObject.AddComponent<TetrisSentisAgent>();
             activeBoards[1] = CreateBoard(player2Position, mlAgent, "ML Player");
+
+            activeBoards[0].opponentBoard = activeBoards[1];
+            activeBoards[1].opponentBoard = activeBoards[0];
+            activeBoards[0].powerupKeyMapping = player1KeyMapping;
+            activeBoards[1].powerupKeyMapping = player2KeyMapping;
+
         }
         else if (Data.gameMode == GameMode.AI)
         {
@@ -89,10 +112,14 @@ public class BoardManager : MonoBehaviour
             gameObject.AddComponent<PowerupTetrisAgent>();
             activeBoards[0] = CreateBoard(singlePlayerPosition, mlAgent, "ML Player");
             activeBoards[0].isMLTraining = true;
+            activeBoards[0].powerupKeyMapping = player1KeyMapping;
+
         }
         else if (Data.gameMode == GameMode.AIVsAI)
         {
             activeBoards = new Board[2];
+            player1KeyMapping.Add(new PowerupKeyMapping { key = KeyCode.Alpha4, powerupType = PowerUpType.WildCard });
+            player2KeyMapping.Add(new PowerupKeyMapping { key = KeyCode.Alpha0, powerupType = PowerUpType.WildCard });
 
             // Use TetrisMLAgents for both players
             TetrisSentisAgent mlAgent1 = gameObject.AddComponent<TetrisSentisAgent>();
@@ -100,12 +127,26 @@ public class BoardManager : MonoBehaviour
 
             activeBoards[0] = CreateBoard(player1Position, mlAgent1, "ML Player 1");
             activeBoards[1] = CreateBoard(player2Position, mlAgent2, "ML Player 2");
+            activeBoards[0].opponentBoard = activeBoards[1];
+            activeBoards[1].opponentBoard = activeBoards[0];
+            activeBoards[0].powerupKeyMapping = player1KeyMapping;
+            activeBoards[1].powerupKeyMapping = player2KeyMapping;
+
+
         }
         else
         {
+            player1KeyMapping.Add(new PowerupKeyMapping { key = KeyCode.Alpha4, powerupType = PowerUpType.WildCard });
+            player2KeyMapping.Add(new PowerupKeyMapping { key = KeyCode.Alpha0, powerupType = PowerUpType.WildCard });
             activeBoards = new Board[2];
             activeBoards[0] = CreateBoard(player1Position, new Player1InputController(), "Player 1");
             activeBoards[1] = CreateBoard(player2Position, new Player2InputController(), "Player 2");
+            activeBoards[0].opponentBoard = activeBoards[1];
+            activeBoards[1].opponentBoard = activeBoards[0];
+            activeBoards[0].powerupKeyMapping = player1KeyMapping;
+            activeBoards[1].powerupKeyMapping = player2KeyMapping;
+
+
         }
     }
     Board CreateBoard(Vector3Int position, IPlayerInputController input, string playerLabel)

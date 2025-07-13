@@ -92,6 +92,13 @@ public static class Data
         return rotated;
     }
 
+    public static readonly Vector3Int[] WildcardCells = new Vector3Int[]
+{
+    new Vector3Int(-1, -1, 0), new Vector3Int(0, -1, 0), new Vector3Int(1, -1, 0),
+    new Vector3Int(-1,  0, 0), new Vector3Int(0,  0, 0), new Vector3Int(1,  0, 0),
+    new Vector3Int(-1,  1, 0), new Vector3Int(0,  1, 0), new Vector3Int(1,  1, 0),
+};
+
 
 
 }

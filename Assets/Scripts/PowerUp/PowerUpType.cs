@@ -4,7 +4,8 @@ public enum PowerUpType
 {
     LineBlaster,    // Clears bottom line
     Gravity,        // Drops all floating blocks  
-    Bomb           // Clears 3x3 area around piece
+    Bomb,           // Clears 3x3 area around piece,
+    WildCard
 }
 
 [System.Serializable]
@@ -23,7 +24,7 @@ public class PowerUpInstance
     public PowerUpType type;
     public PowerUp data;
     public float timeObtained;
-    
+
     public PowerUpInstance(PowerUpType type, PowerUp data)
     {
         this.type = type;

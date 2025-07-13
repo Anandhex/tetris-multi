@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Tilemaps;
 
 public class Piece : MonoBehaviour
 {
@@ -8,7 +10,9 @@ public class Piece : MonoBehaviour
     public Vector3Int[] cells { get; private set; }
     public Vector3Int position;
     public int rotationIndex;
-    private IPlayerInputController inputController;
+    public IPlayerInputController inputController;
+    public Tile tile = null;
+    public System.Action OnLockComplete;
 
     private int lastMovementFrame = -1;
     private int movementDelayFrames = 2; // Allow 2 frames for movement to process
@@ -21,10 +25,11 @@ public class Piece : MonoBehaviour
     private float stepTime;
     private float moveTime;
     private float lockTime;
+    public bool isBomb = false;
 
 
 
-    public void Initialize(Board board, Vector3Int position, TetrominoData data, IPlayerInputController controller)
+    public void Initialize(Board board, Vector3Int position, TetrominoData data, IPlayerInputController controller, Boolean isBomb)
     {
 
         if (board == null)
@@ -38,7 +43,9 @@ public class Piece : MonoBehaviour
             // Debug.LogError("InputController is null in Piece.Initialize");
             return; // Don't continue with initialization if controller is null
         }
-
+        this.cells = null;
+        this.isBomb = false;
+        this.tile = null;
         this.data = data;
         this.board = board;
         this.position = position;
@@ -50,6 +57,8 @@ public class Piece : MonoBehaviour
         lockTime = 0f;
 
         UpdateStepDelay();
+
+
 
         if (cells == null)
         {
@@ -135,7 +144,10 @@ public class Piece : MonoBehaviour
             Move(Vector2Int.right);
         }
     }
-
+    public void SetCells(Vector3Int[] newCells)
+    {
+        cells = newCells;
+    }
     private void Step()
     {
         UpdateStepDelay();
@@ -168,7 +180,12 @@ public class Piece : MonoBehaviour
     private void Lock()
     {
         board.Set(this);
+        if (isBomb)
+        {
+            board.ExecuteBombExplosion(position);
+        }
         board.ClearLines();
+        OnLockComplete?.Invoke();
         board.SpawnPiece();
     }
 

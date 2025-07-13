@@ -62,7 +62,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   activePiece: {fileID: 0}
   playerTag: 
-  powerUpManagerComponent: {fileID: 4812752315115307965}
   tetrominoes:
   - tetromino: 0
     tile: {fileID: 11400000, guid: b1a7a7557876e426f8ef11c829e05d57, type: 2}
@@ -80,6 +79,8 @@ MonoBehaviour:
     tile: {fileID: 11400000, guid: 518bff1b5bade4dc682a939aa4e10876, type: 2}
   debrisPrefab: {fileID: 7462014480564348719, guid: 51cbaab57cbfd41dea7605a30e66ed7c, type: 3}
   gridSpriteRenderer: {fileID: 1036416070660855848}
+  opponentBoard: {fileID: 0}
+  bombTile: {fileID: 11400000, guid: db239f2cc1ac1406aa6f08001c36f146, type: 2}
   baseSpawnPosition: {x: 0, y: 0, z: 0}
   boardSize: {x: 10, y: 20}
   playerScore: 0
@@ -104,10 +105,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   position: {x: 0, y: 0, z: 0}
   rotationIndex: 0
+  tile: {fileID: 0}
   stepDelay: 1
   moveDelay: 0.1
   lockDelay: 0.5
   validMoves: 
+  isBomb: 0
 --- !u!114 &8670629934888384356
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -132,8 +135,8 @@ MonoBehaviour:
     icon: {fileID: 0}
     spawnWeight: 2
   - type: 3
-    name: Speed Boost
-    description: Makes pieces fall faster
+    name: Wild Card
+    description: adds weird block
     icon: {fileID: 0}
     spawnWeight: 0.5
   - type: 8
@@ -1618,7 +1621,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 1}
   m_AnchorMax: {x: 0.5, y: 1}
-  m_AnchoredPosition: {x: -0.000022888, y: -472}
+  m_AnchoredPosition: {x: -0.000022888, y: -529}
   m_SizeDelta: {x: 400, y: 86.22}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &6112678330264345989
