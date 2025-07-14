@@ -44,7 +44,7 @@ public class BoardManager : MonoBehaviour
 
     public void SetupGame()
     {
-        Data.gameMode = GameMode.TwoPlayer;
+        Data.gameMode = GameMode.AIVsAI;
         Debug.Log("GameMode:" + Data.gameMode);
 
         var player1KeyMapping = new List<PowerupKeyMapping>

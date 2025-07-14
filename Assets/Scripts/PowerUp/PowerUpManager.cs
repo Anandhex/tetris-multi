@@ -271,7 +271,7 @@ public class PowerUpManager : MonoBehaviour
         return bar;
     }
 
-    public void UsePowerUp(PowerUpType type)
+    public void UsePowerUp(PowerUpType type, int targetColumn = -1, int targetRow = -1)
     {
         Debug.Log($"🎯 === ATTEMPTING TO USE {type.ToString().ToUpper()} ===");
 

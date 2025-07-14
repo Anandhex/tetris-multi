@@ -195,28 +195,28 @@ class UnityTetrisClient:
         except:
             return None
     
-    def get_board_state(self, timeout=2.0, poll_interval=0.05):
-        """
-        Ask Unity for all valid (col,rot) placements and their [lines, holes, bumpiness, height].
-        Blocks until it receives a message of type 'possible_states' or times out.
-        Returns a dict { 'col:rot': [lines, holes, bumpiness, height], ... }
-        """
-        # 1) send the request
-        cmd = { "type": "board_state" }
-        if not self._send_command(cmd):
-            return {}
+    # def get_board_state(self, timeout=2.0, poll_interval=0.05):
+    #     """
+    #     Ask Unity for all valid (col,rot) placements and their [lines, holes, bumpiness, height].
+    #     Blocks until it receives a message of type 'possible_states' or times out.
+    #     Returns a dict { 'col:rot': [lines, holes, bumpiness, height], ... }
+    #     """
+    #     # 1) send the request
+    #     cmd = { "type": "board_state" }
+    #     if not self._send_command(cmd):
+    #         return {}
 
-        # 2) drain queue until we find the response
-        start = time.time()
-        while time.time() - start < timeout:
-            msg = self.get_game_state(timeout=poll_interval)
-            if not msg:
-                continue
-            # we expect Unity to send back {"type":"possible_states","payload":{...}}
-            if msg.get("type") == "board_state" and "payload" in msg:
-                return msg["payload"]
-        # timed out
-        return {}
+    #     # 2) drain queue until we find the response
+    #     start = time.time()
+    #     while time.time() - start < timeout:
+    #         msg = self.get_game_state(timeout=poll_interval)
+    #         if not msg:
+    #             continue
+    #         # we expect Unity to send back {"type":"possible_states","payload":{...}}
+    #         if msg.get("type") == "board_state" and "payload" in msg:
+    #             return msg["payload"]
+    #     # timed out
+    #     return {}
     
     def get_current_piece_info(self, game_state):
         piece_info = game_state.get('currentPiece', [0, 0, 0, 0])
@@ -252,7 +252,7 @@ class UnityTetrisClient:
         Returns a dict { 'col:rot': [lines, holes, bumpiness, height], ... }
         """
         # 1) send the request
-        cmd = { "type": "request_states" }
+        cmd = { "type": "board_state" }
         if not self._send_command(cmd):
             return {}
 

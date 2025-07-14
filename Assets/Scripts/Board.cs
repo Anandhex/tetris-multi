@@ -29,7 +29,7 @@ public class Board : MonoBehaviour
     private int lastBoardHeight = -1;
     public Vector3Int baseSpawnPosition;
 
-    private PowerUpManager powerUpManager;
+    public PowerUpManager powerUpManager;
 
     public Vector3Int spawnPosition
     {
@@ -132,6 +132,12 @@ public class Board : MonoBehaviour
         this.playerScore = 0;
         this.gameStartTime = Time.time;
 
+        var bounds = this.Bounds;
+        Debug.Log($"BoardDebug Board Width (columns): {bounds.width}");   // Should be 10
+        Debug.Log($"Board Height (rows): {bounds.height}");    // Should be 20
+        Debug.Log($"BoardDebug X range: {bounds.xMin} to {bounds.xMax}"); // 10 units wide
+        Debug.Log($"BoardDebug Y range: {bounds.yMin} to {bounds.yMax}"); // 20 units tall
+
         this.powerUpManager = GetComponent<PowerUpManager>();
 
         if (this.powerUpManager != null)
@@ -178,13 +184,13 @@ public class Board : MonoBehaviour
             this.playerScoreToDisplay.text = this.playerScore.ToString();
         }
 
-        PowerupTetrisAgent powerupTetrisAgent = FindAnyObjectByType<PowerupTetrisAgent>();
-        PowerUpManager powerUpManager = FindAnyObjectByType<PowerUpManager>();
-        if (powerupTetrisAgent != null && powerUpManager != null)
-        {
+        // PowerupTetrisAgent powerupTetrisAgent = FindAnyObjectByType<PowerupTetrisAgent>();
+        // PowerUpManager powerUpManager = FindAnyObjectByType<PowerUpManager>();
+        // if (powerupTetrisAgent != null && powerUpManager != null)
+        // {
 
-            powerupTetrisAgent.RunInference(this, powerUpManager.powerUpInventory, powerUpManager);
-        }
+        //     powerupTetrisAgent.RunInference(this, powerUpManager.powerUpInventory, powerUpManager);
+        // }
 
         // if (fireBorderController != null)
         // {
