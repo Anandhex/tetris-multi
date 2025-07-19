@@ -15,11 +15,15 @@ using System;
 public class PowerupTetrisAgent : MonoBehaviour
 {
     [Header("Sentis Model Asset")]
-    [SerializeField] private BackendType backendType = BackendType.GPUCompute;
+    //[SerializeField] private BackendType backendType = BackendType.GPUCompute;
 
     [Header("Logging Settings")]
     [SerializeField] private bool enableDetailedLogging = true;
     [SerializeField] private bool enableWildblockLogging = true;
+
+    [Header("Sentis Model Asset")]
+    [SerializeField] private ModelAsset powerupModelAsset; // Add this new field
+    [SerializeField] private BackendType backendType = BackendType.GPUCompute;
 
     // Core Sentis components
     private Model runtimeModel;
@@ -73,11 +77,56 @@ public class PowerupTetrisAgent : MonoBehaviour
         }
     }
 
+    // public void InitializeSentis()
+    // {
+    //     try
+    //     {
+    //         runtimeModel = ModelLoader.Load(BoardManager.Instance.powerupAsset);
+    //         worker = CreateWorkerWithFallback();
+    //         usingExternalWorker = false;
+
+    //         if (worker == null)
+    //         {
+    //             Debug.LogError("PowerupAgent: Failed to create worker with any backend!");
+    //             return;
+    //         }
+            
+
+    //         Debug.Log($"PowerupAgent: Successfully initialized with {backendType} backend");
+    //     }
+    //     catch (System.Exception e)
+    //     {
+    //         Debug.LogError($"PowerupAgent: Failed to initialize Sentis: {e}");
+    //     }
+    // }
     public void InitializeSentis()
     {
         try
         {
-            runtimeModel = ModelLoader.Load(BoardManager.Instance.powerupAsset);
+            // Try direct asset first, then fall back to BoardManager
+            ModelAsset modelToLoad = powerupModelAsset;
+            
+            if (modelToLoad == null && BoardManager.Instance != null)
+            {
+                modelToLoad = BoardManager.Instance.powerupAsset;
+                Debug.Log("PowerupAgent: Using model from BoardManager (fallback)");
+            }
+            
+            if (modelToLoad == null)
+            {
+                Debug.LogWarning("PowerupAgent: No model asset - ML disabled, manual testing enabled.");
+                return; // Don't fail, just continue without ML
+            }
+
+            Debug.Log("PowerupAgent: Loading model asset...");
+            runtimeModel = ModelLoader.Load(modelToLoad);
+            
+            if (runtimeModel == null)
+            {
+                Debug.LogError("PowerupAgent: Failed to load model - ModelLoader.Load returned null");
+                return;
+            }
+
             worker = CreateWorkerWithFallback();
             usingExternalWorker = false;
 
@@ -86,7 +135,6 @@ public class PowerupTetrisAgent : MonoBehaviour
                 Debug.LogError("PowerupAgent: Failed to create worker with any backend!");
                 return;
             }
-            
 
             Debug.Log($"PowerupAgent: Successfully initialized with {backendType} backend");
         }
@@ -95,24 +143,61 @@ public class PowerupTetrisAgent : MonoBehaviour
             Debug.LogError($"PowerupAgent: Failed to initialize Sentis: {e}");
         }
     }
+    // private Worker CreateWorkerWithFallback()
+    // {
+    //     try
+    //     {
+    //         //var worker = new Worker(runtimeModel, BackendType.GPUCompute);
+    //         var worker = new Worker(runtimeModel, this.backendType);
+    //         if (worker != null) return worker;
+    //     }
+    //     catch (System.Exception e)
+    //     {
+    //         Debug.LogWarning($"PowerupAgent: Failed to create {backendType} worker: {e.Message}");
+    //     }
 
+    //     BackendType[] fallbackOrder = { BackendType.GPUCompute, BackendType.CPU };
+
+    //     foreach (var backend in fallbackOrder)
+    //     {
+    //         //if (backend == backendType) continue;
+    //         if (backend == this.backendType) continue;
+
+    //         try
+    //         {
+    //             var worker = new Worker(runtimeModel, backend);
+    //             if (worker != null)
+    //             {
+    //                 Debug.LogWarning($"PowerupAgent: Fell back to {backend} backend");
+    //                 backendType = backend;
+    //                 return worker;
+    //             }
+    //         }
+    //         catch (System.Exception e)
+    //         {
+    //             Debug.LogWarning($"PowerupAgent: {backend} backend also failed: {e.Message}");
+    //         }
+    //     }
+
+    //     return null;
+    // }
     private Worker CreateWorkerWithFallback()
     {
         try
         {
-            var worker = new Worker(runtimeModel, BackendType.GPUCompute);
+            var worker = new Worker(runtimeModel, this.backendType); // Use this.backendType
             if (worker != null) return worker;
         }
         catch (System.Exception e)
         {
-            Debug.LogWarning($"PowerupAgent: Failed to create {backendType} worker: {e.Message}");
+            Debug.LogWarning($"PowerupAgent: Failed to create {this.backendType} worker: {e.Message}");
         }
 
         BackendType[] fallbackOrder = { BackendType.GPUCompute, BackendType.CPU };
 
         foreach (var backend in fallbackOrder)
         {
-            if (backend == backendType) continue;
+            if (backend == this.backendType) continue; // Use this.backendType
 
             try
             {
@@ -120,7 +205,7 @@ public class PowerupTetrisAgent : MonoBehaviour
                 if (worker != null)
                 {
                     Debug.LogWarning($"PowerupAgent: Fell back to {backend} backend");
-                    backendType = backend;
+                    this.backendType = backend; // Use this.backendType
                     return worker;
                 }
             }
@@ -132,7 +217,6 @@ public class PowerupTetrisAgent : MonoBehaviour
 
         return null;
     }
-
     public void CleanupSentisIfOwned()
     {
         if (worker != null && !usingExternalWorker)
@@ -649,29 +733,32 @@ public class PowerupTetrisAgent : MonoBehaviour
                 break;
                 
             case 1:
-                powerUpManager.ExecuteLineBlaster();
+                // Use the new method instead of direct execution
+                powerUpManager.TryUsePowerUp(PowerUpType.LineBlaster);
                 UpdateActionHistory("bottom_clear");
                 break;
                 
             case 2:
-                powerUpManager.ExecuteGravity();
+                // Use the new method instead of direct execution
+                powerUpManager.TryUsePowerUp(PowerUpType.Gravity);
                 UpdateActionHistory("gravity");
                 break;
                 
             case 3:
-                if (actionResult.targetRow != -1)
+                if (actionResult.targetColumn != -1)
                 {
-                    // powerUpManager.ExecuteBomb(actionResult.targetRow, actionResult.targetColumn);
+                    // Use your new column-targeting method!
+                    powerUpManager.TryUsePowerUp(PowerUpType.Bomb, actionResult.targetColumn);
                     UpdateActionHistory("bomb");
                     UpdateBombColumnHistory(actionResult.targetColumn);
                 }
                 break;
                 
             case 4:
-                if (actionResult.targetRow != -1 && board.opponentBoard != null)
+                if (actionResult.targetColumn != -1 && board.opponentBoard != null)
                 {
-                    ApplyWildblockToOpponent(board.opponentBoard, actionResult.targetRow, actionResult.targetColumn);
-                    // powerUpManager.ExecuteWildblock(actionResult.targetRow, actionResult.targetColumn, board.opponentBoard);
+                    // Use your new column-targeting method!
+                    powerUpManager.TryUsePowerUp(PowerUpType.WildCard, actionResult.targetColumn);
                     UpdateActionHistory("wildblock");
                     UpdateWildblockColumnHistory(actionResult.targetColumn);
                 }

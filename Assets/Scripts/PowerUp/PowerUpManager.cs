@@ -42,6 +42,8 @@ public class PowerUpManager : MonoBehaviour
     private float lastLogTime = 0f;
     private float logInterval = 2f; // Log every 2 seconds
     private int lastLinesCount = 0;
+    private int bombTestColumn = -5;
+    private int wildcardTestColumn = -4;
 
     private Board opponentBoard;
 
@@ -99,7 +101,7 @@ public class PowerUpManager : MonoBehaviour
         powerUpInventory[PowerUpType.Bomb] = 5;
         if (opponentBoard != null)
         {
-            powerUpInventory[PowerUpType.WildCard] = 5;
+            powerUpInventory[PowerUpType.WildCard] = 3;
         }
 
         // Debug.Log("📦 Inventory initialized: LineBlaster=0, Gravity=0, Bomb=0");
@@ -131,16 +133,34 @@ public class PowerUpManager : MonoBehaviour
 
     private void Update()
     {
-        // INDIVIDUAL KEYS FOR EACH POWER-UP (AI-Friendly!)
-        foreach (var mapping in this.powerupKeyMappings)
+        // ADD NULL CHECK HERE:
+        if (this.powerupKeyMappings != null)
         {
-            if (Input.GetKeyDown(mapping.key))
+            foreach (var mapping in this.powerupKeyMappings)
             {
-                Debug.Log($"🔑 {mapping.key} pressed - attempting {mapping.powerupType}");
-                UsePowerUp(mapping.powerupType);
+                if (Input.GetKeyDown(mapping.key))
+                {
+                    Debug.Log($"🔑 {mapping.key} pressed - attempting {mapping.powerupType}");
+                    UsePowerUp(mapping.powerupType);
+                }
             }
         }
 
+        if (Input.GetKeyDown(KeyCode.Semicolon)) // ; key for bomb
+        {
+            Debug.Log("🧪 TESTING: Bomb at column 0");
+            UsePowerUpAtColumn(PowerUpType.Bomb, 0); // Center column
+        }
+
+        if (Input.GetKeyDown(KeyCode.Quote)) // ' key for wildcard
+        {
+            Debug.Log($"🧪 TESTING: Wildcard at column {wildcardTestColumn}");
+            Debug.Log($"🔍 Opponent board bounds: {opponentBoard.Bounds}");
+            UsePowerUpAtColumn(PowerUpType.WildCard, wildcardTestColumn);
+            
+            wildcardTestColumn++;
+            if (wildcardTestColumn > 3) wildcardTestColumn = -4;
+        }
         // Clean up old line clear times (outside the time window)
         CleanupOldLineTimes();
 
@@ -211,11 +231,19 @@ public class PowerUpManager : MonoBehaviour
         // Update inventory display
         if (inventoryText != null)
         {
-            string inventoryDisplay = $"Power-ups:\n[LineBlaster:{powerUpInventory[PowerUpType.LineBlaster]}]\n[Gravity:{powerUpInventory[PowerUpType.Gravity]}]\n[Bomb:{powerUpInventory[PowerUpType.Bomb]}]";
+            // Safe dictionary access with default values
+            int lineBlasterCount = powerUpInventory.ContainsKey(PowerUpType.LineBlaster) ? powerUpInventory[PowerUpType.LineBlaster] : 0;
+            int gravityCount = powerUpInventory.ContainsKey(PowerUpType.Gravity) ? powerUpInventory[PowerUpType.Gravity] : 0;
+            int bombCount = powerUpInventory.ContainsKey(PowerUpType.Bomb) ? powerUpInventory[PowerUpType.Bomb] : 0;
+            
+            string inventoryDisplay = $"Power-ups:\n[LineBlaster:{lineBlasterCount}]\n[Gravity:{gravityCount}]\n[Bomb:{bombCount}]";
+            
             if (opponentBoard != null)
             {
-                inventoryDisplay += $"\n[WildCard:{powerUpInventory[PowerUpType.WildCard]}]";
+                int wildcardCount = powerUpInventory.ContainsKey(PowerUpType.WildCard) ? powerUpInventory[PowerUpType.WildCard] : 0;
+                inventoryDisplay += $"\n[WildCard:{wildcardCount}]";
             }
+            
             inventoryText.text = inventoryDisplay;
         }
 
@@ -904,6 +932,213 @@ public class PowerUpManager : MonoBehaviour
     public bool HasPowerUp(PowerUpType type)
     {
         return GetPowerUpCount(type) > 0;
+    }
+
+    public void UsePowerUpAtColumn(PowerUpType type, int targetColumn)
+    {
+        Debug.Log($"🎯 === ML ATTEMPTING TO USE {type.ToString().ToUpper()} AT COLUMN {targetColumn} ===");
+
+        if (powerUpInventory.ContainsKey(type) && powerUpInventory[type] > 0)
+        {
+            int beforeCount = powerUpInventory[type];
+            powerUpInventory[type]--;
+            int afterCount = powerUpInventory[type];
+
+            Debug.Log($"✅ {type} used successfully! Count: {beforeCount} → {afterCount}");
+
+            SafeExecutePowerUpAtColumn(type, targetColumn);
+            UpdatePowerUpUI();
+
+            Debug.Log($"📦 New inventory: L={powerUpInventory[PowerUpType.LineBlaster]}, G={powerUpInventory[PowerUpType.Gravity]}, B={powerUpInventory[PowerUpType.Bomb]}");
+        }
+        else
+        {
+            int currentCount = powerUpInventory.ContainsKey(type) ? powerUpInventory[type] : 0;
+            Debug.Log($"❌ Cannot use {type}! Current count: {currentCount}");
+        }
+
+        Debug.Log("=== END ML POWER-UP USAGE ===");
+    }
+    public bool TryUsePowerUp(PowerUpType type, int column = -1)
+    {
+        if (!powerUpInventory.ContainsKey(type) || powerUpInventory[type] <= 0)
+        {
+            Debug.Log($"❌ ML Agent: No {type} available");
+            return false;
+        }
+
+        if (column != -1)
+        {
+            // Column-targeted power-up
+            UsePowerUpAtColumn(type, column);
+        }
+        else
+        {
+            // Regular power-up
+            UsePowerUp(type);
+        }
+        
+        return true;
+    }
+    private void SafeExecutePowerUpAtColumn(PowerUpType type, int targetColumn)
+    {
+        Debug.Log($"🔧 Executing {type} power-up at column {targetColumn}...");
+
+        switch (type)
+        {
+            case PowerUpType.Bomb:
+                ExecuteBombAtColumn(targetColumn);
+                break;
+            case PowerUpType.WildCard:
+                ExecuteWildCardAtColumn(targetColumn);
+                break;
+            case PowerUpType.LineBlaster:
+                ExecuteLineBlaster(); // Column doesn't matter for LineBlaster
+                break;
+            case PowerUpType.Gravity:
+                ExecuteGravity(); // Column doesn't matter for Gravity
+                break;
+            default:
+                Debug.LogWarning($"⚠️ Column targeting not implemented for {type}");
+                break;
+        }
+    }
+
+    public void ExecuteBombAtColumn(int targetColumn)
+    {
+        Debug.Log($"💣 === EXECUTING BOMB AT COLUMN {targetColumn} ===");
+
+        // Validate column
+        RectInt bounds = ownerBoard.Bounds;
+        if (targetColumn < bounds.xMin || targetColumn >= bounds.xMax)
+        {
+            Debug.LogError($"❌ Invalid column {targetColumn}. Valid range: {bounds.xMin} to {bounds.xMax - 1}");
+            return;
+        }
+
+        // Find the highest tile in the target column to place bomb
+        Vector3Int bombPosition = FindBombPlacementPosition(targetColumn);
+
+        if (bombPosition.y < bounds.yMin)
+        {
+            Debug.LogWarning($"⚠️ Cannot place bomb in column {targetColumn} - column might be full");
+            return;
+        }
+
+        Debug.Log($"💥 Placing bomb at position: {bombPosition}");
+
+        // Create a temporary bomb piece at the target position
+        CreateAndPlaceBomb(bombPosition);
+    }
+
+    public void ExecuteWildCardAtColumn(int targetColumn)
+    {
+        Debug.Log($"🃏 === EXECUTING WILDCARD AT COLUMN {targetColumn} ===");
+
+        if (opponentBoard == null)
+        {
+            Debug.LogError("❌ Cannot use WildCard - no opponent board available");
+            return;
+        }
+
+        // Validate column for opponent board
+        RectInt bounds = opponentBoard.Bounds;
+        if (targetColumn < bounds.xMin || targetColumn >= bounds.xMax)
+        {
+            Debug.LogError($"❌ Invalid column {targetColumn}. Valid range: {bounds.xMin} to {bounds.xMax - 1}");
+            return;
+        }
+
+        // Find suitable position for 3x3 wildcard block
+        Vector3Int wildcardPosition = FindWildcardPlacementPosition(targetColumn);
+
+        if (wildcardPosition.y < bounds.yMin)
+        {
+            Debug.LogWarning($"⚠️ Cannot place wildcard in column {targetColumn} - not enough space");
+            return;
+        }
+
+        Debug.Log($"🃏 Placing wildcard at position: {wildcardPosition}");
+
+        // Create and place wildcard
+        CreateAndPlaceWildcard(wildcardPosition);
+    }
+
+    private Vector3Int FindBombPlacementPosition(int targetColumn)
+    {
+        RectInt bounds = ownerBoard.Bounds;
+
+        // Start from top and find first empty position in the column
+        for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
+        {
+            Vector3Int checkPos = new Vector3Int(targetColumn, y, 0);
+            if (!ownerBoard.tilemap.HasTile(checkPos))
+            {
+                return checkPos;
+            }
+        }
+
+        // If column is full, return invalid position
+        return new Vector3Int(targetColumn, bounds.yMin - 1, 0);
+    }
+
+    private Vector3Int FindWildcardPlacementPosition(int targetColumn)
+    {
+        RectInt bounds = opponentBoard.Bounds;
+        
+        // Adjust center column to fit 3x3 within bounds
+        int centerX = targetColumn;
+        if (centerX - 1 < bounds.xMin) centerX = bounds.xMin + 1;
+        if (centerX + 1 >= bounds.xMax) centerX = bounds.xMax - 2;
+        
+        // Place wildcard safely in the middle of the board, not at the top
+        int safeY = bounds.yMin + (bounds.height / 2); // Middle of board
+        
+        // Make sure the entire 3x3 fits vertically
+        if (safeY + 1 >= bounds.yMax) safeY = bounds.yMax - 2;
+        if (safeY - 1 < bounds.yMin) safeY = bounds.yMin + 1;
+        
+        Vector3Int result = new Vector3Int(centerX, safeY, 0);
+        Debug.Log($"🃏 Wildcard position calculated: {result}, bounds: {bounds}");
+        
+        return result;
+    }
+    private void CreateAndPlaceBomb(Vector3Int position)
+    {
+        // Simply place a bomb tile directly on the tilemap
+        ownerBoard.tilemap.SetTile(position, ownerBoard.bombTile);
+        
+        Debug.Log($"💣 Bomb placed directly at {position}");
+    }
+    private void CreateAndPlaceWildcard(Vector3Int centerPosition)
+    {
+        if (opponentBoard == null)
+        {
+            Debug.LogWarning("⚠️ No opponent board for wildcard");
+            return;
+        }
+        
+        RectInt bounds = opponentBoard.Bounds;
+        int placed = 0;
+        
+        // Place 3x3 wildcard tiles, but only within bounds
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                Vector3Int pos = centerPosition + new Vector3Int(dx, dy, 0);
+                
+                // Only place if within bounds
+                if (pos.x >= bounds.xMin && pos.x < bounds.xMax && 
+                    pos.y >= bounds.yMin && pos.y < bounds.yMax)
+                {
+                    opponentBoard.tilemap.SetTile(pos, opponentBoard.bombTile);
+                    placed++;
+                }
+            }
+        }
+        
+        Debug.Log($"🃏 Wildcard placed {placed}/9 tiles at {centerPosition}");
     }
 }
 
