@@ -445,9 +445,10 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
                 // Bomb needs target column information
                 if (decision.targetColumn != -1)
                 {
-                    Debug.Log($"TetrisSentisAgent: Executing Bomb at column {decision.targetColumn}, row {decision.targetRow}");
-                    // You'll need to modify PowerUpManager to accept column parameter
-                    board.powerUpManager.UsePowerUp(PowerUpType.Bomb, decision.targetColumn, decision.targetRow);
+                    // ✅ FIX: Convert AI column (0-9) to board column (bounds.xMin + aiColumn)
+                    int boardColumn = ConvertAIColumnToBoardColumn(decision.targetColumn);
+                    Debug.Log($"TetrisSentisAgent: Executing Bomb - AI column {decision.targetColumn} → Board column {boardColumn}");
+                    board.powerUpManager.UsePowerUp(PowerUpType.Bomb, boardColumn, decision.targetRow);
                 }
                 else
                 {
@@ -460,9 +461,10 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
                 // WildCard needs target column for opponent board
                 if (decision.targetColumn != -1)
                 {
-                    Debug.Log($"TetrisSentisAgent: Executing WildCard at opponent column {decision.targetColumn}, row {decision.targetRow}");
-                    // You'll need to modify PowerUpManager to accept column parameter for WildCard
-                    board.powerUpManager.UsePowerUp(PowerUpType.WildCard, decision.targetColumn, decision.targetRow);
+                    // ✅ FIX: Convert AI column to opponent board column
+                    int opponentBoardColumn = ConvertAIColumnToOpponentBoardColumn(decision.targetColumn);
+                    Debug.Log($"TetrisSentisAgent: Executing WildCard - AI column {decision.targetColumn} → Opponent board column {opponentBoardColumn}");
+                    board.powerUpManager.UsePowerUp(PowerUpType.WildCard, opponentBoardColumn, decision.targetRow);
                 }
                 else
                 {
@@ -475,6 +477,37 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
                 Debug.LogWarning($"TetrisSentisAgent: Unknown powerup type {powerupType}");
                 break;
         }
+    }
+
+    // ✅ NEW HELPER METHODS for column conversion
+    private int ConvertAIColumnToBoardColumn(int aiColumn)
+    {
+        if (board == null) return aiColumn;
+        
+        var bounds = board.Bounds;
+        int boardColumn = bounds.xMin + aiColumn;
+        
+        Debug.Log($"🔄 Column conversion: AI column {aiColumn} → Board column {boardColumn} (bounds: {bounds.xMin} to {bounds.xMax-1})");
+        
+        // Clamp to valid range as safety check
+        boardColumn = Mathf.Clamp(boardColumn, bounds.xMin, bounds.xMax - 1);
+        
+        return boardColumn;
+    }
+
+    private int ConvertAIColumnToOpponentBoardColumn(int aiColumn)
+    {
+        if (board?.opponentBoard == null) return aiColumn;
+
+        var opponentBounds = board.opponentBoard.Bounds;
+        int opponentColumn = opponentBounds.xMin + aiColumn;
+
+        Debug.Log($"🔄 Opponent column conversion: AI column {aiColumn} → Opponent board column {opponentColumn} (bounds: {opponentBounds.xMin} to {opponentBounds.xMax - 1})");
+
+        // Clamp to valid range as safety check
+        opponentColumn = Mathf.Clamp(opponentColumn, opponentBounds.xMin, opponentBounds.xMax - 1);
+
+        return opponentColumn;
     }
 
     /// <summary>
@@ -758,11 +791,24 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
         }
 
         board.Set(currentPiece);
-        board.ClearLines();
+
+        // ✅ FIXED: Store the return value from ClearLines()
+        int linesCleared = board.ClearLines(); // This will internally call PowerUpManager.OnLinesCleared()
+
+        // ✅ ENHANCED LOGGING: Show what happened
+        string playerTag = board.playerTag ?? "Unknown";
+        if (linesCleared > 0)
+        {
+            Debug.Log($"🎯 TetrisSentisAgent: {playerTag} cleared {linesCleared} lines - PowerUpManager should have been notified!");
+        }
+        else
+        {
+            Debug.Log($"📋 TetrisSentisAgent: {playerTag} placed piece but no lines cleared");
+        }
+
         board.SpawnPiece();
     }
-
-    // IPlayerInputController implementation (unused in AI mode)
+   // IPlayerInputController implementation (unused in AI mode)
     public bool GetLeft() => false;
     public bool GetRight() => false;
     public bool GetDown() => false;

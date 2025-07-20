@@ -47,28 +47,6 @@ public class PowerUpManager : MonoBehaviour
 
     private Board opponentBoard;
 
-    // private void Start()
-    // {
-    //     ownerBoard = GetComponent<Board>();
-    //     // audioSource = GetComponent<AudioSource>();
-    //     gameStartTime = Time.time;
-
-    //     // Debug.Log("🎮 === POWER-UP MANAGER INITIALIZED ===");
-    //     // Debug.Log($"⚙️ Settings: PowerUp Chance = {powerUpChance * 100}%");
-    //     // Debug.Log($"⏰ Time Window: {timeWindowMinutes} minutes for {requiredLinesInWindow} lines");
-    //     // Debug.Log($"🎯 Constraint 1: Clear 2+ lines = {powerUpChance * 100}% base chance");
-    //     // Debug.Log($"🎯 Constraint 2: Clear {requiredLinesInWindow} lines in {timeWindowMinutes} minutes = GUARANTEED");
-
-    //     // Initialize inventory
-    //     InitializeInventory();
-
-    //     // Initialize UI
-    //     InitializeUI();
-
-    //     // Initial status log
-    //     LogCurrentStatus();
-    // }
-
     public void SetupPowerupManager(Board userBoard, Board opponentBoard, List<PowerupKeyMapping> powerupKeyMappings)
     {
         this.ownerBoard = userBoard;
@@ -77,11 +55,13 @@ public class PowerUpManager : MonoBehaviour
 
         gameStartTime = Time.time;
 
-        // Debug.Log("🎮 === POWER-UP MANAGER INITIALIZED ===");
-        // Debug.Log($"⚙️ Settings: PowerUp Chance = {powerUpChance * 100}%");
-        // Debug.Log($"⏰ Time Window: {timeWindowMinutes} minutes for {requiredLinesInWindow} lines");
-        // Debug.Log($"🎯 Constraint 1: Clear 2+ lines = {powerUpChance * 100}% base chance");
-        // Debug.Log($"🎯 Constraint 2: Clear {requiredLinesInWindow} lines in {timeWindowMinutes} minutes = GUARANTEED");
+        string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
+        Debug.Log($"🎮 === POWER-UP MANAGER INITIALIZED (Player: {playerTag}) ===");
+        Debug.Log($"⚙️ Settings: PowerUp Chance = {powerUpChance * 100}%");
+        Debug.Log($"⏰ Time Window: {timeWindowMinutes} minutes for {requiredLinesInWindow} lines");
+        Debug.Log($"🎯 Constraint 1: Clear 2+ lines = {powerUpChance * 100}% base chance");
+        Debug.Log($"🎯 Constraint 2: Clear {requiredLinesInWindow} lines in {timeWindowMinutes} minutes = GUARANTEED");
+        Debug.Log($"🔗 Opponent Board: {(opponentBoard != null ? "Available" : "None")}");
 
         // Initialize inventory
         InitializeInventory();
@@ -91,20 +71,28 @@ public class PowerUpManager : MonoBehaviour
 
         // Initial status log
         LogCurrentStatus();
-
     }
 
     private void InitializeInventory()
     {
+        string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
+        Debug.Log($"📦 === INITIALIZING INVENTORY (Player: {playerTag}) ===");
+        
         powerUpInventory[PowerUpType.LineBlaster] = 0;
         powerUpInventory[PowerUpType.Gravity] = 0;
         powerUpInventory[PowerUpType.Bomb] = 0;
+        
         if (opponentBoard != null)
         {
             powerUpInventory[PowerUpType.WildCard] = 0;
+            Debug.Log("🃏 WildCard initialized (opponent board available)");
+        }
+        else
+        {
+            Debug.Log("❌ WildCard NOT initialized (no opponent board)");
         }
 
-        // Debug.Log("📦 Inventory initialized: LineBlaster=0, Gravity=0, Bomb=0");
+        LogFullInventory("After initialization");
     }
 
     private void InitializeUI()
@@ -113,7 +101,7 @@ public class PowerUpManager : MonoBehaviour
         if (keysText != null)
         {
             keysText.text = "Keys:\n1=LineBlaster\n2=Gravity\n3=Bomb";
-            // Debug.Log("✅ Keys UI initialized");
+            Debug.Log("✅ Keys UI initialized");
             if (opponentBoard != null)
             {
                 keysText.text += "\n4=WildCard";
@@ -121,14 +109,14 @@ public class PowerUpManager : MonoBehaviour
         }
         else
         {
-            // Debug.LogWarning("⚠️ Keys UI not connected!");
+            Debug.LogWarning("⚠️ Keys UI not connected!");
         }
 
         // Update the dynamic UI elements
         UpdateUI();
 
         // Check UI connections
-        // Debug.Log($"🔗 UI Connections: Inventory={inventoryText != null}, Progress={progressText != null}, Keys={keysText != null}");
+        Debug.Log($"🔗 UI Connections: Inventory={inventoryText != null}, Progress={progressText != null}, Keys={keysText != null}");
     }
 
     private void Update()
@@ -181,36 +169,39 @@ public class PowerUpManager : MonoBehaviour
         // Check for lines count change
         if (linesClearedTimes.Count != lastLinesCount)
         {
-            // Debug.Log($"📊 Lines count changed: {lastLinesCount} → {linesClearedTimes.Count}");
+            Debug.Log($"📊 Lines count changed: {lastLinesCount} → {linesClearedTimes.Count}");
             lastLinesCount = linesClearedTimes.Count;
         }
     }
+
     private void LogCurrentStatus()
     {
-        // float timeElapsed = Time.time - gameStartTime;
-        // float timeRemaining = (timeWindowMinutes * 60f) - timeElapsed;
-        // int linesInWindow = linesClearedTimes.Count;
+        string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
+        float timeElapsed = Time.time - gameStartTime;
+        float timeRemaining = (timeWindowMinutes * 60f) - timeElapsed;
+        int linesInWindow = linesClearedTimes.Count;
 
-        // Debug.Log("📋 === CURRENT STATUS ===");
-        // Debug.Log($"⏰ Time: {timeElapsed:F1}s elapsed, {Mathf.Max(0, timeRemaining):F1}s remaining");
-        // Debug.Log($"📊 Progress: {linesInWindow}/{requiredLinesInWindow} lines in window");
-        // Debug.Log($"🎒 Inventory: L={powerUpInventory[PowerUpType.LineBlaster]}, G={powerUpInventory[PowerUpType.Gravity]}, B={powerUpInventory[PowerUpType.Bomb]}");
+        Debug.Log($"📋 === CURRENT STATUS (Player: {playerTag}) ===");
+        Debug.Log($"⏰ Time: {timeElapsed:F1}s elapsed, {Mathf.Max(0, timeRemaining):F1}s remaining");
+        Debug.Log($"📊 Progress: {linesInWindow}/{requiredLinesInWindow} lines in window");
+        
+        LogFullInventory("Current status");
+        
+        // Calculate progress percentage
+        float progressPercent = (float)linesInWindow / requiredLinesInWindow * 100f;
+        Debug.Log($"📈 Progress: {progressPercent:F1}% towards time challenge");
 
-        // // Calculate progress percentage
-        // float progressPercent = (float)linesInWindow / requiredLinesInWindow * 100f;
-        // Debug.Log($"📈 Progress: {progressPercent:F1}% towards time challenge");
+        // Time window status
+        if (timeRemaining > 0)
+        {
+            Debug.Log($"⏳ Time Challenge: {timeRemaining:F0}s remaining");
+        }
+        else
+        {
+            Debug.Log("🔄 Time window expired - ready for reset");
+        }
 
-        // // Time window status
-        // if (timeRemaining > 0)
-        // {
-        //     Debug.Log($"⏳ Time Challenge: {timeRemaining:F0}s remaining");
-        // }
-        // else
-        // {
-        //     Debug.Log("🔄 Time window expired - ready for reset");
-        // }
-
-        // Debug.Log("=========================");
+        Debug.Log("=========================");
     }
 
     private void CleanupOldLineTimes()
@@ -224,8 +215,9 @@ public class PowerUpManager : MonoBehaviour
 
         if (beforeCount != afterCount)
         {
-            // Debug.Log($"🧹 Cleaned up {beforeCount - afterCount} old line records");
-            // Debug.Log($"📊 Current window now has {afterCount} lines");
+            string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
+            Debug.Log($"🧹 Cleaned up {beforeCount - afterCount} old line records (Player: {playerTag})");
+            Debug.Log($"📊 Current window now has {afterCount} lines");
         }
     }
 
@@ -270,7 +262,7 @@ public class PowerUpManager : MonoBehaviour
                 // Auto-reset if time window expired
                 if (linesInWindow == 0)
                 {
-                    // Debug.Log("🔄 Auto-resetting time window");
+                    Debug.Log("🔄 Auto-resetting time window");
                     gameStartTime = Time.time;
                 }
             }
@@ -302,50 +294,45 @@ public class PowerUpManager : MonoBehaviour
         return bar;
     }
 
-
-public void UsePowerUp(PowerUpType type, int targetColumn = -1, int targetRow = -1)
-{
-    Debug.Log($"🎯Powerup === ATTEMPTING TO USE {type.ToString().ToUpper()} ===");
-    
-    // Add column info to log if specified
-    if (targetColumn != -1)
+    public void UsePowerUp(PowerUpType type, int targetColumn = -1, int targetRow = -1)
     {
-        Debug.Log($"🎯 Target Column: {targetColumn}");
-    }
-
-    if (powerUpInventory.ContainsKey(type) && powerUpInventory[type] > 0)
-    {
-        int beforeCount = powerUpInventory[type];
-        powerUpInventory[type]--;
-        int afterCount = powerUpInventory[type];
-
-        Debug.Log($"✅ {type} used successfully! Count: {beforeCount} → {afterCount}");
-
-        SafeExecutePowerUp(type, targetColumn);
-        UpdatePowerUpUI();
-        // PlaySound(powerUpUsedSound);
-
-        // Log updated inventory
-        string inventoryLog = $"📦 New inventory: L={powerUpInventory[PowerUpType.LineBlaster]}, G={powerUpInventory[PowerUpType.Gravity]}, B={powerUpInventory[PowerUpType.Bomb]}";
-        if (opponentBoard != null && powerUpInventory.ContainsKey(PowerUpType.WildCard))
+        string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
+        Debug.Log($"🎯 === ATTEMPTING TO USE {type.ToString().ToUpper()} (Player: {playerTag}) ===");
+        
+        // Add column info to log if specified
+        if (targetColumn != -1)
         {
-            inventoryLog += $", W={powerUpInventory[PowerUpType.WildCard]}";
+            Debug.Log($"🎯 Target Column: {targetColumn}");
         }
-        Debug.Log(inventoryLog);
-    }
-    else
-    {
-        int currentCount = powerUpInventory.ContainsKey(type) ? powerUpInventory[type] : 0;
-        Debug.Log($"❌ Cannot use {type}! Current count: {currentCount}");
-        // Debug.Log($"📦 Available: L={powerUpInventory[PowerUpType.LineBlaster]}, G={powerUpInventory[PowerUpType.Gravity]}, B={powerUpInventory[PowerUpType.Bomb]}");
-    }
 
-    Debug.Log("=== END POWER-UP USAGE ===");
-}
+        if (powerUpInventory.ContainsKey(type) && powerUpInventory[type] > 0)
+        {
+            int beforeCount = powerUpInventory[type];
+            powerUpInventory[type]--;
+            int afterCount = powerUpInventory[type];
+
+            Debug.Log($"✅ {type} used successfully by {playerTag}! Count: {beforeCount} → {afterCount}");
+
+            SafeExecutePowerUp(type, targetColumn);
+            UpdatePowerUpUI();
+
+            // Log updated inventory
+            LogFullInventory($"After using {type}");
+        }
+        else
+        {
+            int currentCount = powerUpInventory.ContainsKey(type) ? powerUpInventory[type] : 0;
+            Debug.Log($"❌ {playerTag} cannot use {type}! Current count: {currentCount}");
+            LogFullInventory($"Failed attempt to use {type}");
+        }
+
+        Debug.Log($"=== END POWER-UP USAGE ({playerTag}) ===");
+    }
 
     private void SafeExecutePowerUp(PowerUpType type, int targetColumn = -1)
     {
-        Debug.Log($"🔧 Executing {type} power-up...");
+        string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
+        Debug.Log($"🔧 Executing {type} power-up for {playerTag}...");
 
         // Add column info to log if specified
         if (targetColumn != -1)
@@ -405,7 +392,7 @@ public void UsePowerUp(PowerUpType type, int targetColumn = -1, int targetRow = 
             if (ownerBoard.IsValidPosition(ownerBoard.activePiece, ownerBoard.activePiece.position))
             {
                 ownerBoard.Set(ownerBoard.activePiece);
-                // Debug.Log("✅ Active piece restored to original position");
+                Debug.Log("✅ Active piece restored to original position");
             }
             else
             {
@@ -413,22 +400,24 @@ public void UsePowerUp(PowerUpType type, int targetColumn = -1, int targetRow = 
                 if (ownerBoard.IsValidPosition(ownerBoard.activePiece, ownerBoard.activePiece.position))
                 {
                     ownerBoard.Set(ownerBoard.activePiece);
-                    // Debug.Log("✅ Active piece restored to adjusted position");
+                    Debug.Log("✅ Active piece restored to adjusted position");
                 }
                 else
                 {
-                    // Debug.Log("⚠️ Could not restore active piece - position invalid");
+                    Debug.Log("⚠️ Could not restore active piece - position invalid");
                 }
             }
         }
     }
+
     public void OnLinesCleared(int lineCount)
     {
-        // Debug.Log($"🎯 === LINES CLEARED EVENT: {lineCount} LINES ===");
+        string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
+        Debug.Log($"🎯 === LINES CLEARED EVENT: {lineCount} LINES (Player: {playerTag}) ===");
 
         // Add lines to time tracking (each line gets a timestamp)
         float currentTime = Time.time;
-        // Debug.Log($"⏰ Adding {lineCount} line timestamps at time {currentTime:F1}");
+        Debug.Log($"⏰ Adding {lineCount} line timestamps at time {currentTime:F1}");
 
         for (int i = 0; i < lineCount; i++)
         {
@@ -436,31 +425,31 @@ public void UsePowerUp(PowerUpType type, int targetColumn = -1, int targetRow = 
         }
 
         int totalLinesInWindow = linesClearedTimes.Count;
-        // Debug.Log($"📊 Total lines in current window: {totalLinesInWindow}");
+        Debug.Log($"📊 Total lines in current window: {totalLinesInWindow}");
 
         // Check both constraints for power-up earning
-        // Debug.Log("🔍 Checking power-up constraints...");
+        Debug.Log("🔍 Checking power-up constraints...");
 
         bool earnedFromLineCount = CheckLineCountConstraint(lineCount);
         bool earnedFromTimeChallenge = CheckTimeConstraint();
 
-        // Debug.Log($"📋 Constraint Results:");
-        // Debug.Log($"  🎲 Line Count: {(earnedFromLineCount ? "✅ PASSED" : "❌ FAILED")}");
-        // Debug.Log($"  ⏰ Time Challenge: {(earnedFromTimeChallenge ? "✅ PASSED" : "❌ FAILED")}");
+        Debug.Log($"📋 Constraint Results for {playerTag}:");
+        Debug.Log($"  🎲 Line Count ({lineCount} lines): {(earnedFromLineCount ? "✅ PASSED" : "❌ FAILED")}");
+        Debug.Log($"  ⏰ Time Challenge ({totalLinesInWindow}/{requiredLinesInWindow}): {(earnedFromTimeChallenge ? "✅ PASSED" : "❌ FAILED")}");
 
         // Award power-ups
         int powerUpsAwarded = 0;
 
         if (earnedFromLineCount)
         {
-            // Debug.Log("🎁 Awarding power-up from line count constraint!");
+            Debug.Log($"🎁 Awarding power-up to {playerTag} from line count constraint!");
             GenerateRandomPowerUp();
             powerUpsAwarded++;
         }
 
         if (earnedFromTimeChallenge)
         {
-            // Debug.Log("🎁 Awarding power-up from time challenge constraint!");
+            Debug.Log($"🎁 Awarding power-up to {playerTag} from time challenge constraint!");
             GenerateRandomPowerUp();
             powerUpsAwarded++;
             ResetTimeChallenge();
@@ -468,25 +457,27 @@ public void UsePowerUp(PowerUpType type, int targetColumn = -1, int targetRow = 
 
         if (powerUpsAwarded == 0)
         {
-            // Debug.Log("💔 No power-ups awarded this time");
+            Debug.Log($"💔 No power-ups awarded to {playerTag} this time");
         }
         else
         {
-            // Debug.Log($"🎉 TOTAL POWER-UPS AWARDED: {powerUpsAwarded}");
+            Debug.Log($"🎉 TOTAL POWER-UPS AWARDED TO {playerTag}: {powerUpsAwarded}");
         }
 
-        // Debug.Log("=== END LINES CLEARED PROCESSING ===");
+        LogFullInventory($"After processing {lineCount} lines for {playerTag}");
+        Debug.Log($"=== END LINES CLEARED PROCESSING FOR {playerTag} ===");
     }
 
     private bool CheckLineCountConstraint(int lineCount)
     {
-        // Debug.Log($"🔍 === CHECKING LINE COUNT CONSTRAINT ===");
-        // Debug.Log($"📊 Lines cleared this turn: {lineCount}");
+        string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
+        Debug.Log($"🔍 === CHECKING LINE COUNT CONSTRAINT (Player: {playerTag}) ===");
+        Debug.Log($"📊 Lines cleared this turn: {lineCount}");
 
         // Constraint 1: 2+ lines cleared = chance for power-up
         if (lineCount < 2)
         {
-            // Debug.Log($"❌ Insufficient lines: {lineCount} < 2 (minimum required)");
+            Debug.Log($"❌ Insufficient lines: {lineCount} < 2 (minimum required)");
             return false;
         }
 
@@ -503,47 +494,48 @@ public void UsePowerUp(PowerUpType type, int targetColumn = -1, int targetRow = 
         float randomRoll = Random.Range(0f, 1f);
         bool success = randomRoll < finalChance;
 
-        // Debug.Log($"🎲 Calculation Details:");
-        // Debug.Log($"  Base Chance: {baseChance * 100:F1}%");
-        // Debug.Log($"  Multiplier: {multiplier}x (for {lineCount} lines)");
-        // Debug.Log($"  Final Chance: {finalChance * 100:F1}%");
-        // Debug.Log($"  Random Roll: {randomRoll:F3}");
-        // Debug.Log($"  Required: < {finalChance:F3}");
-        // Debug.Log($"  Result: {(success ? "✅ SUCCESS!" : "❌ FAILED")}");
+        Debug.Log($"🎲 Calculation Details for {playerTag}:");
+        Debug.Log($"  Base Chance: {baseChance * 100:F1}%");
+        Debug.Log($"  Multiplier: {multiplier}x (for {lineCount} lines)");
+        Debug.Log($"  Final Chance: {finalChance * 100:F1}%");
+        Debug.Log($"  Random Roll: {randomRoll:F3}");
+        Debug.Log($"  Required: < {finalChance:F3}");
+        Debug.Log($"  Result: {(success ? "✅ SUCCESS!" : "❌ FAILED")}");
 
         return success;
     }
 
     private bool CheckTimeConstraint()
     {
-        // Debug.Log($"🔍 === CHECKING TIME CHALLENGE CONSTRAINT ===");
+        string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
+        Debug.Log($"🔍 === CHECKING TIME CHALLENGE CONSTRAINT (Player: {playerTag}) ===");
 
         // Constraint 2: X lines in Y minutes = guaranteed power-up
         int linesInWindow = linesClearedTimes.Count;
         float timeElapsed = Time.time - gameStartTime;
         float timeRemaining = (timeWindowMinutes * 60f) - timeElapsed;
 
-        // Debug.Log($"📊 Challenge Details:");
-        // Debug.Log($"  Lines in window: {linesInWindow}");
-        // Debug.Log($"  Required lines: {requiredLinesInWindow}");
-        // Debug.Log($"  Time elapsed: {timeElapsed:F1}s");
-        // Debug.Log($"  Time remaining: {timeRemaining:F1}s");
-        // Debug.Log($"  Window duration: {timeWindowMinutes * 60f}s");
+        Debug.Log($"📊 Challenge Details for {playerTag}:");
+        Debug.Log($"  Lines in window: {linesInWindow}");
+        Debug.Log($"  Required lines: {requiredLinesInWindow}");
+        Debug.Log($"  Time elapsed: {timeElapsed:F1}s");
+        Debug.Log($"  Time remaining: {timeRemaining:F1}s");
+        Debug.Log($"  Window duration: {timeWindowMinutes * 60f}s");
 
         bool success = linesInWindow >= requiredLinesInWindow;
 
         if (success)
         {
-            // Debug.Log($"✅ TIME CHALLENGE COMPLETED!");
-            // Debug.Log($"  Achievement: {linesInWindow}/{requiredLinesInWindow} lines");
-            // Debug.Log($"  Time used: {timeElapsed:F1}s of {timeWindowMinutes * 60f}s");
+            Debug.Log($"✅ TIME CHALLENGE COMPLETED by {playerTag}!");
+            Debug.Log($"  Achievement: {linesInWindow}/{requiredLinesInWindow} lines");
+            Debug.Log($"  Time used: {timeElapsed:F1}s of {timeWindowMinutes * 60f}s");
         }
         else
         {
             int linesNeeded = requiredLinesInWindow - linesInWindow;
-            // Debug.Log($"❌ Challenge not completed yet");
-            // Debug.Log($"  Still need: {linesNeeded} more lines");
-            // Debug.Log($"  Time left: {Mathf.Max(0, timeRemaining):F1}s");
+            Debug.Log($"❌ Challenge not completed yet by {playerTag}");
+            Debug.Log($"  Still need: {linesNeeded} more lines");
+            Debug.Log($"  Time left: {Mathf.Max(0, timeRemaining):F1}s");
         }
 
         return success;
@@ -551,63 +543,77 @@ public void UsePowerUp(PowerUpType type, int targetColumn = -1, int targetRow = 
 
     private void ResetTimeChallenge()
     {
-        // Debug.Log("🔄 === RESETTING TIME CHALLENGE ===");
-        // Debug.Log($"📊 Previous window stats:");
-        // Debug.Log($"  Lines cleared: {linesClearedTimes.Count}");
-        // Debug.Log($"  Time taken: {Time.time - gameStartTime:F1}s");
+        string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
+        Debug.Log($"🔄 === RESETTING TIME CHALLENGE (Player: {playerTag}) ===");
+        Debug.Log($"📊 Previous window stats:");
+        Debug.Log($"  Lines cleared: {linesClearedTimes.Count}");
+        Debug.Log($"  Time taken: {Time.time - gameStartTime:F1}s");
 
         linesClearedTimes.Clear();
         gameStartTime = Time.time;
 
-        // Debug.Log("✅ New time challenge window started!");
-        // Debug.Log($"  Target: {requiredLinesInWindow} lines in {timeWindowMinutes} minutes");
+        Debug.Log($"✅ New time challenge window started for {playerTag}!");
+        Debug.Log($"  Target: {requiredLinesInWindow} lines in {timeWindowMinutes} minutes");
     }
 
     private void GenerateRandomPowerUp()
     {
+        string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
+        Debug.Log($"🎲 === GENERATING RANDOM POWER-UP (Player: {playerTag}) ===");
+
         // Base types
         List<PowerUpType> availableTypes = new List<PowerUpType>
-    {
-        PowerUpType.LineBlaster,
-        PowerUpType.Gravity,
-        PowerUpType.Bomb
-    };
-
-        // Add WildCard if opponentBoard exists
-        if (opponentBoard != null)
         {
-            // availableTypes.Add(PowerUpType.WildCard);
-        }
+            PowerUpType.LineBlaster,
+            PowerUpType.Gravity,
+            PowerUpType.Bomb
+        };
 
-        // Corresponding weights (adjusted if WildCard is added)
+        // Corresponding weights
         List<float> weights = new List<float> { 3f, 2f, 1f };
 
+        // Add WildCard if opponentBoard exists - FIXED!
         if (opponentBoard != null)
         {
-            weights.Add(1.5f); // or any weight you prefer for WildCard
+            availableTypes.Add(PowerUpType.WildCard); // ← UNCOMMENTED THIS!
+            weights.Add(1.5f);
+            Debug.Log("🃏 WildCard available (opponent board exists)");
         }
+        else
+        {
+            Debug.Log("❌ WildCard NOT available (no opponent board)");
+        }
+
+        Debug.Log($"📋 Available types: {string.Join(", ", availableTypes)}");
+        Debug.Log($"⚖️ Weights: {string.Join(", ", weights)}");
 
         // Weighted selection
         float totalWeight = weights.Sum();
         float randomValue = Random.Range(0f, totalWeight);
         float currentWeight = 0f;
 
+        Debug.Log($"🎲 Random roll: {randomValue:F3} / {totalWeight:F3}");
+
         for (int i = 0; i < availableTypes.Count; i++)
         {
             currentWeight += weights[i];
+            Debug.Log($"🎯 Checking {availableTypes[i]}: weight range {currentWeight - weights[i]:F3} - {currentWeight:F3}");
 
             if (randomValue <= currentWeight)
             {
+                Debug.Log($"🎉 Selected: {availableTypes[i]} for {playerTag}");
                 AddPowerUp(availableTypes[i]);
                 break;
             }
         }
+        
+        Debug.Log("=== END POWER-UP GENERATION ===");
     }
-
 
     public void AddPowerUp(PowerUpType type)
     {
-        // Debug.Log($"🎁 === ADDING POWER-UP: {type.ToString().ToUpper()} ===");
+        string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
+        Debug.Log($"🎁 === ADDING POWER-UP: {type.ToString().ToUpper()} (Player: {playerTag}) ===");
 
         if (powerUpInventory.ContainsKey(type))
         {
@@ -615,37 +621,54 @@ public void UsePowerUp(PowerUpType type, int targetColumn = -1, int targetRow = 
             powerUpInventory[type]++;
             int afterCount = powerUpInventory[type];
 
-            Debug.Log($"✅ Powerup added {type} successfully!");
-            // Debug.Log($"  Count: {beforeCount} → {afterCount}");
+            Debug.Log($"✅ {type} added successfully to {playerTag}!");
+            Debug.Log($"📊 Count: {beforeCount} → {afterCount}");
 
             UpdatePowerUpUI();
-            // PlaySound(powerUpObtainedSound);
 
-            // Log full inventory
-            Debug.Log($"📦Powerup Full inventory: L={powerUpInventory[PowerUpType.LineBlaster]}, G={powerUpInventory[PowerUpType.Gravity]}, B={powerUpInventory[PowerUpType.Bomb]}");
-
-            string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
-            // Debug.Log($"🎮 Player {playerTag} received {type}!");
+            LogFullInventory($"After adding {type}");
+            Debug.Log($"🎮 Player {playerTag} now has {afterCount} {type}(s)!");
         }
         else
         {
-            // Debug.LogError($"❌ Error: {type} not found in inventory dictionary!");
+            Debug.LogError($"❌ Error: {type} not found in inventory dictionary for {playerTag}!");
+            Debug.LogError($"📦 Available keys: {string.Join(", ", powerUpInventory.Keys)}");
         }
+        
+        Debug.Log("=== END POWER-UP ADDITION ===");
+    }
+
+    // NEW HELPER METHOD for detailed inventory logging
+    private void LogFullInventory(string context)
+    {
+        string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
+        Debug.Log($"📦 === FULL INVENTORY ({context}) - Player: {playerTag} ===");
+        
+        foreach (var kvp in powerUpInventory)
+        {
+            Debug.Log($"  {kvp.Key}: {kvp.Value}");
+        }
+        
+        int totalPowerUps = powerUpInventory.Values.Sum();
+        Debug.Log($"📊 Total Power-ups: {totalPowerUps}");
+        Debug.Log("=== END INVENTORY LOG ===");
     }
 
     public void ClearAllPowerUps()
     {
-        // Debug.Log("🧹 === CLEARING ALL POWER-UPS ===");
-        // Debug.Log($"📊 Before clear: L={powerUpInventory[PowerUpType.LineBlaster]}, G={powerUpInventory[PowerUpType.Gravity]}, B={powerUpInventory[PowerUpType.Bomb]}");
-        // Debug.Log($"📊 Lines in window: {linesClearedTimes.Count}");
+        string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
+        Debug.Log($"🧹 === CLEARING ALL POWER-UPS (Player: {playerTag}) ===");
+        
+        LogFullInventory("Before clear");
+        Debug.Log($"📊 Lines in window: {linesClearedTimes.Count}");
 
         InitializeInventory();
         linesClearedTimes.Clear();
         gameStartTime = Time.time;
         UpdatePowerUpUI();
 
-        // Debug.Log("✅ All power-ups and progress cleared");
-        // Debug.Log("🔄 New game session started");
+        Debug.Log($"✅ All power-ups and progress cleared for {playerTag}");
+        Debug.Log($"🔄 New game session started for {playerTag}");
     }
 
     private void UpdatePowerUpUI()
@@ -677,7 +700,8 @@ public void UsePowerUp(PowerUpType type, int targetColumn = -1, int targetRow = 
 
             if (existingSlots != totalSlots)
             {
-                // Debug.Log($"🎨 UI updated: {existingSlots} → {totalSlots} power-up slots");
+                string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
+                Debug.Log($"🎨 UI updated for {playerTag}: {existingSlots} → {totalSlots} power-up slots");
             }
         }
     }
@@ -685,74 +709,6 @@ public void UsePowerUp(PowerUpType type, int targetColumn = -1, int targetRow = 
     public void ExecuteBombImproved()
     {
         Debug.Log("💣 === EXECUTING BOMB POWER-UP ===");
-
-        // if (ownerBoard.activePiece != null)
-        // {
-        //     Vector3Int center = ownerBoard.activePiece.position;
-        //     Debug.Log($"💥 Bomb center: {center}");
-
-        //     ownerBoard.Clear(ownerBoard.activePiece);
-        //     int clearedCount = 0;
-        //     List<Vector3Int> clearedPositions = new List<Vector3Int>();
-
-        //     // Clear 3x3 area
-        //     for (int x = -1; x <= 1; x++)
-        //     {
-        //         for (int y = -1; y <= 1; y++)
-        //         {
-        //             Vector3Int pos = center + new Vector3Int(x, y, 0);
-        //             if (ownerBoard.tilemap.HasTile(pos))
-        //             {
-        //                 ownerBoard.tilemap.SetTile(pos, null);
-        //                 clearedPositions.Add(pos);
-        //                 clearedCount++;
-        //             }
-        //         }
-        //     }
-
-        //     // Clear falling piece cells
-        //     foreach (Vector3Int cell in ownerBoard.activePiece.cells)
-        //     {
-        //         Vector3Int pos = cell + center;
-        //         if (ownerBoard.tilemap.HasTile(pos))
-        //         {
-        //             ownerBoard.tilemap.SetTile(pos, null);
-        //             clearedPositions.Add(pos);
-        //             clearedCount++;
-        //         }
-        //     }
-
-        //     Debug.Log($"💥 Bomb cleared {clearedCount} tiles at positions:");
-        //     foreach (var pos in clearedPositions)
-        //     {
-        //         Debug.Log($"  - {pos}");
-        //     }
-
-        //     // Try to place piece back safely
-        //     bool placed = false;
-        //     for (int yOffset = 0; yOffset < 5; yOffset++)
-        //     {
-        //         Vector3Int newPos = new Vector3Int(center.x, center.y + yOffset, center.z);
-        //         if (ownerBoard.IsValidPosition(ownerBoard.activePiece, newPos))
-        //         {
-        //             ownerBoard.activePiece.position = newPos;
-        //             ownerBoard.Set(ownerBoard.activePiece);
-        //             placed = true;
-        //             Debug.Log($"✅ Active piece repositioned to {newPos}");
-        //             break;
-        //         }
-        //     }
-
-        //     if (!placed)
-        //     {
-        //         Debug.Log("🔄 Spawning new piece after bomb (couldn't reposition)");
-        //         ownerBoard.SpawnPiece();
-        //     }
-        // }
-        // else
-        // {
-        //     Debug.LogWarning("⚠️ No active piece to center bomb on!");
-        // }
 
         if (ownerBoard.activePiece != null)
         {
@@ -939,19 +895,6 @@ public void UsePowerUp(PowerUpType type, int targetColumn = -1, int targetRow = 
         Debug.Log($"🔄 Moved {movedTiles} tiles down after line clear");
     }
 
-    // private void PlaySound(AudioClip clip)
-    // {
-    //     if (audioSource != null && clip != null)
-    //     {
-    //         audioSource.PlayOneShot(clip);
-    //         // Debug.Log($"🔊 Playing sound: {clip.name}");
-    //     }
-    //     else
-    //     {
-    //         // Debug.Log($"🔇 Cannot play sound: AudioSource={audioSource != null}, Clip={clip != null}");
-    //     }
-    // }
-
     public int GetPowerUpCount()
     {
         return powerUpInventory.Values.Sum();
@@ -1105,7 +1048,6 @@ public void UsePowerUp(PowerUpType type, int targetColumn = -1, int targetRow = 
         Debug.Log($"🃏 Wildcard placed {placed}/9 tiles at {centerPosition}");
     }
 }
-
 
 public class PowerupKeyMapping
 {
