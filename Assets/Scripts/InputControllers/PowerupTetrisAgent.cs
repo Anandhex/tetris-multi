@@ -160,9 +160,11 @@ public class PowerupTetrisAgent : MonoBehaviour
     /// <summary>
     /// Main method called by TetrisSentisAgent - runs full CNN prediction pipeline
     /// </summary>
-    public WildblockActionResult GetPowerupDecisionOnly(Board board, PowerUp[] availablePowerUps)
+    public WildblockActionResult GetPowerupDecisionOnly(Board board, Dictionary<PowerUpType, int> powerUpInventory)
     {
-            Debug.Log("powerupAgent getPOwerupDecisionOnly");
+        Debug.Log("PowerupAgent: GetPowerupDecisionOnly with inventory");
+        LogAvailableInventory(powerUpInventory);
+        
         if (!IsReadyForInference())
         {
             return new WildblockActionResult { actionType = 0, actionName = "none", confidence = 1.0f };
@@ -170,8 +172,8 @@ public class PowerupTetrisAgent : MonoBehaviour
         
         try
         {
-            // Step 1: Prepare 8-channel input
-            float[] inputArray = GetDualBoardStateForCNN(board, availablePowerUps);
+            // Step 1: Prepare 8-channel input using inventory
+            float[] inputArray = GetDualBoardStateForCNN(board, powerUpInventory);
 
             if (inputArray.Length != 1600)
             {
@@ -197,8 +199,8 @@ public class PowerupTetrisAgent : MonoBehaviour
                 return new WildblockActionResult { actionType = 0, actionName = "none", confidence = 1.0f };
             }
 
-            // Step 4: Process output to make decision
-            var actionResult = ProcessWildblockCNNOutput(output, board, availablePowerUps);
+            // Step 4: Process output to make decision using inventory
+            var actionResult = ProcessWildblockCNNOutput(output, board, powerUpInventory);
             
             if (enableDetailedLogging)
             {
@@ -218,20 +220,51 @@ public class PowerupTetrisAgent : MonoBehaviour
         }
     }
 
+    private void LogAvailablePowerups(PowerUp[] availablePowerUps)
+    {
+        if (availablePowerUps == null || availablePowerUps.Length == 0)
+        {
+            Debug.Log("PowerupAgent: No powerups available");
+            return;
+        }
+
+        // Count powerups by type
+        var counts = new Dictionary<PowerUpType, int>();
+        foreach (var powerup in availablePowerUps)
+        {
+            if (powerup != null)
+            {
+                counts[powerup.type] = counts.GetValueOrDefault(powerup.type, 0) + 1;
+            }
+        }
+
+        // Build simple log string
+        var available = new List<string>();
+        foreach (var kvp in counts)
+        {
+            if (kvp.Value > 0)
+            {
+                available.Add($"{kvp.Key}:{kvp.Value}");
+            }
+        }
+
+        Debug.Log($"PowerupAgent: Available powerups - {string.Join(", ", available)}");
+    }
+
     public void ExecutePowerupAction(WildblockActionResult actionResult, PowerUpManager powerUpManager, Board board)
     {
         ApplyWildblockAction(actionResult, powerUpManager, board);
     }
 
-    public bool HasAvailablePowerupsForDecision(PowerUp[] availablePowerUps, Board board)
+    public bool HasAvailablePowerupsForDecision(Dictionary<PowerUpType, int> powerUpInventory, Board board)
     {
-        if (availablePowerUps == null || availablePowerUps.Length == 0) return false;
+        if (powerUpInventory == null) return false;
 
-        bool hasBottomClear = HasPowerupType(availablePowerUps, PowerUpType.LineBlaster);
-        bool hasGravity = HasPowerupType(availablePowerUps, PowerUpType.Gravity);
-        bool hasBomb = HasPowerupType(availablePowerUps, PowerUpType.Bomb) && FindValidBombColumns(board).Length > 0;
-        bool hasWildblock = HasPowerupType(availablePowerUps, PowerUpType.WildCard) && 
-                           (board.opponentBoard != null && FindValidWildblockPositions(board.opponentBoard).Count > 0);
+        bool hasBottomClear = powerUpInventory.ContainsKey(PowerUpType.LineBlaster) && powerUpInventory[PowerUpType.LineBlaster] > 0;
+        bool hasGravity = powerUpInventory.ContainsKey(PowerUpType.Gravity) && powerUpInventory[PowerUpType.Gravity] > 0;
+        bool hasBomb = powerUpInventory.ContainsKey(PowerUpType.Bomb) && powerUpInventory[PowerUpType.Bomb] > 0 && FindValidBombColumns(board).Length > 0;
+        bool hasWildblock = powerUpInventory.ContainsKey(PowerUpType.WildCard) && powerUpInventory[PowerUpType.WildCard] > 0 &&
+                        (board.opponentBoard != null && FindValidWildblockPositions(board.opponentBoard).Count > 0);
 
         return hasBottomClear || hasGravity || hasBomb || hasWildblock;
     }
@@ -256,7 +289,7 @@ public class PowerupTetrisAgent : MonoBehaviour
     /// <summary>
     /// Prepare 8-channel input for dual-board CNN DQN model
     /// </summary>
-    private float[] GetDualBoardStateForCNN(Board board, PowerUp[] availablePowerUps)
+    private float[] GetDualBoardStateForCNN(Board board, Dictionary<PowerUpType, int> powerUpInventory)
     {
         float[] inputData = new float[1600]; // 8 * 20 * 10
         int index = 0;
@@ -264,11 +297,11 @@ public class PowerupTetrisAgent : MonoBehaviour
         var bounds = board.Bounds;
         var opponentBoard = board.opponentBoard;
         
-        // Get powerup availability directly from array
-        bool hasBottomClear = HasPowerupType(availablePowerUps, PowerUpType.LineBlaster);
-        bool hasGravity = HasPowerupType(availablePowerUps, PowerUpType.Gravity);
-        bool hasBomb = HasPowerupType(availablePowerUps, PowerUpType.Bomb);
-        bool hasWildblock = HasPowerupType(availablePowerUps, PowerUpType.WildCard);
+        // Get powerup availability directly from inventory
+        bool hasBottomClear = powerUpInventory.ContainsKey(PowerUpType.LineBlaster) && powerUpInventory[PowerUpType.LineBlaster] > 0;
+        bool hasGravity = powerUpInventory.ContainsKey(PowerUpType.Gravity) && powerUpInventory[PowerUpType.Gravity] > 0;
+        bool hasBomb = powerUpInventory.ContainsKey(PowerUpType.Bomb) && powerUpInventory[PowerUpType.Bomb] > 0;
+        bool hasWildblock = powerUpInventory.ContainsKey(PowerUpType.WildCard) && powerUpInventory[PowerUpType.WildCard] > 0;
 
         // Channel 0: Self board state (20x10 grid)
         for (int y = 0; y < 20; y++)
@@ -338,6 +371,27 @@ public class PowerupTetrisAgent : MonoBehaviour
 
         return inputData;
     }
+    
+    private void LogAvailableInventory(Dictionary<PowerUpType, int> powerUpInventory)
+    {
+        if (powerUpInventory == null || powerUpInventory.Count == 0)
+        {
+            Debug.Log("PowerupAgent: No powerup inventory available");
+            return;
+        }
+
+        var available = new List<string>();
+        foreach (var kvp in powerUpInventory)
+        {
+            if (kvp.Value > 0)
+            {
+                available.Add($"{kvp.Key}:{kvp.Value}");
+            }
+        }
+
+        Debug.Log($"PowerupAgent: Available inventory - {string.Join(", ", available)}");
+    }
+
 
     private float CalculateHeightAdvantage(Board selfBoard, Board opponentBoard)
     {
@@ -345,10 +399,10 @@ public class PowerupTetrisAgent : MonoBehaviour
 
         var selfHeights = GetColumnHeights(selfBoard);
         var oppHeights = GetColumnHeights(opponentBoard);
-        
+
         float avgSelfHeight = selfHeights.Average();
         float avgOppHeight = oppHeights.Average();
-        
+
         float advantage = (avgOppHeight - avgSelfHeight) / 20.0f;
         return (float)System.Math.Tanh(advantage);
     }
@@ -402,9 +456,10 @@ public class PowerupTetrisAgent : MonoBehaviour
     /// <summary>
     /// Core prediction logic - processes CNN output to make decision
     /// </summary>
-    private WildblockActionResult ProcessWildblockCNNOutput(float[] output, Board board, PowerUp[] availablePowerUps)
+    private WildblockActionResult ProcessWildblockCNNOutput(float[] output, Board board, Dictionary<PowerUpType, int> powerUpInventory)
     {
-        Debug.Log("Powerupagent proces cnn");
+        Debug.Log("PowerupAgent: Processing CNN output with inventory");
+        
         // Split output into components
         float[] actionQ = new float[5];
         float[] bombColumnQ = new float[10];
@@ -414,8 +469,8 @@ public class PowerupTetrisAgent : MonoBehaviour
         Array.Copy(output, 5, bombColumnQ, 0, 10);
         Array.Copy(output, 15, wildblockColumnQ, 0, 8);
 
-        // Mask invalid actions
-        MaskInvalidWildblockActions(actionQ, availablePowerUps, board);
+        // Mask invalid actions using inventory
+        MaskInvalidWildblockActions(actionQ, powerUpInventory, board);
 
         // Select best action
         int bestAction = ArgMax(actionQ);
@@ -464,18 +519,18 @@ public class PowerupTetrisAgent : MonoBehaviour
         return result;
     }
 
-    private void MaskInvalidWildblockActions(float[] actionQ, PowerUp[] availablePowerUps, Board board)
+    private void MaskInvalidWildblockActions(float[] actionQ, Dictionary<PowerUpType, int> powerUpInventory, Board board)
     {
-        if (!HasPowerupType(availablePowerUps, PowerUpType.LineBlaster))
+        if (!powerUpInventory.ContainsKey(PowerUpType.LineBlaster) || powerUpInventory[PowerUpType.LineBlaster] <= 0)
             actionQ[1] = float.NegativeInfinity;
         
-        if (!HasPowerupType(availablePowerUps, PowerUpType.Gravity))
+        if (!powerUpInventory.ContainsKey(PowerUpType.Gravity) || powerUpInventory[PowerUpType.Gravity] <= 0)
             actionQ[2] = float.NegativeInfinity;
         
-        if (!HasPowerupType(availablePowerUps, PowerUpType.Bomb) || FindValidBombColumns(board).Length == 0)
+        if (!powerUpInventory.ContainsKey(PowerUpType.Bomb) || powerUpInventory[PowerUpType.Bomb] <= 0 || FindValidBombColumns(board).Length == 0)
             actionQ[3] = float.NegativeInfinity;
         
-        if (!HasPowerupType(availablePowerUps, PowerUpType.WildCard) || 
+        if (!powerUpInventory.ContainsKey(PowerUpType.WildCard) || powerUpInventory[PowerUpType.WildCard] <= 0 ||
             (board.opponentBoard != null && FindValidWildblockPositions(board.opponentBoard).Count == 0))
             actionQ[4] = float.NegativeInfinity;
     }
