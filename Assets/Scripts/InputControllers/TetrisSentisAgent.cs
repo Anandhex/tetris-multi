@@ -28,18 +28,13 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
 
     // Core Sentis components
     private Model runtimeModel;       // For block placement decisions
-    private Model powerupModel;       // For powerup decisions
     private Worker blockWorker;       // Worker for block placement model
-    private Worker powerupWorker;     // Worker for powerup model
 
     // Tetris game references
     private Board board;
     private Piece currentPiece;
-    private float lastStateTime = 0f;
-    private float stateUpdateInterval = 0.1f;
 
     // Statistics tracking
-    private Dictionary<string, int> actionHistory = new Dictionary<string, int>();
     private int powerupChecksCount = 0;
     private int powerupActionsCount = 0;
     private int blockPlacementsCount = 0;
@@ -157,7 +152,7 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
         blockWorker?.Dispose();
         // powerupWorker?.Dispose();
         blockWorker = null;
-        powerupWorker = null;
+        // powerupWorker = null;
         runtimeModel = null;
         // powerupModel = null;
     }
@@ -169,7 +164,6 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
         {
             board.inputController = this;
         }
-        lastStateTime = Time.time;
     }
 
     public void SetCurrentPiece(Piece piece)
@@ -215,14 +209,14 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
 
         // Step 1: Check for powerup availability and make powerup decision
         bool powerupActionTaken = false;
-        
+
         // Enhanced debugging for powerup availability check
         bool powerupsAvailable = HasAvailablePowerups();
-        
+
         if (enablePowerupDecisions && powerupAgent != null && powerupsAvailable)
         {
             powerupChecksCount++;
-            
+
             if (enableDetailedLogging)
             {
                 Debug.Log("TetrisSentisAgent: Powerups available, consulting powerup agent");
@@ -230,12 +224,12 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
 
             // Get powerup decision
             var powerupDecision = GetPowerupDecision();
-            
+
             if (powerupDecision.actionType != 0) // Not "none"
             {
                 powerupActionTaken = true;
                 powerupActionsCount++;
-                
+
                 if (enableDetailedLogging)
                 {
                     Debug.Log($"TetrisSentisAgent: Powerup action chosen: {powerupDecision.actionName}");
@@ -243,20 +237,26 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
 
                 // Wait a frame for powerup to execute
                 yield return null;
-                
+
                 // After powerup execution, check if we should continue with block placement
                 // Some powerups (like gravity) might change the board state significantly
-                if (ShouldContinueAfterPowerup(powerupDecision.actionType))
+                // if (ShouldContinueAfterPowerup(powerupDecision.actionType))
+                // {
+                //     // Re-evaluate the situation after powerup
+                //     yield return new WaitForSeconds(0.1f);
+
+                //     // Recursive call to re-evaluate (could lead to another powerup or block placement)
+                //     if (currentPiece != null && IsReadyForInference())
+                //     {
+                //         StartCoroutine(MakeIntegratedDecision());
+                //     }
+                //     yield break;
+                // }
+                // After powerup execution, proceed to block placement
+                // The board state might have changed, but we'll place the current piece anyway
+                if (enableDetailedLogging)
                 {
-                    // Re-evaluate the situation after powerup
-                    yield return new WaitForSeconds(0.1f);
-                    
-                    // Recursive call to re-evaluate (could lead to another powerup or block placement)
-                    if (currentPiece != null && IsReadyForInference())
-                    {
-                        StartCoroutine(MakeIntegratedDecision());
-                    }
-                    yield break;
+                    Debug.Log("TetrisSentisAgent: Powerup executed, now proceeding to block placement");
                 }
             }
             else
@@ -277,16 +277,23 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
         }
 
         // Step 2: If no powerup action was taken, proceed with block placement
-        if (!powerupActionTaken)
+        // if (!powerupActionTaken)
+        // {
+        //     if (enableDetailedLogging)
+        //     {
+        //         Debug.Log("TetrisSentisAgent: Proceeding with block placement decision");
+        //     }
+
+        //     blockPlacementsCount++;
+        //     RunBlockPlacementInference();
+        // }
+        // Step 2: Always proceed with block placement (whether powerup was used or not)
+        if (enableDetailedLogging)
         {
-            if (enableDetailedLogging)
-            {
-                Debug.Log("TetrisSentisAgent: Proceeding with block placement decision");
-            }
-            
-            blockPlacementsCount++;
-            RunBlockPlacementInference();
+            Debug.Log("TetrisSentisAgent: Proceeding with block placement decision");
         }
+        blockPlacementsCount++;
+        RunBlockPlacementInference();
     }
 
     /// <summary>
@@ -529,41 +536,41 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
     /// Determine if we should continue evaluating after a powerup action
     /// This handles different powerup types and their effects on the game state
     /// </summary>
-    private bool ShouldContinueAfterPowerup(int powerupType)
-    {
-        switch (powerupType)
-        {
-            case 1: // LineBlaster (bottom_clear)
-                // Board state changed significantly - bottom line was cleared
-                // AI should re-evaluate the new board state to see if more powerups are beneficial
-                Debug.Log("TetrisSentisAgent: LineBlaster used - re-evaluating due to board state change");
-                return true;
+    // private bool ShouldContinueAfterPowerup(int powerupType)
+    // {
+    //     switch (powerupType)
+    //     {
+    //         case 1: // LineBlaster (bottom_clear)
+    //             // Board state changed significantly - bottom line was cleared
+    //             // AI should re-evaluate the new board state to see if more powerups are beneficial
+    //             Debug.Log("TetrisSentisAgent: LineBlaster used - re-evaluating due to board state change");
+    //             return true;
                 
-            case 2: // Gravity
-                // Board state changed dramatically - all floating blocks dropped
-                // This can create new line clear opportunities or change strategic positioning
-                Debug.Log("TetrisSentisAgent: Gravity used - re-evaluating due to major board restructuring");
-                return true;
+    //         case 2: // Gravity
+    //             // Board state changed dramatically - all floating blocks dropped
+    //             // This can create new line clear opportunities or change strategic positioning
+    //             Debug.Log("TetrisSentisAgent: Gravity used - re-evaluating due to major board restructuring");
+    //             return true;
                 
-            case 3: // Bomb
-                // Bomb affects own board (clears 3x3 area around current piece)
-                // Board state changed, but less dramatically than LineBlaster/Gravity
-                // Re-evaluate to see if the cleared area creates new opportunities
-                Debug.Log("TetrisSentisAgent: Bomb used - re-evaluating due to 3x3 area clearance");
-                return true;
+    //         case 3: // Bomb
+    //             // Bomb affects own board (clears 3x3 area around current piece)
+    //             // Board state changed, but less dramatically than LineBlaster/Gravity
+    //             // Re-evaluate to see if the cleared area creates new opportunities
+    //             Debug.Log("TetrisSentisAgent: Bomb used - re-evaluating due to 3x3 area clearance");
+    //             return true;
                 
-            case 4: // WildCard/Wildblock
-                // Affects opponent board, not own board
-                // Own board state unchanged, continue with current piece placement
-                Debug.Log("TetrisSentisAgent: WildCard used - continuing with block placement (opponent affected)");
-                return true;
+    //         case 4: // WildCard/Wildblock
+    //             // Affects opponent board, not own board
+    //             // Own board state unchanged, continue with current piece placement
+    //             Debug.Log("TetrisSentisAgent: WildCard used - continuing with block placement (opponent affected)");
+    //             return true;
                 
-            default:
-                // Unknown powerup type or 'none' - no re-evaluation needed
-                Debug.Log($"TetrisSentisAgent: Unknown powerup type {powerupType} - no re-evaluation");
-                return false;
-        }
-    }
+    //         default:
+    //             // Unknown powerup type or 'none' - no re-evaluation needed
+    //             Debug.Log($"TetrisSentisAgent: Unknown powerup type {powerupType} - no re-evaluation");
+    //             return false;
+    //     }
+    // }
 
     /// <summary>
     /// Original block placement inference logic (now uses blockWorker)
