@@ -786,42 +786,41 @@ public class PowerupTetrisAgent : MonoBehaviour
             case 0:
                 UpdateActionHistory("none");
                 break;
-                
+
             case 1:
-                // Use the new method instead of direct execution
-                powerUpManager.TryUsePowerUp(PowerUpType.LineBlaster);
+                // Use the unified UsePowerUp method
+                powerUpManager.UsePowerUp(PowerUpType.LineBlaster);
                 UpdateActionHistory("bottom_clear");
                 break;
-                
+
             case 2:
-                // Use the new method instead of direct execution
-                powerUpManager.TryUsePowerUp(PowerUpType.Gravity);
+                // Use the unified UsePowerUp method
+                powerUpManager.UsePowerUp(PowerUpType.Gravity);
                 UpdateActionHistory("gravity");
                 break;
-                
+
             case 3:
                 if (actionResult.targetColumn != -1)
                 {
-                    // Use your new column-targeting method!
-                    powerUpManager.TryUsePowerUp(PowerUpType.Bomb, actionResult.targetColumn);
+                    // Use unified method with column targeting
+                    powerUpManager.UsePowerUp(PowerUpType.Bomb, actionResult.targetColumn);
                     UpdateActionHistory("bomb");
                     UpdateBombColumnHistory(actionResult.targetColumn);
                 }
                 break;
-                
+
             case 4:
                 if (actionResult.targetColumn != -1 && board.opponentBoard != null)
                 {
-                    // Use your new column-targeting method!
-                    powerUpManager.TryUsePowerUp(PowerUpType.WildCard, actionResult.targetColumn);
+                    // Use unified method with column targeting
+                    powerUpManager.UsePowerUp(PowerUpType.WildCard, actionResult.targetColumn);
                     UpdateActionHistory("wildblock");
                     UpdateWildblockColumnHistory(actionResult.targetColumn);
                 }
                 break;
         }
-    }
-
-    private void ApplyWildblockToOpponent(Board opponentBoard, int centerRow, int centerCol)
+    }  
+  private void ApplyWildblockToOpponent(Board opponentBoard, int centerRow, int centerCol)
     {
         var bounds = opponentBoard.Bounds;
         

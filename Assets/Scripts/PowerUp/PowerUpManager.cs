@@ -149,18 +149,22 @@ public class PowerUpManager : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.Semicolon)) // ; key for bomb
         {
             Debug.Log("🧪 TESTING: Bomb at column 0");
-            UsePowerUpAtColumn(PowerUpType.Bomb, 0); // Center column
+            UsePowerUp(PowerUpType.Bomb, 0); // ← CHANGED: Use merged function with column parameter
         }
 
         if (Input.GetKeyDown(KeyCode.Quote)) // ' key for wildcard
         {
             Debug.Log($"🧪 TESTING: Wildcard at column {wildcardTestColumn}");
-            Debug.Log($"🔍 Opponent board bounds: {opponentBoard.Bounds}");
-            UsePowerUpAtColumn(PowerUpType.WildCard, wildcardTestColumn);
+            if (opponentBoard != null)
+            {
+                Debug.Log($"🔍 Opponent board bounds: {opponentBoard.Bounds}");
+            }
+            UsePowerUp(PowerUpType.WildCard, wildcardTestColumn); // ← CHANGED: Use merged function with column parameter
             
             wildcardTestColumn++;
             if (wildcardTestColumn > 3) wildcardTestColumn = -4;
         }
+
         // Clean up old line clear times (outside the time window)
         CleanupOldLineTimes();
 
@@ -181,7 +185,6 @@ public class PowerUpManager : MonoBehaviour
             lastLinesCount = linesClearedTimes.Count;
         }
     }
-
     private void LogCurrentStatus()
     {
         // float timeElapsed = Time.time - gameStartTime;
@@ -299,49 +302,81 @@ public class PowerUpManager : MonoBehaviour
         return bar;
     }
 
-    public void UsePowerUp(PowerUpType type, int targetColumn = -1, int targetRow = -1)
+
+public void UsePowerUp(PowerUpType type, int targetColumn = -1, int targetRow = -1)
+{
+    Debug.Log($"🎯Powerup === ATTEMPTING TO USE {type.ToString().ToUpper()} ===");
+    
+    // Add column info to log if specified
+    if (targetColumn != -1)
     {
-        Debug.Log($"🎯Powerup === ATTEMPTING TO USE {type.ToString().ToUpper()} ===");
-
-        if (powerUpInventory.ContainsKey(type) && powerUpInventory[type] > 0)
-        {
-            int beforeCount = powerUpInventory[type];
-            powerUpInventory[type]--;
-            int afterCount = powerUpInventory[type];
-
-            Debug.Log($"✅ {type} used successfully! Count: {beforeCount} → {afterCount}");
-
-            SafeExecutePowerUp(type);
-            UpdatePowerUpUI();
-            // PlaySound(powerUpUsedSound);
-
-            // Log updated inventory
-            // Debug.Log($"📦 New inventory: L={powerUpInventory[PowerUpType.LineBlaster]}, G={powerUpInventory[PowerUpType.Gravity]}, B={powerUpInventory[PowerUpType.Bomb]}");
-        }
-        else
-        {
-            int currentCount = powerUpInventory.ContainsKey(type) ? powerUpInventory[type] : 0;
-            Debug.Log($"❌ Cannot use {type}! Current count: {currentCount}");
-            // Debug.Log($"📦 Available: L={powerUpInventory[PowerUpType.LineBlaster]}, G={powerUpInventory[PowerUpType.Gravity]}, B={powerUpInventory[PowerUpType.Bomb]}");
-        }
-
-        Debug.Log("=== END POWER-UP USAGE ===");
+        Debug.Log($"🎯 Target Column: {targetColumn}");
     }
 
-    private void SafeExecutePowerUp(PowerUpType type)
+    if (powerUpInventory.ContainsKey(type) && powerUpInventory[type] > 0)
+    {
+        int beforeCount = powerUpInventory[type];
+        powerUpInventory[type]--;
+        int afterCount = powerUpInventory[type];
+
+        Debug.Log($"✅ {type} used successfully! Count: {beforeCount} → {afterCount}");
+
+        SafeExecutePowerUp(type, targetColumn);
+        UpdatePowerUpUI();
+        // PlaySound(powerUpUsedSound);
+
+        // Log updated inventory
+        string inventoryLog = $"📦 New inventory: L={powerUpInventory[PowerUpType.LineBlaster]}, G={powerUpInventory[PowerUpType.Gravity]}, B={powerUpInventory[PowerUpType.Bomb]}";
+        if (opponentBoard != null && powerUpInventory.ContainsKey(PowerUpType.WildCard))
+        {
+            inventoryLog += $", W={powerUpInventory[PowerUpType.WildCard]}";
+        }
+        Debug.Log(inventoryLog);
+    }
+    else
+    {
+        int currentCount = powerUpInventory.ContainsKey(type) ? powerUpInventory[type] : 0;
+        Debug.Log($"❌ Cannot use {type}! Current count: {currentCount}");
+        // Debug.Log($"📦 Available: L={powerUpInventory[PowerUpType.LineBlaster]}, G={powerUpInventory[PowerUpType.Gravity]}, B={powerUpInventory[PowerUpType.Bomb]}");
+    }
+
+    Debug.Log("=== END POWER-UP USAGE ===");
+}
+
+    private void SafeExecutePowerUp(PowerUpType type, int targetColumn = -1)
     {
         Debug.Log($"🔧 Executing {type} power-up...");
 
-        // For bomb, we need special handling
+        // Add column info to log if specified
+        if (targetColumn != -1)
+        {
+            Debug.Log($"🔧 Target Column: {targetColumn}");
+        }
+
+        // For bomb and wildcard, use column-specific execution if column is provided
         if (type == PowerUpType.Bomb)
         {
-            ExecuteBombImproved();
+            if (targetColumn != -1)
+            {
+                ExecuteBombAtColumn(targetColumn);
+            }
+            else
+            {
+                ExecuteBombImproved(); // Uses active piece position
+            }
             return;
         }
 
         if (type == PowerUpType.WildCard && this.opponentBoard != null)
         {
-            ReplaceOpponentPieceWithWildcard();
+            if (targetColumn != -1)
+            {
+                ExecuteWildCardAtColumn(targetColumn);
+            }
+            else
+            {
+                ReplaceOpponentPieceWithWildcard(); // Uses active piece
+            }
             return;
         }
 
@@ -353,7 +388,7 @@ public class PowerUpManager : MonoBehaviour
             ownerBoard.Clear(ownerBoard.activePiece);
         }
 
-        // Execute the power-up
+        // Execute the power-up (LineBlaster and Gravity don't need column targeting)
         switch (type)
         {
             case PowerUpType.LineBlaster:
@@ -387,7 +422,6 @@ public class PowerUpManager : MonoBehaviour
             }
         }
     }
-
     public void OnLinesCleared(int lineCount)
     {
         // Debug.Log($"🎯 === LINES CLEARED EVENT: {lineCount} LINES ===");
@@ -934,77 +968,7 @@ public class PowerUpManager : MonoBehaviour
         return GetPowerUpCount(type) > 0;
     }
 
-    public void UsePowerUpAtColumn(PowerUpType type, int targetColumn)
-    {
-        Debug.Log($"🎯 === ML ATTEMPTING TO USE {type.ToString().ToUpper()} AT COLUMN {targetColumn} ===");
-
-        if (powerUpInventory.ContainsKey(type) && powerUpInventory[type] > 0)
-        {
-            int beforeCount = powerUpInventory[type];
-            powerUpInventory[type]--;
-            int afterCount = powerUpInventory[type];
-
-            Debug.Log($"✅ {type} used successfully! Count: {beforeCount} → {afterCount}");
-
-            SafeExecutePowerUpAtColumn(type, targetColumn);
-            UpdatePowerUpUI();
-
-            Debug.Log($"📦 New inventory: L={powerUpInventory[PowerUpType.LineBlaster]}, G={powerUpInventory[PowerUpType.Gravity]}, B={powerUpInventory[PowerUpType.Bomb]}");
-        }
-        else
-        {
-            int currentCount = powerUpInventory.ContainsKey(type) ? powerUpInventory[type] : 0;
-            Debug.Log($"❌ Cannot use {type}! Current count: {currentCount}");
-        }
-
-        Debug.Log("=== END ML POWER-UP USAGE ===");
-    }
-    public bool TryUsePowerUp(PowerUpType type, int column = -1)
-    {
-        if (!powerUpInventory.ContainsKey(type) || powerUpInventory[type] <= 0)
-        {
-            Debug.Log($"❌ ML Agent: No {type} available");
-            return false;
-        }
-
-        if (column != -1)
-        {
-            // Column-targeted power-up
-            UsePowerUpAtColumn(type, column);
-        }
-        else
-        {
-            // Regular power-up
-            UsePowerUp(type);
-        }
-        
-        return true;
-    }
-    private void SafeExecutePowerUpAtColumn(PowerUpType type, int targetColumn)
-    {
-        Debug.Log($"🔧 Executing {type} power-up at column {targetColumn}...");
-
-        switch (type)
-        {
-            case PowerUpType.Bomb:
-                ExecuteBombAtColumn(targetColumn);
-                break;
-            case PowerUpType.WildCard:
-                ExecuteWildCardAtColumn(targetColumn);
-                break;
-            case PowerUpType.LineBlaster:
-                ExecuteLineBlaster(); // Column doesn't matter for LineBlaster
-                break;
-            case PowerUpType.Gravity:
-                ExecuteGravity(); // Column doesn't matter for Gravity
-                break;
-            default:
-                Debug.LogWarning($"⚠️ Column targeting not implemented for {type}");
-                break;
-        }
-    }
-
-    public void ExecuteBombAtColumn(int targetColumn)
+   public void ExecuteBombAtColumn(int targetColumn)
     {
         Debug.Log($"💣 === EXECUTING BOMB AT COLUMN {targetColumn} ===");
 
