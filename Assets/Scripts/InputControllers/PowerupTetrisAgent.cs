@@ -2,8 +2,6 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 using Unity.Sentis;
-using System.Text;
-using System.Collections;
 using System;
 
 /// <summary>
@@ -24,6 +22,9 @@ public class PowerupTetrisAgent : MonoBehaviour
     [Header("Sentis Model Asset")]
     [SerializeField] private ModelAsset powerupModelAsset; // Add this new field
     [SerializeField] private BackendType backendType = BackendType.GPUCompute;
+
+    [Header("Confidence Threshold")]
+    [SerializeField] private float powerupConfidenceThreshold = 0.7f; 
 
     // Core Sentis components
     private Model runtimeModel;
@@ -304,41 +305,41 @@ public class PowerupTetrisAgent : MonoBehaviour
         }
     }
 
-    private void LogAvailablePowerups(PowerUp[] availablePowerUps)
-    {
-        if (availablePowerUps == null || availablePowerUps.Length == 0)
-        {
-            Debug.Log("PowerupAgent: No powerups available");
-            return;
-        }
+    // private void LogAvailablePowerups(PowerUp[] availablePowerUps)
+    // {
+    //     if (availablePowerUps == null || availablePowerUps.Length == 0)
+    //     {
+    //         Debug.Log("PowerupAgent: No powerups available");
+    //         return;
+    //     }
 
-        // Count powerups by type
-        var counts = new Dictionary<PowerUpType, int>();
-        foreach (var powerup in availablePowerUps)
-        {
-            if (powerup != null)
-            {
-                counts[powerup.type] = counts.GetValueOrDefault(powerup.type, 0) + 1;
-            }
-        }
+    //     // Count powerups by type
+    //     var counts = new Dictionary<PowerUpType, int>();
+    //     foreach (var powerup in availablePowerUps)
+    //     {
+    //         if (powerup != null)
+    //         {
+    //             counts[powerup.type] = counts.GetValueOrDefault(powerup.type, 0) + 1;
+    //         }
+    //     }
 
-        // Build simple log string
-        var available = new List<string>();
-        foreach (var kvp in counts)
-        {
-            if (kvp.Value > 0)
-            {
-                available.Add($"{kvp.Key}:{kvp.Value}");
-            }
-        }
+    //     // Build simple log string
+    //     var available = new List<string>();
+    //     foreach (var kvp in counts)
+    //     {
+    //         if (kvp.Value > 0)
+    //         {
+    //             available.Add($"{kvp.Key}:{kvp.Value}");
+    //         }
+    //     }
 
-        Debug.Log($"PowerupAgent: Available powerups - {string.Join(", ", available)}");
-    }
+    //     Debug.Log($"PowerupAgent: Available powerups - {string.Join(", ", available)}");
+    // }
 
-    public void ExecutePowerupAction(WildblockActionResult actionResult, PowerUpManager powerUpManager, Board board)
-    {
-        ApplyWildblockAction(actionResult, powerUpManager, board);
-    }
+    // public void ExecutePowerupAction(WildblockActionResult actionResult, PowerUpManager powerUpManager, Board board)
+    // {
+    //     ApplyWildblockAction(actionResult, powerUpManager, board);
+    // }
 
     public bool HasAvailablePowerupsForDecision(Dictionary<PowerUpType, int> powerUpInventory, Board board)
     {
@@ -556,15 +557,35 @@ public class PowerupTetrisAgent : MonoBehaviour
         // Mask invalid actions using inventory
         MaskInvalidWildblockActions(actionQ, powerUpInventory, board);
 
-        // Select best action
+        // Get probabilities for all actions
+        float[] probabilities = Softmax(actionQ);
+        
+        // Find best action and its confidence
         int bestAction = ArgMax(actionQ);
+        float bestConfidence = probabilities[bestAction];
+        
         string[] actionNames = {"none", "bottom_clear", "gravity", "bomb", "wildblock"};
+        
+        // Log initial decision
+        Debug.Log($"PowerupAgent: Initial best action: {actionNames[bestAction]} (confidence: {bestConfidence:F2})");
+        
+        // Apply confidence threshold - only use powerups if confidence is high enough
+        if (bestAction > 0 && bestConfidence < powerupConfidenceThreshold)
+        {
+            Debug.Log($"PowerupAgent: {actionNames[bestAction]} confidence {bestConfidence:F2} below threshold {powerupConfidenceThreshold:F2}, choosing 'none'");
+            bestAction = 0; // Choose "none"
+            bestConfidence = probabilities[0];
+        }
+        else if (bestAction > 0)
+        {
+            Debug.Log($"PowerupAgent: {actionNames[bestAction]} confidence {bestConfidence:F2} above threshold {powerupConfidenceThreshold:F2}, executing powerup");
+        }
         
         var result = new WildblockActionResult
         {
             actionType = bestAction,
             actionName = actionNames[bestAction],
-            confidence = Softmax(actionQ)[bestAction],
+            confidence = bestConfidence,
             targetColumn = -1,
             targetRow = -1,
             expectedDamage = 0.0f
@@ -779,88 +800,88 @@ public class PowerupTetrisAgent : MonoBehaviour
         return result;
     }
 
-    private void ApplyWildblockAction(WildblockActionResult actionResult, PowerUpManager powerUpManager, Board board)
-    {
-        switch (actionResult.actionType)
-        {
-            case 0:
-                UpdateActionHistory("none");
-                break;
+//     private void ApplyWildblockAction(WildblockActionResult actionResult, PowerUpManager powerUpManager, Board board)
+//     {
+//         switch (actionResult.actionType)
+//         {
+//             case 0:
+//                 UpdateActionHistory("none");
+//                 break;
 
-            case 1:
-                // Use the unified UsePowerUp method
-                powerUpManager.UsePowerUp(PowerUpType.LineBlaster);
-                UpdateActionHistory("bottom_clear");
-                break;
+//             case 1:
+//                 // Use the unified UsePowerUp method
+//                 powerUpManager.UsePowerUp(PowerUpType.LineBlaster);
+//                 UpdateActionHistory("bottom_clear");
+//                 break;
 
-            case 2:
-                // Use the unified UsePowerUp method
-                powerUpManager.UsePowerUp(PowerUpType.Gravity);
-                UpdateActionHistory("gravity");
-                break;
+//             case 2:
+//                 // Use the unified UsePowerUp method
+//                 powerUpManager.UsePowerUp(PowerUpType.Gravity);
+//                 UpdateActionHistory("gravity");
+//                 break;
 
-            case 3:
-                if (actionResult.targetColumn != -1)
-                {
-                    // Use unified method with column targeting
-                    powerUpManager.UsePowerUp(PowerUpType.Bomb, actionResult.targetColumn);
-                    UpdateActionHistory("bomb");
-                    UpdateBombColumnHistory(actionResult.targetColumn);
-                }
-                break;
+//             case 3:
+//                 if (actionResult.targetColumn != -1)
+//                 {
+//                     // Use unified method with column targeting
+//                     powerUpManager.UsePowerUp(PowerUpType.Bomb, actionResult.targetColumn);
+//                     UpdateActionHistory("bomb");
+//                     UpdateBombColumnHistory(actionResult.targetColumn);
+//                 }
+//                 break;
 
-            case 4:
-                if (actionResult.targetColumn != -1 && board.opponentBoard != null)
-                {
-                    // Use unified method with column targeting
-                    powerUpManager.UsePowerUp(PowerUpType.WildCard, actionResult.targetColumn);
-                    UpdateActionHistory("wildblock");
-                    UpdateWildblockColumnHistory(actionResult.targetColumn);
-                }
-                break;
-        }
-    }  
-  private void ApplyWildblockToOpponent(Board opponentBoard, int centerRow, int centerCol)
-    {
-        var bounds = opponentBoard.Bounds;
+//             case 4:
+//                 if (actionResult.targetColumn != -1 && board.opponentBoard != null)
+//                 {
+//                     // Use unified method with column targeting
+//                     powerUpManager.UsePowerUp(PowerUpType.WildCard, actionResult.targetColumn);
+//                     UpdateActionHistory("wildblock");
+//                     UpdateWildblockColumnHistory(actionResult.targetColumn);
+//                 }
+//                 break;
+//         }
+//     }  
+//   private void ApplyWildblockToOpponent(Board opponentBoard, int centerRow, int centerCol)
+//     {
+//         var bounds = opponentBoard.Bounds;
         
-        for (int dr = -1; dr <= 1; dr++)
-        {
-            for (int dc = -1; dc <= 1; dc++)
-            {
-                int r = centerRow + dr;
-                int c = centerCol + dc;
+//         for (int dr = -1; dr <= 1; dr++)
+//         {
+//             for (int dc = -1; dc <= 1; dc++)
+//             {
+//                 int r = centerRow + dr;
+//                 int c = centerCol + dc;
                 
-                if (r >= 0 && r < bounds.height && c >= 0 && c < bounds.width)
-                {
-                    Vector3Int pos = new Vector3Int(bounds.xMin + c, bounds.yMin + r, 0);
-                    // opponentBoard.SetTile(pos, someBlockTile);
-                }
-            }
-        }
-    }
+//                 if (r >= 0 && r < bounds.height && c >= 0 && c < bounds.width)
+//                 {
+//                     Vector3Int pos = new Vector3Int(bounds.xMin + c, bounds.yMin + r, 0);
+//                     // opponentBoard.SetTile(pos, someBlockTile);
+//                 }
+//             }
+//         }
+//     }
 
-    private void UpdateActionHistory(string actionName)
-    {
-        if (actionHistory.ContainsKey(actionName))
-        {
-            actionHistory[actionName]++;
-        }
-    }
+    // private void UpdateActionHistory(string actionName)
+    // {
+    //     if (actionHistory.ContainsKey(actionName))
+    //     {
+    //         actionHistory[actionName]++;
+    //     }
+    // }
 
-    private void UpdateBombColumnHistory(int column)
-    {
-        if (bombColumnHistory.ContainsKey(column))
-        {
-            bombColumnHistory[column]++;
-        }
-    }
+    // private void UpdateBombColumnHistory(int column)
+    // {
+    //     if (bombColumnHistory.ContainsKey(column))
+    //     {
+    //         bombColumnHistory[column]++;
+    //     }
+    // }
 
-    private void UpdateWildblockColumnHistory(int column)
-    {
-        if (wildblockColumnHistory.ContainsKey(column))
-        {
-            wildblockColumnHistory[column]++;
-        }
-    }
+    // private void UpdateWildblockColumnHistory(int column)
+    // {
+    //     if (wildblockColumnHistory.ContainsKey(column))
+    //     {
+    //         wildblockColumnHistory[column]++;
+    //     }
+    // }
 }
