@@ -73,6 +73,7 @@ public class Board : MonoBehaviour
         get
         {
             int height = boardSize.y; // Default height
+            height = 20;
 
             // Check for both types of ML agents
             TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
@@ -155,12 +156,12 @@ public class Board : MonoBehaviour
             sentisAgent.SetBoard(this);
             SpawnPiece();
         }
-        // ClearBoard();
+        ClearBoard();
 
-        // // Apply initial curriculum
-        // // ApplyCurriculumBoardPreset();
+        // Apply initial curriculum
+        // ApplyCurriculumBoardPreset();
 
-        // // Only spawn a piece if all components are properly initialized
+        // Only spawn a piece if all components are properly initialized
         if (activePiece != null && tetrominoes != null && tetrominoes.Length > 0 && (inputController is SinglePlayerInputController || inputController is PlayerInputController || inputController is Player1InputController || inputController is Player2InputController))
         {
             SpawnPiece();
@@ -203,7 +204,7 @@ public class Board : MonoBehaviour
     {
         int allowedTypes = 7; // Default to all pieces
 
-        // Check for both types of ML agents
+        //Check for both types of ML agents
         TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
         SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
         TetrisSentisAgent sentisAgent = this.inputController as TetrisSentisAgent;
@@ -440,7 +441,9 @@ public class Board : MonoBehaviour
 
             if (this.tilemap.HasTile(tilePosition))
             {
-                Debug.LogError($"Collision at cell #{i} → {tilePosition}. Dumping map:");
+                //Debug.LogError($"Collision at cell #{i} → {tilePosition}. Dumping map:");
+                Debug.LogWarning($"Collision at cell #{i} → {tilePosition}. Continuing...");
+                return false; // Add this line to prevent the crash
                 // DumpTilemap(bounds);
                 SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
                 if (socketAgent != null)
