@@ -315,12 +315,23 @@ public class Board : MonoBehaviour
 
     public void GameOver()
     {
+        string playerTag = this.playerTag ?? "Unknown";
+        Debug.Log($"🎮 GameOver triggered for player: {playerTag}");
+
+        // Prevent multiple game over triggers
+        if (gameOverTriggered)
+        {
+            Debug.Log($"⚠️ GameOver already triggered for {playerTag}, ignoring duplicate call");
+            return;
+        }
+        gameOverTriggered = true;
 
         // Notify ML agent if this is an ML agent-controlled board
         SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
 
         if (isMLTraining)
         {
+            Debug.Log($"🔄 ML Training mode - restarting game for {playerTag}");
             ClearBoard();
             this.playerScore = 0;
             this.gameStartTime = Time.time;
@@ -330,32 +341,34 @@ public class Board : MonoBehaviour
                 powerUpMgr.ClearAllPowerUps();
             }
             TetrisSentisAgent tAgent = this.inputController as TetrisSentisAgent;
-            tAgent.CleanupSentis();
-            tAgent.InitializeSentis();
+            if (tAgent != null)
+            {
+                tAgent.CleanupSentis();
+                tAgent.InitializeSentis();
+            }
+            gameOverTriggered = false; // Reset flag for restart
             SpawnPiece();
             return;
         }
-        // new: clear *first*, then notify and reset
+
+        // Handle Socket Agent
         if (socketAgent != null)
         {
-
-            // 1) immediately clear any existing tiles
-            // 2) let Python know the game is over on an empty board
+            Debug.Log($"🔌 Socket agent game over for {playerTag}");
             PowerUpManager powerUpMgr = GetComponent<PowerUpManager>();
             if (powerUpMgr != null)
             {
                 powerUpMgr.ClearAllPowerUps();
             }
             socketAgent.OnGameOver();
-
-            // 3) schedule the curriculum reset + spawn
             return;
         }
 
-
+        // Handle ML Agent
         TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
         if (mlAgent != null)
         {
+            Debug.Log($"🤖 ML agent game over for {playerTag}");
             mlAgent.OnGameOver();
             StartCoroutine(ResetGameForMLTraining());
             PowerUpManager powerUpMgr = GetComponent<PowerUpManager>();
@@ -366,12 +379,110 @@ public class Board : MonoBehaviour
             return;
         }
 
-        // Store the score for the game over screen
-        Data.PlayerScore = this.playerScore;
+        // ✅ FIXED: Handle Sentis Agent - END the game instead of continuing
+        TetrisSentisAgent sentisAgent = this.inputController as TetrisSentisAgent;
+        if (sentisAgent != null)
+        {
+            Debug.Log($"🧠 Sentis agent game over for {playerTag}");
+            
+            // Check if this is AI vs AI mode (both players are AI)
+            bool isAIvsAI = IsAIvsAIMode();
+            
+            if (isAIvsAI)
+            {
+                Debug.Log($"🤖⚔️🤖 AI vs AI mode detected - {playerTag} LOST!");
+                
+                // ✅ FIX: Stop the game and show final results
+                EndAIvsAIGame(playerTag);
+                return;
+            }
+            else
+            {
+                // Single AI vs Human - go to game over scene
+                Debug.Log($"👤 vs 🤖 Game over - going to game over scene");
+                Data.PlayerScore = this.playerScore;
+                SceneManager.LoadScene(3);
+                return;
+            }
+        }
 
-        // Load game over scene only if not in ML training
+        // Regular human player game over
+        Debug.Log($"👤 Human player game over for {playerTag}");
+        Data.PlayerScore = this.playerScore;
         SceneManager.LoadScene(3);
     }
+
+    // ✅ UPDATED: End the game instead of continuing
+    private void EndAIvsAIGame(string loserTag)
+    {
+        // Determine winner
+        string winnerTag = opponentBoard?.playerTag ?? "Opponent";
+        int winnerScore = opponentBoard?.playerScore ?? 0;
+        int loserScore = this.playerScore;
+        
+        Debug.Log($"🏆 ===== AI vs AI GAME FINISHED =====");
+        Debug.Log($"🏆 WINNER: {winnerTag} (Score: {winnerScore})");
+        Debug.Log($"💀 LOSER: {loserTag} (Score: {loserScore})");
+        Debug.Log($"====================================");
+        
+        // ✅ FIX: Set winner data and go to score scene
+        Data.PlayerScore = winnerScore;
+        Data.WinnerName = winnerTag; // You'll need to add this to Data.cs
+        Data.LoserName = loserTag;   // You'll need to add this to Data.cs
+        Data.LoserScore = loserScore; // You'll need to add this to Data.cs
+        
+        Debug.Log($"🎬 Redirecting to score scene...");
+        SceneManager.LoadScene(3); // Score scene
+    }
+
+    private void ShowFinalResults(string winner, string loser, int winnerScore, int loserScore)
+    {
+        // Create a simple UI display or just log the results
+        Debug.Log($"🎉 GAME OVER! {winner} WINS!");
+        Debug.Log($"📊 Final Scores: {winner}: {winnerScore}, {loser}: {loserScore}");
+        
+        // You can add UI text here to show on screen
+        // For example, if you have a results UI panel:
+        // resultsPanel.SetActive(true);
+        // winnerText.text = $"Winner: {winner}";
+        // scoresText.text = $"{winner}: {winnerScore}\n{loser}: {loserScore}";
+        
+        // Optionally freeze the game
+        Time.timeScale = 0f; // This pauses the game
+    }
+
+    // Keep the helper method
+    private bool IsAIvsAIMode()
+    {
+        // Check if both this board and opponent board have AI controllers
+        bool thisIsAI = (this.inputController is TetrisSentisAgent) ||
+                        (this.inputController is TetrisMLAgent) ||
+                        (this.inputController is SocketTetrisAgent);
+
+        bool opponentIsAI = false;
+        if (opponentBoard != null)
+        {
+            opponentIsAI = (opponentBoard.inputController is TetrisSentisAgent) ||
+                           (opponentBoard.inputController is TetrisMLAgent) ||
+                           (opponentBoard.inputController is SocketTetrisAgent);
+        }
+
+        Debug.Log($"🔍 AI vs AI check: This={thisIsAI}, Opponent={opponentIsAI}");
+        return thisIsAI && opponentIsAI;
+    }
+
+
+    private void ShowAIvsAIResults(string winner, string loser)
+    {
+        Debug.Log($"🎉 ===== AI vs AI MATCH RESULTS =====");
+        Debug.Log($"🏆 WINNER: {winner}");
+        Debug.Log($"💀 LOSER: {loser}");
+        Debug.Log($"🎯 Final Scores:");
+        Debug.Log($"   {winner}: {opponentBoard?.playerScore ?? 0}");
+        Debug.Log($"   {loser}: {this.playerScore}");
+        Debug.Log($"====================================");
+    }
+
 
 
     private IEnumerator ResetGameForMLTraining()

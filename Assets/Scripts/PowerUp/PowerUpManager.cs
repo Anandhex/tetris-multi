@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine.Tilemaps;
 using TMPro;
+using System.Collections;
 
 public class PowerUpManager : MonoBehaviour
 {
@@ -30,7 +31,6 @@ public class PowerUpManager : MonoBehaviour
     // Inventory by power-up type
     public Dictionary<PowerUpType, int> powerUpInventory = new Dictionary<PowerUpType, int>();
     private Board ownerBoard;
-    // private AudioSource audioSource;
 
     // Time challenge tracking
     private List<float> linesClearedTimes = new List<float>();
@@ -332,23 +332,26 @@ public class PowerUpManager : MonoBehaviour
     private void SafeExecutePowerUp(PowerUpType type, int targetColumn = -1)
     {
         string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
-        Debug.Log($"🔧 Executing {type} power-up for {playerTag}...");
+        Debug.Log($"🔧 {playerTag} executing {type} power-up...");
 
         // Add column info to log if specified
         if (targetColumn != -1)
         {
-            Debug.Log($"🔧 Target Column: {targetColumn}");
+            Debug.Log($"🔧 {playerTag} target Column: {targetColumn}");
         }
 
-        // For bomb and wildcard, use column-specific execution if column is provided
+        // ✅ UPDATED: Enhanced bomb handling with detailed logging
         if (type == PowerUpType.Bomb)
         {
+            Debug.Log($"💣 {playerTag} bomb powerup detected!");
             if (targetColumn != -1)
             {
+                Debug.Log($"💣 {playerTag} using bomb at specific column: {targetColumn}");
                 ExecuteBombAtColumn(targetColumn);
             }
             else
             {
+                Debug.Log($"💣 {playerTag} using bomb at active piece position");
                 ExecuteBombImproved(); // Uses active piece position
             }
             return;
@@ -410,6 +413,477 @@ public class PowerUpManager : MonoBehaviour
         }
     }
 
+    // ✅ FIXED BOMB METHODS
+    public void ExecuteBombAtColumn(int targetColumn)
+    {
+        string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
+        Debug.Log($"💣 === {playerTag} EXECUTING BOMB AT COLUMN {targetColumn} ===");
+
+        // Validate column
+        RectInt bounds = ownerBoard.Bounds;
+        if (targetColumn < bounds.xMin || targetColumn >= bounds.xMax)
+        {
+            Debug.LogError($"❌ Invalid column {targetColumn}. Valid range: {bounds.xMin} to {bounds.xMax - 1}");
+            return;
+        }
+
+        // Find where the bomb should actually land
+        Vector3Int bombPosition = FindBombLandingPosition(targetColumn);
+
+        if (bombPosition.y < bounds.yMin)
+        {
+            Debug.LogWarning($"⚠️ Cannot place bomb in column {targetColumn} - column might be full");
+            return;
+        }
+
+        Debug.Log($"💥 {playerTag} bomb will land at position: {bombPosition}");
+
+        // Create and explode bomb immediately
+        CreateAndExplodeBomb(bombPosition);
+        
+        Debug.Log($"💣 {playerTag} bomb execution complete!");
+    }
+
+    public void ExecuteBombImproved()
+    {
+        string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
+        Debug.Log($"💣 === {playerTag} EXECUTING BOMB POWER-UP (Active Piece) ===");
+
+        if (ownerBoard.activePiece != null)
+        {
+            Vector3Int bombCenter = ownerBoard.activePiece.position;
+            Debug.Log($"💥 {playerTag} bomb centered on active piece at: {bombCenter}");
+
+            // Clear the active piece first
+            ownerBoard.Clear(ownerBoard.activePiece);
+
+            // Count tiles before explosion
+            int tilesBefore = CountTilesInArea(bombCenter);
+            Debug.Log($"💣 {playerTag} tiles before explosion: {tilesBefore}");
+
+            // Use the Board's explosion method
+            ownerBoard.ExecuteBombExplosion(bombCenter);
+            
+            // Count tiles after explosion
+            int tilesAfter = CountTilesInArea(bombCenter);
+            int tilesCleared = tilesBefore - tilesAfter;
+            
+            Debug.Log($"💥 {playerTag} bomb explosion complete! Cleared {tilesCleared} tiles");
+            
+            // Spawn a new piece since we cleared the active one
+            ownerBoard.SpawnPiece();
+        }
+        else
+        {
+            Debug.LogWarning($"⚠️ {playerTag} has no active piece to center bomb on!");
+        }
+    }
+
+    private void CreateAndExplodeBomb(Vector3Int position)
+    {
+        string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
+        RectInt bounds = ownerBoard.Bounds;
+        
+        // Make sure position is within bounds
+        if (position.x < bounds.xMin || position.x >= bounds.xMax || 
+            position.y < bounds.yMin || position.y >= bounds.yMax)
+        {
+            Debug.LogError($"💣 {playerTag} bomb position {position} is out of bounds {bounds}");
+            return;
+        }
+
+        Debug.Log($"💥 {playerTag} placing and exploding bomb at {position}");
+        
+        // Count tiles before explosion
+        int tilesBefore = CountTilesInArea(position);
+        Debug.Log($"💣 {playerTag} tiles before explosion: {tilesBefore}");
+        
+        // Call the explosion function from Board
+        ownerBoard.ExecuteBombExplosion(position);
+        
+        // Count tiles after explosion
+        int tilesAfter = CountTilesInArea(position);
+        int tilesCleared = tilesBefore - tilesAfter;
+        
+        Debug.Log($"💥 {playerTag} bomb explosion complete! Cleared {tilesCleared} tiles");
+        Debug.Log($"📊 {playerTag} tiles after explosion: {tilesAfter}");
+    }
+
+    private Vector3Int FindBombLandingPosition(int targetColumn)
+    {
+        RectInt bounds = ownerBoard.Bounds;
+
+        // Start from the top and find where the bomb would land if dropped
+        for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
+        {
+            Vector3Int checkPos = new Vector3Int(targetColumn, y, 0);
+            
+            // If this position has a tile, bomb lands on top of it
+            if (ownerBoard.tilemap.HasTile(checkPos))
+            {
+                Vector3Int landingPos = new Vector3Int(targetColumn, y + 1, 0);
+                Debug.Log($"💣 Bomb lands on top of tile at {checkPos} → landing at {landingPos}");
+                return landingPos;
+            }
+        }
+
+        // If no tiles found, bomb lands at the bottom
+        Vector3Int bottomPos = new Vector3Int(targetColumn, bounds.yMin, 0);
+        Debug.Log($"💣 Empty column - bomb lands at bottom: {bottomPos}");
+        return bottomPos;
+    }
+
+    private int CountTilesInArea(Vector3Int center)
+    {
+        int count = 0;
+        for (int x = -1; x <= 1; x++)
+        {
+            for (int y = -1; y <= 1; y++)
+            {
+                Vector3Int pos = center + new Vector3Int(x, y, 0);
+                if (ownerBoard.tilemap.HasTile(pos))
+                {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    // ✅ WILDCARD METHODS (unchanged - these work fine)
+    public void ExecuteWildCardAtColumn(int targetColumn)
+    {
+        Debug.Log($"🃏 === EXECUTING WILDCARD AT COLUMN {targetColumn} ===");
+
+        if (opponentBoard == null)
+        {
+            Debug.LogError("❌ Cannot use WildCard - no opponent board available");
+            return;
+        }
+
+        // Validate column for opponent board
+        RectInt bounds = opponentBoard.Bounds;
+        if (targetColumn < bounds.xMin || targetColumn >= bounds.xMax)
+        {
+            Debug.LogError($"❌ Invalid column {targetColumn}. Valid range: {bounds.xMin} to {bounds.xMax - 1}");
+            return;
+        }
+
+        // Find suitable position for 3x3 wildcard block
+        Vector3Int wildcardPosition = FindWildcardPlacementPosition(targetColumn);
+
+        if (wildcardPosition.y < bounds.yMin)
+        {
+            Debug.LogWarning($"⚠️ Cannot place wildcard in column {targetColumn} - not enough space");
+            return;
+        }
+
+        Debug.Log($"🃏 Placing wildcard at position: {wildcardPosition}");
+
+        // Create and place wildcard
+        CreateAndPlaceWildcard(wildcardPosition);
+    }
+
+    private Vector3Int FindWildcardPlacementPosition(int targetColumn)
+    {
+        RectInt bounds = opponentBoard.Bounds;
+        
+        // Adjust center column to fit 3x3 within bounds
+        int centerX = targetColumn;
+        if (centerX - 1 < bounds.xMin) centerX = bounds.xMin + 1;
+        if (centerX + 1 >= bounds.xMax) centerX = bounds.xMax - 2;
+        
+        // Find the actual surface height in the area where we want to place the 3x3 wildcard
+        int highestSurface = bounds.yMin; // Start from bottom
+        
+        // Check the 3 columns where the wildcard will be placed
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            int checkColumn = centerX + dx;
+            
+            // Make sure column is within bounds
+            if (checkColumn >= bounds.xMin && checkColumn < bounds.xMax)
+            {
+                // Find the highest tile in this column
+                for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
+                {
+                    Vector3Int checkPos = new Vector3Int(checkColumn, y, 0);
+                    if (opponentBoard.tilemap.HasTile(checkPos))
+                    {
+                        // Found a tile, so surface is one position above
+                        highestSurface = Mathf.Max(highestSurface, y + 1);
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Place the wildcard at the surface level (bottom of the 3x3 block)
+        // Make sure it doesn't go above the board
+        int placementY = Mathf.Min(highestSurface, bounds.yMax - 3);
+        
+        Vector3Int result = new Vector3Int(centerX, placementY, 0);
+        Debug.Log($"🃏 Wildcard position calculated: {result}, surface height: {highestSurface}, bounds: {bounds}");
+        
+        return result;
+    }
+
+    private void CreateAndPlaceWildcard(Vector3Int centerPosition)
+    {
+        if (opponentBoard == null)
+        {
+            Debug.LogWarning("⚠️ No opponent board for wildcard");
+            return;
+        }
+        
+        RectInt bounds = opponentBoard.Bounds;
+        int placed = 0;
+        List<Vector3Int> placedPositions = new List<Vector3Int>();
+        
+        // Place 3x3 wildcard tiles with better bounds checking
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                Vector3Int pos = centerPosition + new Vector3Int(dx, dy, 0);
+                
+                // Only place if within bounds and not too high
+                if (pos.x >= bounds.xMin && pos.x < bounds.xMax && 
+                    pos.y >= bounds.yMin && pos.y < bounds.yMax - 2) // Leave some space at top
+                {
+                    opponentBoard.tilemap.SetTile(pos, opponentBoard.bombTile);
+                    placedPositions.Add(pos);
+                    placed++;
+                }
+                else
+                {
+                    Debug.Log($"🚫 Skipping wildcard tile at {pos} - out of bounds or too high");
+                }
+            }
+        }
+        
+        Debug.Log($"🃏 Wildcard placed {placed}/9 tiles at {centerPosition}");
+        Debug.Log($"🎯 Placed at positions: {string.Join(", ", placedPositions)}");
+        
+        // Apply gravity effect to make wildcard settle properly
+        if (placed > 0)
+        {
+            StartCoroutine(SettleWildcardBlocks(placedPositions));
+        }
+    }
+
+    private System.Collections.IEnumerator SettleWildcardBlocks(List<Vector3Int> positions)
+    {
+        yield return new WaitForSeconds(0.1f); // Small delay
+
+        bool blocksMoving = true;
+        int maxIterations = 20; // Prevent infinite loops
+        int iterations = 0;
+
+        while (blocksMoving && iterations < maxIterations)
+        {
+            blocksMoving = false;
+            iterations++;
+
+            // Process blocks from bottom to top to avoid conflicts
+            var sortedPositions = positions.OrderBy(p => p.y).ToList();
+
+            for (int i = 0; i < sortedPositions.Count; i++)
+            {
+                Vector3Int currentPos = sortedPositions[i];
+                Vector3Int belowPos = currentPos + Vector3Int.down;
+
+                // Check if block can move down
+                if (opponentBoard.tilemap.HasTile(currentPos) &&
+                    !opponentBoard.tilemap.HasTile(belowPos) &&
+                    belowPos.y >= opponentBoard.Bounds.yMin)
+                {
+                    // Move the tile down
+                    TileBase tile = opponentBoard.tilemap.GetTile(currentPos);
+                    opponentBoard.tilemap.SetTile(currentPos, null);
+                    opponentBoard.tilemap.SetTile(belowPos, tile);
+
+                    // Update position in our list
+                    sortedPositions[i] = belowPos;
+                    blocksMoving = true;
+
+                    Debug.Log($"🃏 Wildcard block settled: {currentPos} → {belowPos}");
+                }
+            }
+
+            // Update the main positions list
+            positions.Clear();
+            positions.AddRange(sortedPositions);
+
+            yield return new WaitForSeconds(0.05f); // Small delay between settling steps
+        }
+
+        Debug.Log($"🃏 Wildcard settling complete after {iterations} iterations");
+    }
+
+    public void ReplaceOpponentPieceWithWildcard()
+    {
+        Piece oldPiece = opponentBoard.activePiece;
+        Piece userPiece = ownerBoard.activePiece;
+        if (oldPiece == null)
+        {
+            Debug.LogWarning("Opponent has no active piece to replace.");
+            return;
+        }
+
+        // Save the input controllers
+        var userInput = ownerBoard.inputController;
+        var opponentInput = opponentBoard.inputController;
+
+        // Clear old piece from tilemap
+        opponentBoard.Clear(oldPiece);
+
+        // Override cells with wildcard
+        oldPiece.SetCells(Data.WildcardCells); // You may need to expose this
+        oldPiece.tile = opponentBoard.bombTile;
+        oldPiece.isBomb = false;
+        oldPiece.inputController = userInput;
+        userPiece.inputController = null;
+
+        // Change input control: opponent board is now player-controlled
+        opponentBoard.inputController = userInput;
+        ownerBoard.inputController = null; // disable own input
+
+        // When wildcard locks, restore everything
+        oldPiece.OnLockComplete = () =>
+        {
+            opponentBoard.inputController = opponentInput;
+            ownerBoard.inputController = userInput;
+            userPiece.inputController = userInput;
+        };
+
+        // Redraw
+        opponentBoard.Set(oldPiece);
+    }
+
+    // ✅ OTHER POWERUP METHODS (unchanged)
+    public void ExecuteLineBlaster()
+    {
+        Debug.Log("⚡ === EXECUTING LINE BLASTER POWER-UP ===");
+
+        RectInt bounds = ownerBoard.Bounds;
+        Debug.Log($"🎯 Searching for bottom line in bounds: {bounds}");
+
+        bool lineFound = false;
+        for (int y = bounds.yMin; y < bounds.yMax; y++)
+        {
+            bool hasBlocks = false;
+            int blockCount = 0;
+
+            for (int x = bounds.xMin; x < bounds.xMax; x++)
+            {
+                if (ownerBoard.tilemap.HasTile(new Vector3Int(x, y, 0)))
+                {
+                    hasBlocks = true;
+                    blockCount++;
+                }
+            }
+
+            if (hasBlocks)
+            {
+                Debug.Log($"⚡ Found bottom line at y={y} with {blockCount} blocks");
+                ClearLine(y);
+                Debug.Log($"✅ LineBlaster cleared line {y}");
+                lineFound = true;
+                break;
+            }
+        }
+
+        if (!lineFound)
+        {
+            Debug.Log("❌ No lines found to clear with LineBlaster");
+        }
+    }
+
+    public void ExecuteGravity()
+    {
+        Debug.Log("🌍 === EXECUTING GRAVITY POWER-UP ===");
+
+        RectInt bounds = ownerBoard.Bounds;
+        int totalMoved = 0;
+
+        Debug.Log($"🎯 Processing columns in bounds: {bounds}");
+
+        for (int x = bounds.xMin; x < bounds.xMax; x++)
+        {
+            List<TileBase> column = new List<TileBase>();
+            int originalTiles = 0;
+
+            // Collect tiles in column
+            for (int y = bounds.yMin; y < bounds.yMax; y++)
+            {
+                Vector3Int pos = new Vector3Int(x, y, 0);
+                TileBase tile = ownerBoard.tilemap.GetTile(pos);
+                if (tile != null)
+                {
+                    column.Add(tile);
+                    originalTiles++;
+                }
+                ownerBoard.tilemap.SetTile(pos, null);
+            }
+
+            // Place tiles at bottom
+            for (int i = 0; i < column.Count; i++)
+            {
+                Vector3Int pos = new Vector3Int(x, bounds.yMin + i, 0);
+                ownerBoard.tilemap.SetTile(pos, column[i]);
+                totalMoved++;
+            }
+
+            if (originalTiles > 0)
+            {
+                Debug.Log($"🌍 Column {x}: {originalTiles} tiles → compacted to bottom");
+            }
+        }
+
+        Debug.Log($"✅ Gravity completed: {totalMoved} tiles moved");
+    }
+
+    private void ClearLine(int row)
+    {
+        Debug.Log($"🧹 Clearing line {row}");
+
+        RectInt bounds = ownerBoard.Bounds;
+        int clearedTiles = 0;
+
+        // Clear the line
+        for (int x = bounds.xMin; x < bounds.xMax; x++)
+        {
+            Vector3Int pos = new Vector3Int(x, row, 0);
+            if (ownerBoard.tilemap.HasTile(pos))
+            {
+                ownerBoard.tilemap.SetTile(pos, null);
+                clearedTiles++;
+            }
+        }
+
+        Debug.Log($"🧹 Cleared {clearedTiles} tiles from line {row}");
+
+        // Move lines down
+        int movedTiles = 0;
+        for (int y = row + 1; y < bounds.yMax; y++)
+        {
+            for (int x = bounds.xMin; x < bounds.xMax; x++)
+            {
+                Vector3Int above = new Vector3Int(x, y, 0);
+                Vector3Int below = new Vector3Int(x, y - 1, 0);
+                TileBase tile = ownerBoard.tilemap.GetTile(above);
+                ownerBoard.tilemap.SetTile(below, tile);
+                ownerBoard.tilemap.SetTile(above, null);
+
+                if (tile != null) movedTiles++;
+            }
+        }
+
+        Debug.Log($"🔄 Moved {movedTiles} tiles down after line clear");
+    }
+
+    // ✅ POWER-UP GENERATION AND MANAGEMENT (unchanged)
     public void OnLinesCleared(int lineCount)
     {
         string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
@@ -572,10 +1046,10 @@ public class PowerUpManager : MonoBehaviour
         // Corresponding weights
         List<float> weights = new List<float> { 3f, 2f, 1f };
 
-        // Add WildCard if opponentBoard exists - FIXED!
+        // Add WildCard if opponentBoard exists
         if (opponentBoard != null)
         {
-            availableTypes.Add(PowerUpType.WildCard); // ← UNCOMMENTED THIS!
+            availableTypes.Add(PowerUpType.WildCard);
             weights.Add(1.5f);
             Debug.Log("🃏 WildCard available (opponent board exists)");
         }
@@ -638,7 +1112,6 @@ public class PowerUpManager : MonoBehaviour
         Debug.Log("=== END POWER-UP ADDITION ===");
     }
 
-    // NEW HELPER METHOD for detailed inventory logging
     private void LogFullInventory(string context)
     {
         string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
@@ -706,193 +1179,9 @@ public class PowerUpManager : MonoBehaviour
         }
     }
 
-    public void ExecuteBombImproved()
-    {
-        Debug.Log("💣 === EXECUTING BOMB POWER-UP ===");
-
-        if (ownerBoard.activePiece != null)
-        {
-            {
-                ownerBoard.Clear(ownerBoard.activePiece);
-
-                ownerBoard.activePiece.SetCells(new Vector3Int[] { Vector3Int.zero }); // single cell at center
-                ownerBoard.activePiece.tile = ownerBoard.bombTile;
-                ownerBoard.activePiece.isBomb = true;
-
-                ownerBoard.Set(ownerBoard.activePiece);
-            }
-        }
-    }
-
-    public void ReplaceOpponentPieceWithWildcard()
-    {
-        Piece oldPiece = opponentBoard.activePiece;
-        Piece userPiece = ownerBoard.activePiece;
-        if (oldPiece == null)
-        {
-            Debug.LogWarning("Opponent has no active piece to replace.");
-            return;
-        }
-
-        // Save the input controllers
-        var userInput = ownerBoard.inputController;
-        var opponentInput = opponentBoard.inputController;
-
-        // Clear old piece from tilemap
-        opponentBoard.Clear(oldPiece);
-
-        // Override cells with wildcard
-        oldPiece.SetCells(Data.WildcardCells); // You may need to expose this
-        oldPiece.tile = opponentBoard.bombTile;
-        oldPiece.isBomb = false;
-        oldPiece.inputController = userInput;
-        userPiece.inputController = null;
-        // oldPiece.isWildcard = true; // ← Add a new bool if you want to distinguish it
-
-        // Reset position (centered)
-        // oldPiece.position = new Vector3Int(opponentBoard.width / 2, opponentBoard.height - 2, 0);
-
-        // Change input control: opponent board is now player-controlled
-        opponentBoard.inputController = userInput;
-        ownerBoard.inputController = null; // disable own input
-
-        // When wildcard locks, restore everything
-        oldPiece.OnLockComplete = () =>
-        {
-            opponentBoard.inputController = opponentInput;
-            ownerBoard.inputController = userInput;
-            userPiece.inputController = userInput;
-
-        };
-
-        // Redraw
-        opponentBoard.Set(oldPiece);
-    }
-
-    public void ExecuteLineBlaster()
-    {
-        Debug.Log("⚡ === EXECUTING LINE BLASTER POWER-UP ===");
-
-        RectInt bounds = ownerBoard.Bounds;
-        Debug.Log($"🎯 Searching for bottom line in bounds: {bounds}");
-
-        bool lineFound = false;
-        for (int y = bounds.yMin; y < bounds.yMax; y++)
-        {
-            bool hasBlocks = false;
-            int blockCount = 0;
-
-            for (int x = bounds.xMin; x < bounds.xMax; x++)
-            {
-                if (ownerBoard.tilemap.HasTile(new Vector3Int(x, y, 0)))
-                {
-                    hasBlocks = true;
-                    blockCount++;
-                }
-            }
-
-            if (hasBlocks)
-            {
-                Debug.Log($"⚡ Found bottom line at y={y} with {blockCount} blocks");
-                ClearLine(y);
-                Debug.Log($"✅ LineBlaster cleared line {y}");
-                lineFound = true;
-                break;
-            }
-        }
-
-        if (!lineFound)
-        {
-            Debug.Log("❌ No lines found to clear with LineBlaster");
-        }
-    }
-
-    public void ExecuteGravity()
-    {
-        Debug.Log("🌍 === EXECUTING GRAVITY POWER-UP ===");
-
-        RectInt bounds = ownerBoard.Bounds;
-        int totalMoved = 0;
-
-        Debug.Log($"🎯 Processing columns in bounds: {bounds}");
-
-        for (int x = bounds.xMin; x < bounds.xMax; x++)
-        {
-            List<TileBase> column = new List<TileBase>();
-            int originalTiles = 0;
-
-            // Collect tiles in column
-            for (int y = bounds.yMin; y < bounds.yMax; y++)
-            {
-                Vector3Int pos = new Vector3Int(x, y, 0);
-                TileBase tile = ownerBoard.tilemap.GetTile(pos);
-                if (tile != null)
-                {
-                    column.Add(tile);
-                    originalTiles++;
-                }
-                ownerBoard.tilemap.SetTile(pos, null);
-            }
-
-            // Place tiles at bottom
-            for (int i = 0; i < column.Count; i++)
-            {
-                Vector3Int pos = new Vector3Int(x, bounds.yMin + i, 0);
-                ownerBoard.tilemap.SetTile(pos, column[i]);
-                totalMoved++;
-            }
-
-            if (originalTiles > 0)
-            {
-                Debug.Log($"🌍 Column {x}: {originalTiles} tiles → compacted to bottom");
-            }
-        }
-
-        Debug.Log($"✅ Gravity completed: {totalMoved} tiles moved");
-    }
-
     private PowerUp GetPowerUpData(PowerUpType type)
     {
         return availablePowerUps.FirstOrDefault(p => p.type == type);
-    }
-
-    private void ClearLine(int row)
-    {
-        Debug.Log($"🧹 Clearing line {row}");
-
-        RectInt bounds = ownerBoard.Bounds;
-        int clearedTiles = 0;
-
-        // Clear the line
-        for (int x = bounds.xMin; x < bounds.xMax; x++)
-        {
-            Vector3Int pos = new Vector3Int(x, row, 0);
-            if (ownerBoard.tilemap.HasTile(pos))
-            {
-                ownerBoard.tilemap.SetTile(pos, null);
-                clearedTiles++;
-            }
-        }
-
-        Debug.Log($"🧹 Cleared {clearedTiles} tiles from line {row}");
-
-        // Move lines down
-        int movedTiles = 0;
-        for (int y = row + 1; y < bounds.yMax; y++)
-        {
-            for (int x = bounds.xMin; x < bounds.xMax; x++)
-            {
-                Vector3Int above = new Vector3Int(x, y, 0);
-                Vector3Int below = new Vector3Int(x, y - 1, 0);
-                TileBase tile = ownerBoard.tilemap.GetTile(above);
-                ownerBoard.tilemap.SetTile(below, tile);
-                ownerBoard.tilemap.SetTile(above, null);
-
-                if (tile != null) movedTiles++;
-            }
-        }
-
-        Debug.Log($"🔄 Moved {movedTiles} tiles down after line clear");
     }
 
     public int GetPowerUpCount()
@@ -900,7 +1189,6 @@ public class PowerUpManager : MonoBehaviour
         return powerUpInventory.Values.Sum();
     }
 
-    // Public methods for AI agents to check inventory
     public int GetPowerUpCount(PowerUpType type)
     {
         return powerUpInventory.ContainsKey(type) ? powerUpInventory[type] : 0;
@@ -909,143 +1197,6 @@ public class PowerUpManager : MonoBehaviour
     public bool HasPowerUp(PowerUpType type)
     {
         return GetPowerUpCount(type) > 0;
-    }
-
-   public void ExecuteBombAtColumn(int targetColumn)
-    {
-        Debug.Log($"💣 === EXECUTING BOMB AT COLUMN {targetColumn} ===");
-
-        // Validate column
-        RectInt bounds = ownerBoard.Bounds;
-        if (targetColumn < bounds.xMin || targetColumn >= bounds.xMax)
-        {
-            Debug.LogError($"❌ Invalid column {targetColumn}. Valid range: {bounds.xMin} to {bounds.xMax - 1}");
-            return;
-        }
-
-        // Find the highest tile in the target column to place bomb
-        Vector3Int bombPosition = FindBombPlacementPosition(targetColumn);
-
-        if (bombPosition.y < bounds.yMin)
-        {
-            Debug.LogWarning($"⚠️ Cannot place bomb in column {targetColumn} - column might be full");
-            return;
-        }
-
-        Debug.Log($"💥 Placing bomb at position: {bombPosition}");
-
-        // Create a temporary bomb piece at the target position
-        CreateAndPlaceBomb(bombPosition);
-    }
-
-    public void ExecuteWildCardAtColumn(int targetColumn)
-    {
-        Debug.Log($"🃏 === EXECUTING WILDCARD AT COLUMN {targetColumn} ===");
-
-        if (opponentBoard == null)
-        {
-            Debug.LogError("❌ Cannot use WildCard - no opponent board available");
-            return;
-        }
-
-        // Validate column for opponent board
-        RectInt bounds = opponentBoard.Bounds;
-        if (targetColumn < bounds.xMin || targetColumn >= bounds.xMax)
-        {
-            Debug.LogError($"❌ Invalid column {targetColumn}. Valid range: {bounds.xMin} to {bounds.xMax - 1}");
-            return;
-        }
-
-        // Find suitable position for 3x3 wildcard block
-        Vector3Int wildcardPosition = FindWildcardPlacementPosition(targetColumn);
-
-        if (wildcardPosition.y < bounds.yMin)
-        {
-            Debug.LogWarning($"⚠️ Cannot place wildcard in column {targetColumn} - not enough space");
-            return;
-        }
-
-        Debug.Log($"🃏 Placing wildcard at position: {wildcardPosition}");
-
-        // Create and place wildcard
-        CreateAndPlaceWildcard(wildcardPosition);
-    }
-
-    private Vector3Int FindBombPlacementPosition(int targetColumn)
-    {
-        RectInt bounds = ownerBoard.Bounds;
-
-        // Start from top and find first empty position in the column
-        for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
-        {
-            Vector3Int checkPos = new Vector3Int(targetColumn, y, 0);
-            if (!ownerBoard.tilemap.HasTile(checkPos))
-            {
-                return checkPos;
-            }
-        }
-
-        // If column is full, return invalid position
-        return new Vector3Int(targetColumn, bounds.yMin - 1, 0);
-    }
-
-    private Vector3Int FindWildcardPlacementPosition(int targetColumn)
-    {
-        RectInt bounds = opponentBoard.Bounds;
-        
-        // Adjust center column to fit 3x3 within bounds
-        int centerX = targetColumn;
-        if (centerX - 1 < bounds.xMin) centerX = bounds.xMin + 1;
-        if (centerX + 1 >= bounds.xMax) centerX = bounds.xMax - 2;
-        
-        // Place wildcard safely in the middle of the board, not at the top
-        int safeY = bounds.yMin + (bounds.height / 2); // Middle of board
-        
-        // Make sure the entire 3x3 fits vertically
-        if (safeY + 1 >= bounds.yMax) safeY = bounds.yMax - 2;
-        if (safeY - 1 < bounds.yMin) safeY = bounds.yMin + 1;
-        
-        Vector3Int result = new Vector3Int(centerX, safeY, 0);
-        Debug.Log($"🃏 Wildcard position calculated: {result}, bounds: {bounds}");
-        
-        return result;
-    }
-    private void CreateAndPlaceBomb(Vector3Int position)
-    {
-        // Simply place a bomb tile directly on the tilemap
-        ownerBoard.tilemap.SetTile(position, ownerBoard.bombTile);
-        
-        Debug.Log($"💣 Bomb placed directly at {position}");
-    }
-    private void CreateAndPlaceWildcard(Vector3Int centerPosition)
-    {
-        if (opponentBoard == null)
-        {
-            Debug.LogWarning("⚠️ No opponent board for wildcard");
-            return;
-        }
-        
-        RectInt bounds = opponentBoard.Bounds;
-        int placed = 0;
-        
-        // Place 3x3 wildcard tiles, but only within bounds
-        for (int dx = -1; dx <= 1; dx++)
-        {
-            for (int dy = -1; dy <= 1; dy++)
-            {
-                Vector3Int pos = centerPosition + new Vector3Int(dx, dy, 0);
-                
-                // Only place if within bounds
-                if (pos.x >= bounds.xMin && pos.x < bounds.xMax && 
-                    pos.y >= bounds.yMin && pos.y < bounds.yMax)
-                {
-                    opponentBoard.tilemap.SetTile(pos, opponentBoard.bombTile);
-                    placed++;
-                }
-            }
-        }
-        
-        Debug.Log($"🃏 Wildcard placed {placed}/9 tiles at {centerPosition}");
     }
 }
 
