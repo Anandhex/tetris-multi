@@ -318,8 +318,8 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
         if (powerupAgent != null)
         {
             // Convert dictionary to PowerUp array for the agent
-            var powerUpsArray = ConvertInventoryToPowerUpArray(inventory);
-            bool agentCheck = powerupAgent.HasAvailablePowerupsForDecision(powerUpsArray, board);
+            // var powerUpsArray = ConvertInventoryToPowerUpArray(inventory);
+            bool agentCheck = powerupAgent.HasAvailablePowerupsForDecision(inventory, board);
             Debug.Log($"TetrisSentisAgent: PowerupAgent availability check result: {agentCheck}");
             return agentCheck;
         }
@@ -379,16 +379,12 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
 
         try
         {
-            Debug.Log("TetrisSentisAgent: Converting inventory to PowerUp array...");
-            
-            // Convert inventory dictionary to PowerUp array for the agent
-            var powerUpsArray = ConvertInventoryToPowerUpArray(board.powerUpManager.powerUpInventory);
-            
-            Debug.Log("TetrisSentisAgent: Calling powerupAgent.GetPowerupDecisionOnly...");
-            
-            // Call the PowerupTetrisAgent's decision-making method
-            var decision = powerupAgent.GetPowerupDecisionOnly(board, powerUpsArray);
-            
+
+            Debug.Log("TetrisSentisAgent: Calling powerupAgent.GetPowerupDecisionOnly with inventory...");     
+
+            // Pass the inventory dictionary directly to the PowerupAgent
+            var decision = powerupAgent.GetPowerupDecisionOnly(board, board.powerUpManager.powerUpInventory);
+
             Debug.Log($"TetrisSentisAgent: Powerup decision received - Action: {decision.actionName}, Confidence: {decision.confidence:F2}");
 
             // If decision is not "none", execute the powerup action and reduce inventory

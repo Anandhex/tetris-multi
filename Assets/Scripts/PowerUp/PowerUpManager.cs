@@ -96,12 +96,12 @@ public class PowerUpManager : MonoBehaviour
 
     private void InitializeInventory()
     {
-        powerUpInventory[PowerUpType.LineBlaster] = 5;
-        powerUpInventory[PowerUpType.Gravity] = 5;
-        powerUpInventory[PowerUpType.Bomb] = 5;
+        powerUpInventory[PowerUpType.LineBlaster] = 0;
+        powerUpInventory[PowerUpType.Gravity] = 0;
+        powerUpInventory[PowerUpType.Bomb] = 0;
         if (opponentBoard != null)
         {
-            powerUpInventory[PowerUpType.WildCard] = 3;
+            powerUpInventory[PowerUpType.WildCard] = 0;
         }
 
         // Debug.Log("📦 Inventory initialized: LineBlaster=0, Gravity=0, Bomb=0");
@@ -301,7 +301,7 @@ public class PowerUpManager : MonoBehaviour
 
     public void UsePowerUp(PowerUpType type, int targetColumn = -1, int targetRow = -1)
     {
-        Debug.Log($"🎯 === ATTEMPTING TO USE {type.ToString().ToUpper()} ===");
+        Debug.Log($"🎯Powerup === ATTEMPTING TO USE {type.ToString().ToUpper()} ===");
 
         if (powerUpInventory.ContainsKey(type) && powerUpInventory[type] > 0)
         {
@@ -542,7 +542,7 @@ public class PowerUpManager : MonoBehaviour
         // Add WildCard if opponentBoard exists
         if (opponentBoard != null)
         {
-            availableTypes.Add(PowerUpType.WildCard);
+            // availableTypes.Add(PowerUpType.WildCard);
         }
 
         // Corresponding weights (adjusted if WildCard is added)
@@ -581,14 +581,14 @@ public class PowerUpManager : MonoBehaviour
             powerUpInventory[type]++;
             int afterCount = powerUpInventory[type];
 
-            // Debug.Log($"✅ {type} added successfully!");
+            Debug.Log($"✅ Powerup added {type} successfully!");
             // Debug.Log($"  Count: {beforeCount} → {afterCount}");
 
             UpdatePowerUpUI();
             // PlaySound(powerUpObtainedSound);
 
             // Log full inventory
-            // Debug.Log($"📦 Full inventory: L={powerUpInventory[PowerUpType.LineBlaster]}, G={powerUpInventory[PowerUpType.Gravity]}, B={powerUpInventory[PowerUpType.Bomb]}");
+            Debug.Log($"📦Powerup Full inventory: L={powerUpInventory[PowerUpType.LineBlaster]}, G={powerUpInventory[PowerUpType.Gravity]}, B={powerUpInventory[PowerUpType.Bomb]}");
 
             string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
             // Debug.Log($"🎮 Player {playerTag} received {type}!");

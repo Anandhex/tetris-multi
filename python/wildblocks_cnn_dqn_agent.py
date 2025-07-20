@@ -144,7 +144,7 @@ class OptimizedWildblockAgent:
         threat_level_channel = self._calculate_threat_level(opponent_board)
         
         state = np.stack([
-            self_board_channel, opponent_board_channel, 
+            self_board_channel, opponent_board_channel, p
             bottom_clear_channel, gravity_channel, bomb_channel, wildblock_channel,
             height_diff_channel, threat_level_channel
         ])
