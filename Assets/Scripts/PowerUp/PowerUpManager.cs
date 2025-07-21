@@ -404,7 +404,6 @@ public class PowerUpManager : MonoBehaviour
 
         // Decrement powerup count and update UI - you may need to pass or access powerUpInventory differently here
         // Example:
-        ownerBoard.powerUpManager.powerUpInventory[PowerUpType.Bomb]--;
         ownerBoard.powerUpManager.UpdatePowerUpUI();
     }
 
@@ -475,7 +474,6 @@ public class PowerUpManager : MonoBehaviour
 
         // Decrement powerup count and update UI - you may need to pass or access powerUpInventory differently here
         // Example:
-        powerUpManager.powerUpInventory[PowerUpType.WildCard]--;
         powerUpManager.UpdatePowerUpUI();
         targetBoard.SpawnPiece();
     }

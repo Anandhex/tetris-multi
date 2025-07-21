@@ -217,6 +217,7 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
             {
                 if (powerupType.Value == PowerUpType.WildCard && opponentAgent != null)
                 {
+                    board.powerUpManager.powerUpInventory[powerupType.Value]--;
                     // Enqueue WildCard power-up on opponent's task queue
                     opponentAgent.taskQueueRunner.EnqueueTask(
                         new PowerUpTask(powerupType.Value, lastPowerupDecision.targetColumn, opponentAgent.board.powerUpManager, opponentAgent.board));
@@ -224,6 +225,8 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
                 }
                 else if (powerupType.Value == PowerUpType.Bomb)
                 {
+                    board.powerUpManager.powerUpInventory[powerupType.Value]--;
+
                     taskQueueRunner.EnqueueTask(
                                            new PowerUpTask(powerupType.Value, lastPowerupDecision.targetColumn, board.powerUpManager, board));
                 }
