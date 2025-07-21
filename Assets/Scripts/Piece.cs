@@ -177,7 +177,7 @@ public class Piece : MonoBehaviour
         Lock();
     }
 
-    private void Lock()
+    public void Lock()
     {
         board.Set(this);
         if (isBomb)

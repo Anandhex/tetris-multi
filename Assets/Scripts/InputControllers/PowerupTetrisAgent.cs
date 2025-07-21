@@ -24,7 +24,7 @@ public class PowerupTetrisAgent : MonoBehaviour
     [SerializeField] private BackendType backendType = BackendType.GPUCompute;
 
     [Header("Confidence Threshold")]
-    [SerializeField] private float powerupConfidenceThreshold = 0.7f; 
+    [SerializeField] private float powerupConfidenceThreshold = 0.7f;
 
     // Core Sentis components
     private Model runtimeModel;
@@ -36,7 +36,7 @@ public class PowerupTetrisAgent : MonoBehaviour
     {
         {"none", 0}, {"bottom_clear", 0}, {"gravity", 0}, {"bomb", 0}, {"wildblock", 0}
     };
-    
+
     private Dictionary<int, int> bombColumnHistory = new Dictionary<int, int>();
     private Dictionary<int, int> wildblockColumnHistory = new Dictionary<int, int>();
 
@@ -65,12 +65,11 @@ public class PowerupTetrisAgent : MonoBehaviour
             {
                 worker.Dispose();
             }
-            
+
             worker = externalWorker;
             runtimeModel = externalModel;
             usingExternalWorker = true;
-            
-            Debug.Log("PowerupTetrisAgent: External worker and model set successfully");
+
         }
         else
         {
@@ -91,7 +90,7 @@ public class PowerupTetrisAgent : MonoBehaviour
     //             Debug.LogError("PowerupAgent: Failed to create worker with any backend!");
     //             return;
     //         }
-            
+
 
     //         Debug.Log($"PowerupAgent: Successfully initialized with {backendType} backend");
     //     }
@@ -106,25 +105,21 @@ public class PowerupTetrisAgent : MonoBehaviour
         {
             // Try direct asset first, then fall back to BoardManager
             ModelAsset modelToLoad = powerupModelAsset;
-            
+
             if (modelToLoad == null && BoardManager.Instance != null)
             {
                 modelToLoad = BoardManager.Instance.powerupAsset;
-                Debug.Log("PowerupAgent: Using model from BoardManager (fallback)");
             }
-            
+
             if (modelToLoad == null)
             {
-                Debug.LogWarning("PowerupAgent: No model asset - ML disabled, manual testing enabled.");
                 return; // Don't fail, just continue without ML
             }
 
-            Debug.Log("PowerupAgent: Loading model asset...");
             runtimeModel = ModelLoader.Load(modelToLoad);
-            
+
             if (runtimeModel == null)
             {
-                Debug.LogError("PowerupAgent: Failed to load model - ModelLoader.Load returned null");
                 return;
             }
 
@@ -133,11 +128,9 @@ public class PowerupTetrisAgent : MonoBehaviour
 
             if (worker == null)
             {
-                Debug.LogError("PowerupAgent: Failed to create worker with any backend!");
                 return;
             }
 
-            Debug.Log($"PowerupAgent: Successfully initialized with {backendType} backend");
         }
         catch (System.Exception e)
         {
@@ -205,7 +198,6 @@ public class PowerupTetrisAgent : MonoBehaviour
                 var worker = new Worker(runtimeModel, backend);
                 if (worker != null)
                 {
-                    Debug.LogWarning($"PowerupAgent: Fell back to {backend} backend");
                     this.backendType = backend; // Use this.backendType
                     return worker;
                 }
@@ -223,9 +215,8 @@ public class PowerupTetrisAgent : MonoBehaviour
         if (worker != null && !usingExternalWorker)
         {
             worker.Dispose();
-            Debug.Log("PowerupTetrisAgent: Disposed own worker");
         }
-        
+
         worker = null;
         runtimeModel = null;
         usingExternalWorker = false;
@@ -238,7 +229,6 @@ public class PowerupTetrisAgent : MonoBehaviour
 
     private bool IsReadyForInference()
     {
-        Debug.Log($"PowerupAgent IsReadyForInference: {worker} {runtimeModel}");
         return worker != null && runtimeModel != null;
     }
 
@@ -247,14 +237,12 @@ public class PowerupTetrisAgent : MonoBehaviour
     /// </summary>
     public WildblockActionResult GetPowerupDecisionOnly(Board board, Dictionary<PowerUpType, int> powerUpInventory)
     {
-        Debug.Log("PowerupAgent: GetPowerupDecisionOnly with inventory");
-        LogAvailableInventory(powerUpInventory);
-        
+
         if (!IsReadyForInference())
         {
             return new WildblockActionResult { actionType = 0, actionName = "none", confidence = 1.0f };
         }
-        
+
         try
         {
             // Step 1: Prepare 8-channel input using inventory
@@ -262,23 +250,21 @@ public class PowerupTetrisAgent : MonoBehaviour
 
             if (inputArray.Length != 1600)
             {
-                Debug.LogError($"PowerupAgent: Invalid input shape, expected 1600, got {inputArray.Length}");
                 return new WildblockActionResult { actionType = 0, actionName = "none", confidence = 1.0f };
             }
 
             // Step 2: Run CNN inference
             var inputShape = new TensorShape(1, 8, 20, 10);
             Tensor<float> inputTensor = new Tensor<float>(inputShape, inputArray);
-            
+
             worker.Schedule(inputTensor);
             var outputTensor = worker.PeekOutput() as Tensor<float>;
 
             // Step 3: Get raw output
             float[] output = GetOutputArray(outputTensor);
-            
+
             if (output.Length != 23)
             {
-                Debug.LogError($"PowerupAgent: Invalid output shape, expected 23, got {output.Length}");
                 inputTensor.Dispose();
                 outputTensor.Dispose();
                 return new WildblockActionResult { actionType = 0, actionName = "none", confidence = 1.0f };
@@ -286,21 +272,17 @@ public class PowerupTetrisAgent : MonoBehaviour
 
             // Step 4: Process output to make decision using inventory
             var actionResult = ProcessWildblockCNNOutput(output, board, powerUpInventory);
-            
-            if (enableDetailedLogging)
-            {
-                Debug.Log($"PowerupAgent: CNN predicted '{actionResult.actionName}' with confidence {actionResult.confidence:F2}");
-            }
+
+
 
             // Cleanup
             inputTensor.Dispose();
             outputTensor.Dispose();
-            
+
             return actionResult;
         }
         catch (System.Exception e)
         {
-            Debug.LogError($"PowerupAgent: CNN prediction failed: {e}");
             return new WildblockActionResult { actionType = 0, actionName = "none", confidence = 1.0f };
         }
     }
@@ -347,9 +329,8 @@ public class PowerupTetrisAgent : MonoBehaviour
 
         bool hasBottomClear = powerUpInventory.ContainsKey(PowerUpType.LineBlaster) && powerUpInventory[PowerUpType.LineBlaster] > 0;
         bool hasGravity = powerUpInventory.ContainsKey(PowerUpType.Gravity) && powerUpInventory[PowerUpType.Gravity] > 0;
-        bool hasBomb = powerUpInventory.ContainsKey(PowerUpType.Bomb) && powerUpInventory[PowerUpType.Bomb] > 0 && FindValidBombColumns(board).Length > 0;
-        bool hasWildblock = powerUpInventory.ContainsKey(PowerUpType.WildCard) && powerUpInventory[PowerUpType.WildCard] > 0 &&
-                        (board.opponentBoard != null && FindValidWildblockPositions(board.opponentBoard).Count > 0);
+        bool hasBomb = powerUpInventory.ContainsKey(PowerUpType.Bomb) && powerUpInventory[PowerUpType.Bomb] > 0;
+        bool hasWildblock = powerUpInventory.ContainsKey(PowerUpType.WildCard) && powerUpInventory[PowerUpType.WildCard] > 0;
 
         return hasBottomClear || hasGravity || hasBomb || hasWildblock;
     }
@@ -360,7 +341,7 @@ public class PowerupTetrisAgent : MonoBehaviour
     private bool HasPowerupType(PowerUp[] availablePowerUps, PowerUpType powerupType)
     {
         if (availablePowerUps == null) return false;
-        
+
         foreach (var powerUp in availablePowerUps)
         {
             if (powerUp != null && powerUp.type == powerupType)
@@ -381,7 +362,7 @@ public class PowerupTetrisAgent : MonoBehaviour
 
         var bounds = board.Bounds;
         var opponentBoard = board.opponentBoard;
-        
+
         // Get powerup availability directly from inventory
         bool hasBottomClear = powerUpInventory.ContainsKey(PowerUpType.LineBlaster) && powerUpInventory[PowerUpType.LineBlaster] > 0;
         bool hasGravity = powerUpInventory.ContainsKey(PowerUpType.Gravity) && powerUpInventory[PowerUpType.Gravity] > 0;
@@ -425,7 +406,7 @@ public class PowerupTetrisAgent : MonoBehaviour
         }
 
         // Channels 2-5: Powerup availability (broadcast to 200 cells each)
-        float[] powerupValues = { 
+        float[] powerupValues = {
             hasBottomClear ? 1.0f : 0.0f,
             hasGravity ? 1.0f : 0.0f,
             hasBomb ? 1.0f : 0.0f,
@@ -456,26 +437,8 @@ public class PowerupTetrisAgent : MonoBehaviour
 
         return inputData;
     }
-    
-    private void LogAvailableInventory(Dictionary<PowerUpType, int> powerUpInventory)
-    {
-        if (powerUpInventory == null || powerUpInventory.Count == 0)
-        {
-            Debug.Log("PowerupAgent: No powerup inventory available");
-            return;
-        }
 
-        var available = new List<string>();
-        foreach (var kvp in powerUpInventory)
-        {
-            if (kvp.Value > 0)
-            {
-                available.Add($"{kvp.Key}:{kvp.Value}");
-            }
-        }
 
-        Debug.Log($"PowerupAgent: Available inventory - {string.Join(", ", available)}");
-    }
 
 
     private float CalculateHeightAdvantage(Board selfBoard, Board opponentBoard)
@@ -503,7 +466,7 @@ public class PowerupTetrisAgent : MonoBehaviour
     {
         float[] heights = new float[10];
         var bounds = board.Bounds;
-        
+
         for (int col = 0; col < 10; col++)
         {
             for (int row = 0; row < bounds.height; row++)
@@ -516,7 +479,7 @@ public class PowerupTetrisAgent : MonoBehaviour
                 }
             }
         }
-        
+
         return heights;
     }
 
@@ -543,13 +506,12 @@ public class PowerupTetrisAgent : MonoBehaviour
     /// </summary>
     private WildblockActionResult ProcessWildblockCNNOutput(float[] output, Board board, Dictionary<PowerUpType, int> powerUpInventory)
     {
-        Debug.Log("PowerupAgent: Processing CNN output with inventory");
-        
+
         // Split output into components
         float[] actionQ = new float[5];
         float[] bombColumnQ = new float[10];
         float[] wildblockColumnQ = new float[8];
-        
+
         Array.Copy(output, 0, actionQ, 0, 5);
         Array.Copy(output, 5, bombColumnQ, 0, 10);
         Array.Copy(output, 15, wildblockColumnQ, 0, 8);
@@ -559,28 +521,29 @@ public class PowerupTetrisAgent : MonoBehaviour
 
         // Get probabilities for all actions
         float[] probabilities = Softmax(actionQ);
-        
+
         // Find best action and its confidence
         int bestAction = ArgMax(actionQ);
         float bestConfidence = probabilities[bestAction];
-        
-        string[] actionNames = {"none", "bottom_clear", "gravity", "bomb", "wildblock"};
-        
+
+        string[] actionNames = { "none", "bottom_clear", "gravity", "bomb", "wildblock" };
+
         // Log initial decision
-        Debug.Log($"PowerupAgent: Initial best action: {actionNames[bestAction]} (confidence: {bestConfidence:F2})");
-        
+        // Debug.Log($"PowerupAgent: Initial best action: {actionNames[bestAction]} (confidence: {bestConfidence:F2})");
+
         // Apply confidence threshold - only use powerups if confidence is high enough
         if (bestAction > 0 && bestConfidence < powerupConfidenceThreshold)
         {
-            Debug.Log($"PowerupAgent: {actionNames[bestAction]} confidence {bestConfidence:F2} below threshold {powerupConfidenceThreshold:F2}, choosing 'none'");
+            // Debug.Log($"PowerupAgent: {actionNames[bestAction]} confidence {bestConfidence:F2} below threshold {powerupConfidenceThreshold:F2}, choosing 'none'");
             bestAction = 0; // Choose "none"
             bestConfidence = probabilities[0];
         }
         else if (bestAction > 0)
         {
-            Debug.Log($"PowerupAgent: {actionNames[bestAction]} confidence {bestConfidence:F2} above threshold {powerupConfidenceThreshold:F2}, executing powerup");
+
+            // Debug.Log($"PowerupAgent: {actionNames[bestAction]} confidence {bestConfidence:F2} above threshold {powerupConfidenceThreshold:F2}, executing powerup");
         }
-        
+
         var result = new WildblockActionResult
         {
             actionType = bestAction,
@@ -611,7 +574,7 @@ public class PowerupTetrisAgent : MonoBehaviour
                 MaskInvalidWildblockColumns(wildblockColumnQ, validWildblockPositions.Keys.ToArray());
                 int bestColumnIndex = ArgMax(wildblockColumnQ);
                 int bestColumn = bestColumnIndex + 1;
-                
+
                 if (validWildblockPositions.ContainsKey(bestColumn))
                 {
                     result.targetColumn = bestColumn;
@@ -628,13 +591,13 @@ public class PowerupTetrisAgent : MonoBehaviour
     {
         if (!powerUpInventory.ContainsKey(PowerUpType.LineBlaster) || powerUpInventory[PowerUpType.LineBlaster] <= 0)
             actionQ[1] = float.NegativeInfinity;
-        
+
         if (!powerUpInventory.ContainsKey(PowerUpType.Gravity) || powerUpInventory[PowerUpType.Gravity] <= 0)
             actionQ[2] = float.NegativeInfinity;
-        
+
         if (!powerUpInventory.ContainsKey(PowerUpType.Bomb) || powerUpInventory[PowerUpType.Bomb] <= 0 || FindValidBombColumns(board).Length == 0)
             actionQ[3] = float.NegativeInfinity;
-        
+
         if (!powerUpInventory.ContainsKey(PowerUpType.WildCard) || powerUpInventory[PowerUpType.WildCard] <= 0 ||
             (board.opponentBoard != null && FindValidWildblockPositions(board.opponentBoard).Count == 0))
             actionQ[4] = float.NegativeInfinity;
@@ -644,43 +607,43 @@ public class PowerupTetrisAgent : MonoBehaviour
     {
         var validPositions = new Dictionary<int, int>();
         if (opponentBoard == null) return validPositions;
-        
+
         for (int centerCol = 1; centerCol <= 8; centerCol++)
         {
             var surfaceRows = new List<int>();
-            
+
             for (int col = centerCol - 1; col <= centerCol + 1; col++)
             {
                 int surfaceRow = FindSurfaceBlock(opponentBoard, col);
                 surfaceRows.Add(surfaceRow != -1 ? surfaceRow : 20);
             }
-            
+
             int highestSurface = surfaceRows.Min();
             int placementRow = Mathf.Max(0, highestSurface - 1);
-            
+
             if (placementRow >= 0 && placementRow < 19)
             {
                 validPositions[centerCol] = placementRow;
             }
         }
-        
+
         return validPositions;
     }
 
     private float CalculateWildblockDamage(Board opponentBoard, int placementRow, int placementCol)
     {
         if (opponentBoard == null) return 0.0f;
-        
+
         float damage = 0.0f;
         var bounds = opponentBoard.Bounds;
-        
+
         for (int dr = -1; dr <= 1; dr++)
         {
             for (int dc = -1; dc <= 1; dc++)
             {
                 int r = placementRow + dr;
                 int c = placementCol + dc;
-                
+
                 if (r >= 0 && r < bounds.height && c >= 0 && c < bounds.width)
                 {
                     Vector3Int pos = new Vector3Int(bounds.xMin + c, bounds.yMin + r, 0);
@@ -691,11 +654,11 @@ public class PowerupTetrisAgent : MonoBehaviour
                 }
             }
         }
-        
+
         var heights = GetColumnHeights(opponentBoard);
         float maxHeight = heights.Max();
         if (maxHeight > 15) damage += (maxHeight - 15) * 2.0f;
-        
+
         return damage;
     }
 
@@ -725,7 +688,7 @@ public class PowerupTetrisAgent : MonoBehaviour
     private int[] FindValidBombColumns(Board board)
     {
         List<int> validColumns = new List<int>();
-        
+
         for (int col = 0; col < 10; col++)
         {
             if (FindSurfaceBlock(board, col) != -1)
@@ -733,14 +696,14 @@ public class PowerupTetrisAgent : MonoBehaviour
                 validColumns.Add(col);
             }
         }
-        
+
         return validColumns.ToArray();
     }
 
     private int FindSurfaceBlock(Board board, int column)
     {
         var bounds = board.Bounds;
-        
+
         for (int row = 0; row < bounds.height; row++)
         {
             Vector3Int pos = new Vector3Int(bounds.xMin + column, bounds.yMin + row, 0);
@@ -749,7 +712,7 @@ public class PowerupTetrisAgent : MonoBehaviour
                 return row;
             }
         }
-        
+
         return -1;
     }
 
@@ -775,7 +738,7 @@ public class PowerupTetrisAgent : MonoBehaviour
         float[] result = new float[array.Length];
         float max = array.Max();
         float sum = 0.0f;
-        
+
         for (int i = 0; i < array.Length; i++)
         {
             if (float.IsNegativeInfinity(array[i]))
@@ -788,7 +751,7 @@ public class PowerupTetrisAgent : MonoBehaviour
                 sum += result[i];
             }
         }
-        
+
         if (sum > 0)
         {
             for (int i = 0; i < result.Length; i++)
@@ -796,70 +759,70 @@ public class PowerupTetrisAgent : MonoBehaviour
                 result[i] /= sum;
             }
         }
-        
+
         return result;
     }
 
-//     private void ApplyWildblockAction(WildblockActionResult actionResult, PowerUpManager powerUpManager, Board board)
-//     {
-//         switch (actionResult.actionType)
-//         {
-//             case 0:
-//                 UpdateActionHistory("none");
-//                 break;
+    //     private void ApplyWildblockAction(WildblockActionResult actionResult, PowerUpManager powerUpManager, Board board)
+    //     {
+    //         switch (actionResult.actionType)
+    //         {
+    //             case 0:
+    //                 UpdateActionHistory("none");
+    //                 break;
 
-//             case 1:
-//                 // Use the unified UsePowerUp method
-//                 powerUpManager.UsePowerUp(PowerUpType.LineBlaster);
-//                 UpdateActionHistory("bottom_clear");
-//                 break;
+    //             case 1:
+    //                 // Use the unified UsePowerUp method
+    //                 powerUpManager.UsePowerUp(PowerUpType.LineBlaster);
+    //                 UpdateActionHistory("bottom_clear");
+    //                 break;
 
-//             case 2:
-//                 // Use the unified UsePowerUp method
-//                 powerUpManager.UsePowerUp(PowerUpType.Gravity);
-//                 UpdateActionHistory("gravity");
-//                 break;
+    //             case 2:
+    //                 // Use the unified UsePowerUp method
+    //                 powerUpManager.UsePowerUp(PowerUpType.Gravity);
+    //                 UpdateActionHistory("gravity");
+    //                 break;
 
-//             case 3:
-//                 if (actionResult.targetColumn != -1)
-//                 {
-//                     // Use unified method with column targeting
-//                     powerUpManager.UsePowerUp(PowerUpType.Bomb, actionResult.targetColumn);
-//                     UpdateActionHistory("bomb");
-//                     UpdateBombColumnHistory(actionResult.targetColumn);
-//                 }
-//                 break;
+    //             case 3:
+    //                 if (actionResult.targetColumn != -1)
+    //                 {
+    //                     // Use unified method with column targeting
+    //                     powerUpManager.UsePowerUp(PowerUpType.Bomb, actionResult.targetColumn);
+    //                     UpdateActionHistory("bomb");
+    //                     UpdateBombColumnHistory(actionResult.targetColumn);
+    //                 }
+    //                 break;
 
-//             case 4:
-//                 if (actionResult.targetColumn != -1 && board.opponentBoard != null)
-//                 {
-//                     // Use unified method with column targeting
-//                     powerUpManager.UsePowerUp(PowerUpType.WildCard, actionResult.targetColumn);
-//                     UpdateActionHistory("wildblock");
-//                     UpdateWildblockColumnHistory(actionResult.targetColumn);
-//                 }
-//                 break;
-//         }
-//     }  
-//   private void ApplyWildblockToOpponent(Board opponentBoard, int centerRow, int centerCol)
-//     {
-//         var bounds = opponentBoard.Bounds;
-        
-//         for (int dr = -1; dr <= 1; dr++)
-//         {
-//             for (int dc = -1; dc <= 1; dc++)
-//             {
-//                 int r = centerRow + dr;
-//                 int c = centerCol + dc;
-                
-//                 if (r >= 0 && r < bounds.height && c >= 0 && c < bounds.width)
-//                 {
-//                     Vector3Int pos = new Vector3Int(bounds.xMin + c, bounds.yMin + r, 0);
-//                     // opponentBoard.SetTile(pos, someBlockTile);
-//                 }
-//             }
-//         }
-//     }
+    //             case 4:
+    //                 if (actionResult.targetColumn != -1 && board.opponentBoard != null)
+    //                 {
+    //                     // Use unified method with column targeting
+    //                     powerUpManager.UsePowerUp(PowerUpType.WildCard, actionResult.targetColumn);
+    //                     UpdateActionHistory("wildblock");
+    //                     UpdateWildblockColumnHistory(actionResult.targetColumn);
+    //                 }
+    //                 break;
+    //         }
+    //     }  
+    //   private void ApplyWildblockToOpponent(Board opponentBoard, int centerRow, int centerCol)
+    //     {
+    //         var bounds = opponentBoard.Bounds;
+
+    //         for (int dr = -1; dr <= 1; dr++)
+    //         {
+    //             for (int dc = -1; dc <= 1; dc++)
+    //             {
+    //                 int r = centerRow + dr;
+    //                 int c = centerCol + dc;
+
+    //                 if (r >= 0 && r < bounds.height && c >= 0 && c < bounds.width)
+    //                 {
+    //                     Vector3Int pos = new Vector3Int(bounds.xMin + c, bounds.yMin + r, 0);
+    //                     // opponentBoard.SetTile(pos, someBlockTile);
+    //                 }
+    //             }
+    //         }
+    //     }
 
     // private void UpdateActionHistory(string actionName)
     // {

@@ -45,7 +45,6 @@ public class BoardManager : MonoBehaviour
     public void SetupGame()
     {
         Data.gameMode = GameMode.AIVsAI;
-        Debug.Log("GameMode:" + Data.gameMode);
 
         var player1KeyMapping = new List<PowerupKeyMapping>
     {
@@ -131,6 +130,8 @@ public class BoardManager : MonoBehaviour
             activeBoards[1].opponentBoard = activeBoards[0];
             activeBoards[0].powerupKeyMapping = player1KeyMapping;
             activeBoards[1].powerupKeyMapping = player2KeyMapping;
+            mlAgent1.opponentAgent = mlAgent2;
+            mlAgent2.opponentAgent = mlAgent1;
 
 
         }
@@ -172,7 +173,7 @@ public class BoardManager : MonoBehaviour
 
         // Set the input controller
         board.inputController = input;
-        Debug.Log($"Assigned input controller: {input} to board: {board.playerTag}");
+        // Debug.Log($"Assigned input controller: {input} to board: {board.playerTag}");
 
         // Special handling for ML agent
         // if (input is TetrisMLAgent mlAgent)

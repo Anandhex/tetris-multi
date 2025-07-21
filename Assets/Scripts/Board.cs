@@ -7,6 +7,10 @@ using System.Collections.Generic;
 
 public class Board : MonoBehaviour
 {
+    public bool isLocked { get; private set; }
+
+    public void Lock() => isLocked = true;
+    public void Unlock() => isLocked = false;
     public Tilemap tilemap { get; private set; }
     public Piece activePiece;
     public TetrominoData nextPieceData { get; private set; }
@@ -133,11 +137,7 @@ public class Board : MonoBehaviour
         this.playerScore = 0;
         this.gameStartTime = Time.time;
 
-        var bounds = this.Bounds;
-        Debug.Log($"BoardDebug Board Width (columns): {bounds.width}");   // Should be 10
-        Debug.Log($"Board Height (rows): {bounds.height}");    // Should be 20
-        Debug.Log($"BoardDebug X range: {bounds.xMin} to {bounds.xMax}"); // 10 units wide
-        Debug.Log($"BoardDebug Y range: {bounds.yMin} to {bounds.yMax}"); // 20 units tall
+
 
         this.powerUpManager = GetComponent<PowerUpManager>();
 
@@ -316,12 +316,12 @@ public class Board : MonoBehaviour
     public void GameOver()
     {
         string playerTag = this.playerTag ?? "Unknown";
-        Debug.Log($"🎮 GameOver triggered for player: {playerTag}");
+        // Debug.Log($"🎮 GameOver triggered for player: {playerTag}");
 
         // Prevent multiple game over triggers
         if (gameOverTriggered)
         {
-            Debug.Log($"⚠️ GameOver already triggered for {playerTag}, ignoring duplicate call");
+            // Debug.Log($"⚠️ GameOver already triggered for {playerTag}, ignoring duplicate call");
             return;
         }
         gameOverTriggered = true;
@@ -383,15 +383,13 @@ public class Board : MonoBehaviour
         TetrisSentisAgent sentisAgent = this.inputController as TetrisSentisAgent;
         if (sentisAgent != null)
         {
-            Debug.Log($"🧠 Sentis agent game over for {playerTag}");
-            
+
             // Check if this is AI vs AI mode (both players are AI)
             bool isAIvsAI = IsAIvsAIMode();
-            
+
             if (isAIvsAI)
             {
-                Debug.Log($"🤖⚔️🤖 AI vs AI mode detected - {playerTag} LOST!");
-                
+
                 // ✅ FIX: Stop the game and show final results
                 EndAIvsAIGame(playerTag);
                 return;
@@ -399,7 +397,6 @@ public class Board : MonoBehaviour
             else
             {
                 // Single AI vs Human - go to game over scene
-                Debug.Log($"👤 vs 🤖 Game over - going to game over scene");
                 Data.PlayerScore = this.playerScore;
                 SceneManager.LoadScene(3);
                 return;
@@ -407,7 +404,6 @@ public class Board : MonoBehaviour
         }
 
         // Regular human player game over
-        Debug.Log($"👤 Human player game over for {playerTag}");
         Data.PlayerScore = this.playerScore;
         SceneManager.LoadScene(3);
     }
@@ -419,37 +415,19 @@ public class Board : MonoBehaviour
         string winnerTag = opponentBoard?.playerTag ?? "Opponent";
         int winnerScore = opponentBoard?.playerScore ?? 0;
         int loserScore = this.playerScore;
-        
-        Debug.Log($"🏆 ===== AI vs AI GAME FINISHED =====");
-        Debug.Log($"🏆 WINNER: {winnerTag} (Score: {winnerScore})");
-        Debug.Log($"💀 LOSER: {loserTag} (Score: {loserScore})");
-        Debug.Log($"====================================");
-        
+
+
+
         // ✅ FIX: Set winner data and go to score scene
         Data.PlayerScore = winnerScore;
         Data.WinnerName = winnerTag; // You'll need to add this to Data.cs
         Data.LoserName = loserTag;   // You'll need to add this to Data.cs
         Data.LoserScore = loserScore; // You'll need to add this to Data.cs
-        
-        Debug.Log($"🎬 Redirecting to score scene...");
+
         SceneManager.LoadScene(3); // Score scene
     }
 
-    private void ShowFinalResults(string winner, string loser, int winnerScore, int loserScore)
-    {
-        // Create a simple UI display or just log the results
-        Debug.Log($"🎉 GAME OVER! {winner} WINS!");
-        Debug.Log($"📊 Final Scores: {winner}: {winnerScore}, {loser}: {loserScore}");
-        
-        // You can add UI text here to show on screen
-        // For example, if you have a results UI panel:
-        // resultsPanel.SetActive(true);
-        // winnerText.text = $"Winner: {winner}";
-        // scoresText.text = $"{winner}: {winnerScore}\n{loser}: {loserScore}";
-        
-        // Optionally freeze the game
-        Time.timeScale = 0f; // This pauses the game
-    }
+
 
     // Keep the helper method
     private bool IsAIvsAIMode()
@@ -467,21 +445,10 @@ public class Board : MonoBehaviour
                            (opponentBoard.inputController is SocketTetrisAgent);
         }
 
-        Debug.Log($"🔍 AI vs AI check: This={thisIsAI}, Opponent={opponentIsAI}");
         return thisIsAI && opponentIsAI;
     }
 
 
-    private void ShowAIvsAIResults(string winner, string loser)
-    {
-        Debug.Log($"🎉 ===== AI vs AI MATCH RESULTS =====");
-        Debug.Log($"🏆 WINNER: {winner}");
-        Debug.Log($"💀 LOSER: {loser}");
-        Debug.Log($"🎯 Final Scores:");
-        Debug.Log($"   {winner}: {opponentBoard?.playerScore ?? 0}");
-        Debug.Log($"   {loser}: {this.playerScore}");
-        Debug.Log($"====================================");
-    }
 
 
 

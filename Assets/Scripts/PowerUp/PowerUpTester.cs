@@ -11,7 +11,7 @@ public class PowerUpTester : MonoBehaviour
             if (Input.GetKeyDown(KeyCode.Alpha0 + i))
             {
                 Debug.Log($"Testing bomb at column {i}");
-                powerUpManager.UsePowerUp(PowerUpType.Bomb, i); // ← FIXED: Use unified method
+                // powerUpManager.UsePowerUp(PowerUpType.Bomb, i); // ← FIXED: Use unified method
             }
         }
     }
