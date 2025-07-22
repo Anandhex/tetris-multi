@@ -232,7 +232,7 @@ public class Board : MonoBehaviour
         {
             nextPieceDisplay.DisplayNextPiece(this.nextPieceData);
         }
-        if ((inputController is SinglePlayerInputController || inputController is PlayerInputController || inputController is Player1InputController || inputController is Player2InputController))
+        if (inputController is SinglePlayerInputController || inputController is PlayerInputController || inputController is Player1InputController || inputController is Player2InputController)
         {
             if (IsValidPosition(this.activePiece, this.spawnPosition))
             {
@@ -383,7 +383,7 @@ public class Board : MonoBehaviour
         TetrisSentisAgent sentisAgent = this.inputController as TetrisSentisAgent;
         if (sentisAgent != null)
         {
-
+            Debug.Log($"GameOver {playerTag}");
             // Check if this is AI vs AI mode (both players are AI)
             bool isAIvsAI = IsAIvsAIMode();
 
@@ -520,15 +520,9 @@ public class Board : MonoBehaviour
             if (this.tilemap.HasTile(tilePosition))
             {
                 //Debug.LogError($"Collision at cell #{i} → {tilePosition}. Dumping map:");
-                Debug.LogWarning($"Collision at cell #{i} → {tilePosition}. Continuing...");
                 return false; // Add this line to prevent the crash
-                // DumpTilemap(bounds);
-                SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
-                if (socketAgent != null)
-                {
-                    // socketAgent.TriggerGameOver();
-                }
-                return false;
+                              // DumpTilemap(bounds);
+
             }
         }
         return true;
@@ -722,7 +716,6 @@ public class Board : MonoBehaviour
             }
         }
 
-        Debug.Log($"💣 Bomb exploded at {center}, cleared {cleared} tiles");
     }
 
 

@@ -110,7 +110,7 @@ public class BoardManager : MonoBehaviour
             TetrisSentisAgent mlAgent = gameObject.AddComponent<TetrisSentisAgent>();
             gameObject.AddComponent<PowerupTetrisAgent>();
             activeBoards[0] = CreateBoard(singlePlayerPosition, mlAgent, "ML Player");
-            activeBoards[0].isMLTraining = true;
+            activeBoards[0].isMLTraining = false;
             activeBoards[0].powerupKeyMapping = player1KeyMapping;
 
         }

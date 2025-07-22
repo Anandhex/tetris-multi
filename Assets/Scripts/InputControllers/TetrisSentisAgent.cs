@@ -32,7 +32,7 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
     private Worker blockWorker;       // Worker for block placement model
 
     // Tetris game references
-    private Board board;
+    public Board board;
     private Piece currentPiece;
 
     // Statistics tracking
@@ -168,7 +168,8 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
 
         // Debug.Log($"TetrisSentisAgent: SetCurrentPiece called, IsReadyForInference: {IsReadyForInference()}");
 
-        if (!IsReadyForInference()) return;
+        if (!IsReadyForInference() || board.isLocked) return;
+        Debug.Log($"{board.playerTag} new piece...");
 
         // Start the integrated decision-making process
         MakeIntegratedDecision();
@@ -197,63 +198,47 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
         {
             powerupChecksCount++;
 
-            lastPowerupDecision = new PowerupTetrisAgent.WildblockActionResult
-            {
-                actionType = 0,
-                actionName = "none",
-                confidence = 1.0f
-            };
-
             lastPowerupDecision = powerupAgent.GetPowerupDecisionOnly(board, board.powerUpManager.powerUpInventory);
 
             if (lastPowerupDecision.actionType == 0)
             {
-                taskQueueRunner.EnqueueTask(new InferenceTask(this, board));
+                // No powerup - just do block placement
+                taskQueueRunner.EnqueueTask(new InferenceTask(this, board, GetBesMove()));
                 return;
             }
 
             var powerupType = GetPowerupTypeFromActionType(lastPowerupDecision.actionType);
-            if (powerupType.HasValue)
+
+            if (powerupType.Value == PowerUpType.WildCard && opponentAgent != null)
             {
-                if (powerupType.Value == PowerUpType.WildCard && opponentAgent != null)
-                {
-                    board.powerUpManager.powerUpInventory[powerupType.Value]--;
-                    // Enqueue WildCard power-up on opponent's task queue
-                    opponentAgent.taskQueueRunner.EnqueueTask(
-                        new PowerUpTask(powerupType.Value, lastPowerupDecision.targetColumn, opponentAgent.board.powerUpManager, opponentAgent.board));
-                    return; // Skip enqueuing your own inference task here if you want
-                }
-                else if (powerupType.Value == PowerUpType.Bomb)
-                {
-                    board.powerUpManager.powerUpInventory[powerupType.Value]--;
+                board.powerUpManager.powerUpInventory[powerupType.Value]--;
 
-                    taskQueueRunner.EnqueueTask(
-                                           new PowerUpTask(powerupType.Value, lastPowerupDecision.targetColumn, board.powerUpManager, board));
-                }
-                else
-                {
-                    // For other powerups, enqueue normally on own queue
-                    taskQueueRunner.EnqueueTask(
-                        new PowerUpTask(powerupType.Value, lastPowerupDecision.targetColumn, board.powerUpManager, board));
-                    taskQueueRunner.EnqueueTask(new InferenceTask(this, board));
-
-                    return;
-                }
-            }
-            else
-            {
-                taskQueueRunner.EnqueueTask(new InferenceTask(this, board));
-
+                // Enqueue WildCard on opponent's queue
+                taskQueueRunner.EnqueueTask(
+                 new WildCardTask(this, opponentAgent, lastPowerupDecision.targetColumn));
+                taskQueueRunner.EnqueueTask(new InferenceTask(this, board, GetBesMove()));
+                return;
             }
 
+            if (powerupType.Value == PowerUpType.Bomb)
+            {
+                board.powerUpManager.powerUpInventory[powerupType.Value]--;
 
-        }
-        else
-        {
+                // Chain: Powerup first, then inference
+                taskQueueRunner.EnqueueTask(
+                    new PowerUpTask(powerupType.Value, lastPowerupDecision.targetColumn, board.powerUpManager, board, true)); // false = don't spawn piece
+                return;
+            }
 
-            blockPlacementsCount++;
-            taskQueueRunner.EnqueueTask(new InferenceTask(this, board));
+            // For other powerups (LineBlaster, Gravity)
+            taskQueueRunner.EnqueueTask(
+                new PowerUpTask(powerupType.Value, lastPowerupDecision.targetColumn, board.powerUpManager, board, false)); // false = don't spawn piece
+            taskQueueRunner.EnqueueTask(new InferenceTask(this, board, GetBesMove()));
+            return;
         }
+
+        // No powerups available - just do block placement
+        taskQueueRunner.EnqueueTask(new InferenceTask(this, board, GetBesMove()));
     }
 
 
@@ -290,13 +275,6 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
     }
 
 
-
-
-
-
-
-
-
     /// <summary>
     /// Convert PowerupTetrisAgent action type to PowerUpType enum
     /// </summary>
@@ -312,60 +290,14 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
         };
     }
 
-    /// <summary>
-    /// Determine if we should continue evaluating after a powerup action
-    /// This handles different powerup types and their effects on the game state
-    /// </summary>
-    // private bool ShouldContinueAfterPowerup(int powerupType)
-    // {
-    //     switch (powerupType)
-    //     {
-    //         case 1: // LineBlaster (bottom_clear)
-    //             // Board state changed significantly - bottom line was cleared
-    //             // AI should re-evaluate the new board state to see if more powerups are beneficial
-    //             Debug.Log("TetrisSentisAgent: LineBlaster used - re-evaluating due to board state change");
-    //             return true;
-
-    //         case 2: // Gravity
-    //             // Board state changed dramatically - all floating blocks dropped
-    //             // This can create new line clear opportunities or change strategic positioning
-    //             Debug.Log("TetrisSentisAgent: Gravity used - re-evaluating due to major board restructuring");
-    //             return true;
-
-    //         case 3: // Bomb
-    //             // Bomb affects own board (clears 3x3 area around current piece)
-    //             // Board state changed, but less dramatically than LineBlaster/Gravity
-    //             // Re-evaluate to see if the cleared area creates new opportunities
-    //             Debug.Log("TetrisSentisAgent: Bomb used - re-evaluating due to 3x3 area clearance");
-    //             return true;
-
-    //         case 4: // WildCard/Wildblock
-    //             // Affects opponent board, not own board
-    //             // Own board state unchanged, continue with current piece placement
-    //             Debug.Log("TetrisSentisAgent: WildCard used - continuing with block placement (opponent affected)");
-    //             return true;
-
-    //         default:
-    //             // Unknown powerup type or 'none' - no re-evaluation needed
-    //             Debug.Log($"TetrisSentisAgent: Unknown powerup type {powerupType} - no re-evaluation");
-    //             return false;
-    //     }
-    // }
-
-    /// <summary>
-    /// Original block placement inference logic (now uses blockWorker)
-    /// </summary>
-    public IEnumerator RunBlockPlacementInference()
+    public string GetBesMove()
     {
-
-        // Get all possible moves (same as Python trainer)
         var possibleMoves = GetPossibleMoves();
 
         if (possibleMoves.Count == 0)
         {
             Debug.LogWarning("TetrisSentisAgent: No valid moves available");
             board.GameOver();
-            yield break;
         }
 
         // Extract features for each move
@@ -374,7 +306,6 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
         if (featureList.Count == 0)
         {
             Debug.LogWarning("TetrisSentisAgent: No features generated");
-            yield break;
         }
 
         // Create input tensor for the block placement model
@@ -388,16 +319,51 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
 
         if (outputTensor != null)
         {
-            StartCoroutine(ProcessInferenceOutput(outputTensor, possibleMoves));
+            outputTensor.CompleteAllPendingOperations();
+            var cpuTensor = outputTensor.ReadbackAndClone();
+            float[] scores = cpuTensor.AsReadOnlyNativeArray().ToArray();
+
+            if (scores.Length == 0)
+            {
+                inputTensor.Dispose();
+                outputTensor.Dispose();
+                return "";
+            }
+
+            // Find best move
+            int bestIndex = GetBestActionIndex(scores);
+            float bestScore = scores[bestIndex];
+
+            // Get the corresponding move
+            var moveKeys = possibleMoves.Keys.ToList();
+            if (bestIndex >= moveKeys.Count)
+            {
+                inputTensor.Dispose();
+                outputTensor.Dispose();
+                return "";
+            }
+
+            string bestMove = moveKeys[bestIndex];
+            var bestFeatures = possibleMoves[bestMove];
+            inputTensor.Dispose();
+            outputTensor.Dispose();
+            return bestMove;
+
         }
         else
         {
+            inputTensor.Dispose();
+            outputTensor.Dispose();
+            return "";
         }
 
-        inputTensor.Dispose();
-        outputTensor.Dispose();
 
     }
+
+    /// <summary>
+    /// Original block placement inference logic (now uses blockWorker)
+    /// </summary>
+
 
     // Rest of the methods remain the same...
     private Dictionary<string, float[]> GetPossibleMoves()
@@ -465,44 +431,7 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
         return moves;
     }
 
-    private IEnumerator ProcessInferenceOutput(Tensor<float> outputTensor, Dictionary<string, float[]> possibleMoves)
-    {
-        try
-        {
-            // Download tensor data to CPU
-            outputTensor.CompleteAllPendingOperations();
-            var cpuTensor = outputTensor.ReadbackAndClone();
-            float[] scores = cpuTensor.AsReadOnlyNativeArray().ToArray();
 
-            if (scores.Length == 0)
-            {
-                yield break;
-            }
-
-            // Find best move
-            int bestIndex = GetBestActionIndex(scores);
-            float bestScore = scores[bestIndex];
-
-            // Get the corresponding move
-            var moveKeys = possibleMoves.Keys.ToList();
-            if (bestIndex >= moveKeys.Count)
-            {
-                yield break;
-            }
-
-            string bestMove = moveKeys[bestIndex];
-            var bestFeatures = possibleMoves[bestMove];
-
-            // Execute the move
-
-            StartCoroutine(ExecuteMove(bestMove));
-
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogError($"TetrisSentisAgent: Failed to process output: {e.Message}");
-        }
-    }
 
     private int GetBestActionIndex(float[] scores)
     {
@@ -521,7 +450,7 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
         return bestIndex;
     }
 
-    private IEnumerator ExecuteMove(string move)
+    public IEnumerator ExecuteMove(string move)
     {
         if (currentPiece?.data == null || board == null)
         {
@@ -578,7 +507,7 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
         string playerTag = board.playerTag ?? "Unknown";
 
 
-        board.SpawnPiece();
+
     }
     // IPlayerInputController implementation (unused in AI mode)
     public bool GetLeft() => false;
@@ -637,18 +566,25 @@ public class InferenceTask : ITetrisTask
     private TetrisSentisAgent agent;
     private Board board;
     public Board GetBoard() => board;
+    public string move;
 
-    public InferenceTask(TetrisSentisAgent agent, Board board)
+    public InferenceTask(TetrisSentisAgent agent, Board board, string move)
     {
         this.agent = agent;
         this.board = board;
+        this.move = move;
     }
 
     public IEnumerator Execute()
     {
+
         board.Lock();
-        yield return agent.RunBlockPlacementInference();
+        Debug.Log($"{board.playerTag} Piece placement started...");
+        yield return agent.ExecuteMove(this.move);
         board.Unlock();
+        Debug.Log($"{board.playerTag} Piece placement completed...");
+        board.SpawnPiece();
+
     }
 
     public string Description => $"InferenceTask on Board {board.playerTag}";
@@ -660,18 +596,26 @@ public class PowerUpTask : ITetrisTask
     private int column;
     private PowerUpManager powerUpManager;
     private Board board;
+    private bool shouldSpawnPiece; // ADDED: Control piece spawning
+
     public Board GetBoard() => board;
-    public PowerUpTask(PowerUpType powerUpType, int column, PowerUpManager powerUpManager, Board board)
+
+    // FIXED: Added shouldSpawnPiece parameter
+    public PowerUpTask(PowerUpType powerUpType, int column, PowerUpManager powerUpManager, Board board, bool shouldSpawnPiece = true)
     {
         this.powerUpType = powerUpType;
         this.column = column;
         this.powerUpManager = powerUpManager;
         this.board = board;
+        this.shouldSpawnPiece = shouldSpawnPiece;
     }
 
     public IEnumerator Execute()
     {
         board.Lock();
+
+        Debug.Log($"{board.playerTag} PowerUp {powerUpType} execution started...");
+
         switch (powerUpType)
         {
             case PowerUpType.LineBlaster:
@@ -681,12 +625,64 @@ public class PowerUpTask : ITetrisTask
             case PowerUpType.Bomb:
                 yield return powerUpManager.ExecuteBombAtColumn(column);
                 break;
-            case PowerUpType.WildCard:
-                yield return powerUpManager.DropWildcardOnOpponent(board, column, powerUpManager);
-                break;
+
         }
+
+        Debug.Log($"{board.playerTag} PowerUp {powerUpType} execution completed...");
         board.Unlock();
-        yield return null;
+
+        // FIXED: Only spawn piece if explicitly requested (for standalone powerup tasks)
+        if (shouldSpawnPiece)
+        {
+            board.SpawnPiece();
+        }
     }
-    public string Description => $"PowerUpTask {powerUpType} at column {column} on Board {board.opponentBoard.playerTag}";
+
+    public string Description => $"PowerUpTask {powerUpType} at column {column} on Board {board.playerTag}";
+}
+
+
+public class WildCardTask : ITetrisTask
+{
+    private TetrisSentisAgent sourceAgent;
+    private TetrisSentisAgent targetAgent;
+    private int targetColumn;
+
+    public Board GetBoard() => sourceAgent.board;
+
+    public WildCardTask(TetrisSentisAgent sourceAgent, TetrisSentisAgent targetAgent, int targetColumn)
+    {
+        this.sourceAgent = sourceAgent;
+        this.targetAgent = targetAgent;
+        this.targetColumn = targetColumn;
+    }
+
+    public IEnumerator Execute()
+    {
+        Debug.Log($"{sourceAgent.board.playerTag} executing WildCard on {targetAgent.board.playerTag}");
+
+        // Lock both boards to prevent race conditions
+        targetAgent.board.Lock();
+
+        try
+        {
+            // Execute WildCard on target board
+            yield return sourceAgent.board.powerUpManager.DropWildcardOnOpponent(
+                targetAgent.board, targetColumn, sourceAgent.board.powerUpManager);
+
+            Debug.Log($"WildCard execution completed");
+        }
+        finally
+        {
+            // Always unlock both boards
+            targetAgent.board.Unlock();
+        }
+
+        // Now spawn a new piece for the source agent and continue their turn
+
+        // IMPORTANT: Don't spawn piece for target - they need to handle their modified piece
+        // The target agent will handle their next move when their turn comes
+    }
+
+    public string Description => $"WildCardTask from {sourceAgent.board.playerTag} to {targetAgent.board.playerTag}";
 }

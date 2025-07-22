@@ -42,8 +42,7 @@ public class PowerUpManager : MonoBehaviour
     private float lastLogTime = 0f;
     private float logInterval = 2f; // Log every 2 seconds
     private int lastLinesCount = 0;
-    private int bombTestColumn = -5;
-    private int wildcardTestColumn = -4;
+
 
     private Board opponentBoard;
 
@@ -54,16 +53,9 @@ public class PowerUpManager : MonoBehaviour
         this.powerupKeyMappings = powerupKeyMappings;
 
         gameStartTime = Time.time;
-
-
-
-        // Initialize inventory
         InitializeInventory();
-
-        // Initialize UI
         InitializeUI();
 
-        // Initial status log
     }
 
     private void InitializeInventory()
@@ -77,35 +69,24 @@ public class PowerUpManager : MonoBehaviour
         {
             powerUpInventory[PowerUpType.WildCard] = 0;
         }
-        else
-        {
-            // Debug.Log("❌ WildCard NOT initialized (no opponent board)");
-        }
+
 
     }
 
     private void InitializeUI()
     {
-        // Set up the keys instruction (this won't change)
         if (keysText != null)
         {
             keysText.text = "Keys:\n1=LineBlaster\n2=Gravity\n3=Bomb";
-            // Debug.Log("✅ Keys UI initialized");
             if (opponentBoard != null)
             {
                 keysText.text += "\n4=WildCard";
             }
         }
-        else
-        {
-            Debug.LogWarning("⚠️ Keys UI not connected!");
-        }
 
-        // Update the dynamic UI elements
+
         UpdateUI();
 
-        // Check UI connections
-        // Debug.Log($"🔗 UI Connections: Inventory={inventoryText != null}, Progress={progressText != null}, Keys={keysText != null}");
     }
 
     private void Update()
@@ -117,44 +98,22 @@ public class PowerUpManager : MonoBehaviour
             {
                 if (Input.GetKeyDown(mapping.key))
                 {
-                    Debug.Log($"🔑 {mapping.key} pressed - attempting {mapping.powerupType}");
                     UsePowerUp(mapping.powerupType);
                 }
             }
         }
 
-        // if (Input.GetKeyDown(KeyCode.Semicolon)) // ; key for bomb
-        // {
-        //     UsePowerUp(PowerUpType.Bomb, 0);
-        // }
 
-        // if (Input.GetKeyDown(KeyCode.Quote)) // ' key for wildcard
-        // {
-        //     Debug.Log($"🧪 TESTING: Wildcard at column {wildcardTestColumn}");
-        //     if (opponentBoard != null)
-        //     {
-        //         Debug.Log($"🔍 Opponent board bounds: {opponentBoard.Bounds}");
-        //     }
-        //     UsePowerUp(PowerUpType.WildCard, wildcardTestColumn);
-        //     wildcardTestColumn++;
-        //     if (wildcardTestColumn > 3) wildcardTestColumn = -4;
-        // }
-        // Clean up old line clear times (outside the time window)
         CleanupOldLineTimes();
-
-        // Update UI every frame
         UpdateUI();
 
-        // Periodic status logging
         if (Time.time - lastLogTime > logInterval)
         {
             lastLogTime = Time.time;
         }
 
-        // Check for lines count change
         if (linesClearedTimes.Count != lastLinesCount)
         {
-            // Debug.Log($"📊 Lines count changed: {lastLinesCount} → {linesClearedTimes.Count}");
             lastLinesCount = linesClearedTimes.Count;
         }
     }
@@ -265,29 +224,23 @@ public class PowerUpManager : MonoBehaviour
 
 
 
-        // ✅ Bomb handling
         if (type == PowerUpType.Bomb)
         {
-
             ExecuteBombImproved();
             return;
         }
 
-        // ✅ WildCard handling
         if (type == PowerUpType.WildCard && opponentBoard != null)
         {
-
             ReplaceOpponentPieceWithWildcard();
         }
 
-        // ✅ Temporarily clear active piece
         bool hadActivePiece = ownerBoard.activePiece != null;
         if (hadActivePiece)
         {
             ownerBoard.Clear(ownerBoard.activePiece);
         }
 
-        // ✅ Execute power-up
         switch (type)
         {
             case PowerUpType.LineBlaster:
@@ -304,7 +257,6 @@ public class PowerUpManager : MonoBehaviour
             if (ownerBoard.IsValidPosition(ownerBoard.activePiece, ownerBoard.activePiece.position))
             {
                 ownerBoard.Set(ownerBoard.activePiece);
-                Debug.Log("✅ Active piece restored to original position");
             }
             else
             {
@@ -312,12 +264,8 @@ public class PowerUpManager : MonoBehaviour
                 if (ownerBoard.IsValidPosition(ownerBoard.activePiece, ownerBoard.activePiece.position))
                 {
                     ownerBoard.Set(ownerBoard.activePiece);
-                    Debug.Log("✅ Active piece restored to adjusted position");
                 }
-                else
-                {
-                    Debug.Log("⚠️ Could not restore active piece - position invalid");
-                }
+
             }
         }
 
@@ -346,29 +294,33 @@ public class PowerUpManager : MonoBehaviour
 
     public IEnumerator ExecuteBombAtColumn(int targetColumn)
     {
-        yield return new WaitForSeconds(0.05f);
         Piece activePiece = ownerBoard.activePiece;
+        if (activePiece == null)
+        {
+            Debug.LogWarning("⚠️ No active piece on board for ExecuteBombAtColumn");
+            yield break;
+        }
 
-
-
-        // Clear old piece from the board
+        // 1. Clear old piece
         ownerBoard.Clear(activePiece);
 
-        // Set wildcard shape and properties
-        ownerBoard.activePiece.SetCells(new Vector3Int[] { Vector3Int.zero }); // single cell at center
-        ownerBoard.activePiece.tile = ownerBoard.bombTile;
-        ownerBoard.activePiece.isBomb = true;
+        // 2. Assign bomb properties (single tile in center)
+        activePiece.SetCells(new Vector3Int[] { Vector3Int.zero });
+        activePiece.tile = ownerBoard.bombTile;
+        activePiece.isBomb = true;
 
+        // 3. Set temporarily for visual update
         ownerBoard.Set(activePiece);
         yield return new WaitForSeconds(0.05f);
         ownerBoard.Clear(activePiece);
 
-        // Set piece on the board to update tilemap
+        // 4. Convert column index to board-relative X coordinate
+        int clampedCol = Mathf.Clamp(targetColumn, 0, 9);
+        int targetX = clampedCol + ownerBoard.Bounds.xMin;
 
-
-        // Move horizontally toward target column
+        // 5. Move horizontally toward target X
         Vector3Int pos = activePiece.position;
-        int delta = targetColumn - pos.x;
+        int delta = targetX - pos.x;
         int dir = delta > 0 ? 1 : -1;
 
         for (int i = 0; i < Mathf.Abs(delta); i++)
@@ -376,18 +328,17 @@ public class PowerUpManager : MonoBehaviour
             pos.x += dir;
             if (!ownerBoard.IsValidPosition2(activePiece, pos))
             {
-                pos.x -= dir; // revert if invalid
+                pos.x -= dir; // revert move if invalid
                 break;
             }
+
             activePiece.position = pos;
             ownerBoard.Set(activePiece);
             yield return new WaitForSeconds(0.05f);
             ownerBoard.Clear(activePiece);
-
-
         }
 
-        // Drop vertically until collision
+        // 6. Drop vertically
         while (ownerBoard.IsValidPosition2(activePiece, pos + Vector3Int.down))
         {
             pos += Vector3Int.down;
@@ -397,86 +348,99 @@ public class PowerUpManager : MonoBehaviour
             ownerBoard.Clear(activePiece);
         }
 
-        // Final placement and cleanup
+        // 7. Final placement and explosion
         ownerBoard.Set(activePiece);
-        activePiece.Lock();
         ownerBoard.ExecuteBombExplosion(activePiece.position);
 
-        // Decrement powerup count and update UI - you may need to pass or access powerUpInventory differently here
-        // Example:
-        ownerBoard.powerUpManager.UpdatePowerUpUI();
+        // 8. Update UI
+        ownerBoard.powerUpManager?.UpdatePowerUpUI();
     }
+
 
 
 
     // ✅ WILDCARD METHODS (unchanged - these work fine)
     public IEnumerator DropWildcardOnOpponent(Board targetBoard, int targetColumn, PowerUpManager powerUpManager)
     {
-        yield return new WaitForSeconds(0.05f);
-        // Wait until the target board is free (unlocked)
+        Debug.Log($"Dropping WildCard on {targetBoard.playerTag} at column {targetColumn}");
 
-
+        // 1. Safety Check
         Piece activePiece = targetBoard.activePiece;
         if (activePiece == null)
         {
             Debug.LogWarning("⚠️ Target board has no active piece to replace with wildcard");
-            targetBoard.Unlock();
             yield break;
         }
 
-
-        // Clear old piece from the board
+        // 2. Clear old piece from board
         targetBoard.Clear(activePiece);
 
-        // Set wildcard shape and properties
-        activePiece.SetCells(Data.WildcardCells); // 3x3 wildcard shape
+        // 3. Assign Wildcard properties
+        activePiece.SetCells(Data.WildcardCells); // 3x3 wildcard
         activePiece.tile = targetBoard.bombTile;
         activePiece.isBomb = false;
-        targetBoard.Set(activePiece);
-        yield return new WaitForSeconds(0.05f);
-        targetBoard.Clear(activePiece);
 
+        // 4. Calculate horizontal shift BEFORE setting position
+        int minX = activePiece.cells.Min(c => c.x);
+        int clampedCol = Mathf.Clamp(targetColumn, 0, 9);
+        int targetX = clampedCol + targetBoard.Bounds.xMin;
 
-        // Set piece on the board to update tilemap
+        // Set initial position
+        Vector3Int newPos = new Vector3Int(targetX - minX, activePiece.position.y, activePiece.position.z);
 
-
-        // Move horizontally toward target column
-        Vector3Int pos = activePiece.position;
-        int delta = targetColumn - pos.x;
-        int dir = delta > 0 ? 1 : -1;
-
-        for (int i = 0; i < Mathf.Abs(delta); i++)
+        // Ensure position is valid, adjust if needed
+        if (!targetBoard.IsValidPosition2(activePiece, newPos))
         {
-            pos.x += dir;
-            if (!targetBoard.IsValidPosition2(activePiece, pos))
+            // Try to find nearest valid position
+            for (int offset = 0; offset <= 5; offset++)
             {
-                pos.x -= dir; // revert if invalid
-                break;
+                // Try moving left
+                Vector3Int leftPos = newPos + Vector3Int.left * offset;
+                if (targetBoard.IsValidPosition2(activePiece, leftPos))
+                {
+                    newPos = leftPos;
+                    break;
+                }
+
+                // Try moving right
+                Vector3Int rightPos = newPos + Vector3Int.right * offset;
+                if (targetBoard.IsValidPosition2(activePiece, rightPos))
+                {
+                    newPos = rightPos;
+                    break;
+                }
             }
-            activePiece.position = pos;
-            targetBoard.Set(activePiece);
-            yield return new WaitForSeconds(0.05f);
-            targetBoard.Clear(activePiece);
         }
 
-        // Drop vertically until collision
-        while (targetBoard.IsValidPosition2(activePiece, pos + Vector3Int.down))
+        activePiece.position = newPos;
+
+        // 5. Show placement animation
+        targetBoard.Set(activePiece);
+        yield return new WaitForSeconds(0.1f);
+        targetBoard.Clear(activePiece);
+
+        // 6. Drop vertically with animation
+        while (targetBoard.IsValidPosition2(activePiece, activePiece.position + Vector3Int.down))
         {
-            pos += Vector3Int.down;
-            activePiece.position = pos;
+            activePiece.position += Vector3Int.down;
             targetBoard.Set(activePiece);
             yield return new WaitForSeconds(0.02f);
             targetBoard.Clear(activePiece);
         }
 
-        // Final placement and cleanup
+        // 7. Final placement
         targetBoard.Set(activePiece);
 
-        // Decrement powerup count and update UI - you may need to pass or access powerUpInventory differently here
-        // Example:
-        powerUpManager.UpdatePowerUpUI();
-        targetBoard.SpawnPiece();
+        // 8. Clear lines & update powerup UI
+        int linesCleared = targetBoard.ClearLines();
+        powerUpManager?.UpdatePowerUpUI();
+
+        Debug.Log($"WildCard placed on {targetBoard.playerTag}, cleared {linesCleared} lines");
+
+        // IMPORTANT: Don't spawn a new piece here - let the target agent handle their modified piece
+        // The target board now has a wildcard piece that their AI needs to deal with
     }
+
 
 
 
@@ -524,10 +488,8 @@ public class PowerUpManager : MonoBehaviour
     // ✅ OTHER POWERUP METHODS (unchanged)
     public void ExecuteLineBlaster()
     {
-        Debug.Log("⚡ === EXECUTING LINE BLASTER POWER-UP ===");
 
         RectInt bounds = ownerBoard.Bounds;
-        Debug.Log($"🎯 Searching for bottom line in bounds: {bounds}");
 
         bool lineFound = false;
         for (int y = bounds.yMin; y < bounds.yMax; y++)
@@ -546,9 +508,7 @@ public class PowerUpManager : MonoBehaviour
 
             if (hasBlocks)
             {
-                Debug.Log($"⚡ Found bottom line at y={y} with {blockCount} blocks");
                 ClearLine(y);
-                Debug.Log($"✅ LineBlaster cleared line {y}");
                 lineFound = true;
                 break;
             }
@@ -556,18 +516,15 @@ public class PowerUpManager : MonoBehaviour
 
         if (!lineFound)
         {
-            Debug.Log("❌ No lines found to clear with LineBlaster");
         }
     }
 
     public void ExecuteGravity()
     {
-        Debug.Log("🌍 === EXECUTING GRAVITY POWER-UP ===");
 
         RectInt bounds = ownerBoard.Bounds;
         int totalMoved = 0;
 
-        Debug.Log($"🎯 Processing columns in bounds: {bounds}");
 
         for (int x = bounds.xMin; x < bounds.xMax; x++)
         {
@@ -597,11 +554,9 @@ public class PowerUpManager : MonoBehaviour
 
             if (originalTiles > 0)
             {
-                Debug.Log($"🌍 Column {x}: {originalTiles} tiles → compacted to bottom");
             }
         }
 
-        Debug.Log($"✅ Gravity completed: {totalMoved} tiles moved");
     }
 
     private void ClearLine(int row)
@@ -676,14 +631,8 @@ public class PowerUpManager : MonoBehaviour
             ResetTimeChallenge();
         }
 
-        if (powerUpsAwarded == 0)
-        {
-            // Debug.Log($"💔 No power-ups awarded to {playerTag} this time");
-        }
-        else
-        {
-            // Debug.Log($"🎉 TOTAL POWER-UPS AWARDED TO {playerTag}: {powerUpsAwarded}");
-        }
+
+
 
     }
 
@@ -720,16 +669,9 @@ public class PowerUpManager : MonoBehaviour
     {
         string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
 
-        // Constraint 2: X lines in Y minutes = guaranteed power-up
         int linesInWindow = linesClearedTimes.Count;
         float timeElapsed = Time.time - gameStartTime;
 
-        // Debug.Log($"📊 Challenge Details for {playerTag}:");
-        // Debug.Log($"  Lines in window: {linesInWindow}");
-        // Debug.Log($"  Required lines: {requiredLinesInWindow}");
-        // Debug.Log($"  Time elapsed: {timeElapsed:F1}s");
-        // Debug.Log($"  Time remaining: {timeRemaining:F1}s");
-        // Debug.Log($"  Window duration: {timeWindowMinutes * 60f}s");
 
         bool success = linesInWindow >= requiredLinesInWindow;
 
@@ -812,36 +754,16 @@ public class PowerUpManager : MonoBehaviour
 
     }
 
-    // private void LogFullInventory(string context)
-    // {
-    //     string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
-    //     Debug.Log($"📦 === FULL INVENTORY ({context}) - Player: {playerTag} ===");
-
-    //     foreach (var kvp in powerUpInventory)
-    //     {
-    //         Debug.Log($"  {kvp.Key}: {kvp.Value}");
-    //     }
-
-    //     int totalPowerUps = powerUpInventory.Values.Sum();
-    //     Debug.Log($"📊 Total Power-ups: {totalPowerUps}");
-    //     Debug.Log("=== END INVENTORY LOG ===");
-    // }
 
     public void ClearAllPowerUps()
     {
-        string playerTag = ownerBoard != null ? ownerBoard.playerTag : "Unknown";
-        // Debug.Log($"🧹 === CLEARING ALL POWER-UPS (Player: {playerTag}) ===");
 
-        // LogFullInventory("Before clear");
-        // Debug.Log($"📊 Lines in window: {linesClearedTimes.Count}");
 
         InitializeInventory();
         linesClearedTimes.Clear();
         gameStartTime = Time.time;
         UpdatePowerUpUI();
 
-        // Debug.Log($"✅ All power-ups and progress cleared for {playerTag}");
-        // Debug.Log($"🔄 New game session started for {playerTag}");
     }
 
     private void UpdatePowerUpUI()
@@ -879,10 +801,7 @@ public class PowerUpManager : MonoBehaviour
         }
     }
 
-    private PowerUp GetPowerUpData(PowerUpType type)
-    {
-        return availablePowerUps.FirstOrDefault(p => p.type == type);
-    }
+
 
     public int GetPowerUpCount()
     {

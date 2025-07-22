@@ -13,7 +13,25 @@ public class GameOver : MonoBehaviour
 
   public void Start()
   {
-    this.scoreText.text = "Player Score " + Data.PlayerScore;
+    switch (Data.gameMode)
+    {
+      case BoardManager.GameMode.SinglePlayer:
+        scoreText.text = $"Score: {Data.PlayerScore}";
+        break;
+
+      case BoardManager.GameMode.AIVsAI:
+      case BoardManager.GameMode.VsAI:
+      case BoardManager.GameMode.TwoPlayer:
+        scoreText.text =
+            $"{Data.WinnerName} Wins!\n\n" +
+            $"{Data.WinnerName}: {Data.PlayerScore}\n" +
+            $"{Data.LoserName}: {Data.LoserScore}";
+        break;
+
+      default:
+        scoreText.text = "Game Over";
+        break;
+    }
   }
 
   public void OnMenuClick()
