@@ -44,7 +44,6 @@ public class BoardManager : MonoBehaviour
 
     public void SetupGame()
     {
-        Data.gameMode = GameMode.AIVsAI;
 
         var player1KeyMapping = new List<PowerupKeyMapping>
     {
