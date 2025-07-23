@@ -90,14 +90,24 @@ public class BoardData
             int worldY = pos.y + c.y;
             int lx = worldX - xOffset;
             int ly = worldY - yOffset;
-            if (lx < 0 || lx >= width || ly < 0) return false;
+
+            // Reject if outside horizontal bounds
+            if (lx < 0 || lx >= width)
+                return false;
+
+            // Reject if below the board
+            if (ly < 0)
+                return false;
+
+            // Allow cells above the board (they're not in play yet)
             if (ly >= height)
                 continue;
 
-            // 3) Otherwise we're inside [0..height-1] — check for a block
+            // Reject if cell collides
             if (grid[lx, ly])
                 return false;
         }
+
         return true;
     }
     public bool IsGameOverCondition()
