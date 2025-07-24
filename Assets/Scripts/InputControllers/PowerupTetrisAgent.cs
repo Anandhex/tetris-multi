@@ -255,10 +255,10 @@ public class PowerupTetrisAgent : MonoBehaviour
 
             // Step 2: Run CNN inference
             var inputShape = new TensorShape(1, 8, 20, 10);
-            Tensor<float> inputTensor = new Tensor<float>(inputShape, inputArray);
+            using Tensor<float> inputTensor = new Tensor<float>(inputShape, inputArray);
 
             worker.Schedule(inputTensor);
-            var outputTensor = worker.PeekOutput() as Tensor<float>;
+            using var outputTensor = worker.PeekOutput() as Tensor<float>;
 
             // Step 3: Get raw output
             float[] output = GetOutputArray(outputTensor);
@@ -486,7 +486,7 @@ public class PowerupTetrisAgent : MonoBehaviour
     private float[] GetOutputArray(Tensor<float> outputTensor)
     {
         outputTensor.CompleteAllPendingOperations();
-        var cpuTensor = outputTensor.ReadbackAndClone();
+        using var cpuTensor = outputTensor.ReadbackAndClone();
         return cpuTensor.AsReadOnlyNativeArray().ToArray();
     }
 

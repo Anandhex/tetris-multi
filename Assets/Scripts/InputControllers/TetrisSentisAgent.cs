@@ -169,7 +169,6 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
         // Debug.Log($"TetrisSentisAgent: SetCurrentPiece called, IsReadyForInference: {IsReadyForInference()}");
 
         if (!IsReadyForInference() || board.isLocked) return;
-        Debug.Log($"{board.playerTag} new piece...");
 
         // Start the integrated decision-making process
         MakeIntegratedDecision();
@@ -311,16 +310,16 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
         // Create input tensor for the block placement model
         var inputShape = new TensorShape(featureList.Count, 4);
         var features = featureList.SelectMany(f => f).ToArray();
-        Tensor<float> inputTensor = new Tensor<float>(inputShape, features);
+        using Tensor<float> inputTensor = new Tensor<float>(inputShape, features);
 
         // Run inference using the block placement worker
         blockWorker.Schedule(inputTensor);
-        var outputTensor = blockWorker.PeekOutput() as Tensor<float>;
+        using var outputTensor = blockWorker.PeekOutput() as Tensor<float>;
 
         if (outputTensor != null)
         {
             outputTensor.CompleteAllPendingOperations();
-            var cpuTensor = outputTensor.ReadbackAndClone();
+            using var cpuTensor = outputTensor.ReadbackAndClone();
             float[] scores = cpuTensor.AsReadOnlyNativeArray().ToArray();
 
             if (scores.Length == 0)
@@ -360,9 +359,7 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
 
     }
 
-    /// <summary>
-    /// Original block placement inference logic (now uses blockWorker)
-    /// </summary>
+
 
 
     // Rest of the methods remain the same...
@@ -379,6 +376,11 @@ public class TetrisSentisAgent : MonoBehaviour, IPlayerInputController
 
             int w = board.boardSize.x;
             int rotCount = pieceState.data.RotationCount;
+            if (boardData.IsGameOverCondition())
+            {
+                Debug.Log("Game over condition detected - center columns in top row are blocked");
+                return moves; // Return empty dictionary
+            }
 
             for (int rot = 0; rot < rotCount; rot++)
             {
@@ -579,10 +581,8 @@ public class InferenceTask : ITetrisTask
     {
 
         board.Lock();
-        Debug.Log($"{board.playerTag} Piece placement started...");
         yield return agent.ExecuteMove(this.move);
         board.Unlock();
-        Debug.Log($"{board.playerTag} Piece placement completed...");
         board.SpawnPiece();
 
     }
