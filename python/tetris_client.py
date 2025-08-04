@@ -252,7 +252,7 @@ class UnityTetrisClient:
         Returns a dict { 'col:rot': [lines, holes, bumpiness, height], ... }
         """
         # 1) send the request
-        cmd = { "type": "board_state" }
+        cmd = { "type": "request_states" }
         if not self._send_command(cmd):
             return {}
 
@@ -274,7 +274,6 @@ class UnityTetrisClient:
         Resets the game board in Unity and waits until the environment is ready for actions.
         Returns the initial game state dict.
         """
-        print(f"🐛 DEBUG: Starting environment reset...")
         # Send reset signal
         if not self.send_reset():
             raise RuntimeError("Failed to send reset command to Unity.")
@@ -288,8 +287,6 @@ class UnityTetrisClient:
             except:
                 break
         
-        if old_states_cleared > 0:
-            print(f"🐛 DEBUG: Cleared {old_states_cleared} old game states from queue")
                     
         # Wait for Unity to finish resetting and be ready
         start_time = time.time()
@@ -297,7 +294,6 @@ class UnityTetrisClient:
             state = self.get_game_state(timeout=check_interval)
             if state:
                 if state.get('type') == 'reset_confirmed':
-                    print(f"🐛 DEBUG: Reset confirmed by Unity")
                     continue
                 # Check if ready for new action
                 action_info = state.get('waitingForAction', False)
@@ -313,11 +309,7 @@ class UnityTetrisClient:
         """
         decision_data = decision_result['decision_data']
         action = decision_data['action']
-        
-        print(f"🐛 DEBUG: Executing powerup decision:")
-        print(f"   Action: {action}")
-        print(f"   PowerUp Type: {decision_data['powerup_type']}")
-        print(f"   Q-Value: {decision_result['q_value']:.3f}")
+     
         
         if action == 'wait':
             command = {
@@ -427,15 +419,15 @@ class UnityTetrisClient:
 
             # Add newline terminator for Unity parsing
             message_with_newline = message + '\n'            
-            print(f"🐛 DEBUG: Sending {len(message_with_newline)} bytes to Unity")
+            # print(f"🐛 DEBUG: Sending {len(message_with_newline)} bytes to Unity")
             # print(f"🐛 DEBUG: Sending {len(message)} bytes to Unity")
-            print(f"🐛 DEBUG: Raw message: {message}")
+            # print(f"🐛 DEBUG: Raw message: {message}")
             
             self.socket.send(message.encode('utf-8'))
-            print(f"🐛 DEBUG: Message sent successfully")
+            # print(f"🐛 DEBUG: Message sent successfully")
             return True
             
         except Exception as e:
-            print(f"🐛 ERROR: Send error: {e}")
-            print(f"🐛 DEBUG: Connection status: connected={self.connected}")
+            # print(f"🐛 ERROR: Send error: {e}")
+            # print(f"🐛 DEBUG: Connection status: connected={self.connected}")
             return False 
