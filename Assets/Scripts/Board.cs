@@ -380,29 +380,47 @@ public class Board : MonoBehaviour
         }
 
         // ✅ FIXED: Handle Sentis Agent - END the game instead of continuing
-        TetrisSentisAgent sentisAgent = this.inputController as TetrisSentisAgent;
-        if (sentisAgent != null)
+        if (inputController is TetrisSentisAgent ||
+     inputController is Player1InputController ||
+     inputController is Player2InputController)
         {
             Debug.Log($"GameOver {playerTag}");
-            // Check if this is AI vs AI mode (both players are AI)
-            bool isAIvsAI = IsAIvsAIMode();
 
+            bool isAIvsAI = IsAIvsAIMode();
             if (isAIvsAI)
             {
-
-                // ✅ FIX: Stop the game and show final results
                 EndAIvsAIGame(playerTag);
                 return;
             }
             else
             {
-                // Single AI vs Human - go to game over scene
-                Data.PlayerScore = this.playerScore;
+                int thisScore = this.playerScore;
+                int opponentScore = opponentBoard != null ? opponentBoard.playerScore : 0;
+
+                // Handle draw case
+                if (thisScore == opponentScore)
+                {
+                    Data.WinnerName = "Draw";
+                    Data.LoserName = "Draw";
+                    Data.WinnerScore = thisScore;
+                    Data.LoserScore = opponentScore;
+                }
+                else
+                {
+                    bool thisPlayerWon = thisScore > opponentScore;
+
+                    Data.WinnerName = thisPlayerWon ? playerTag : opponentBoard.playerTag;
+                    Data.WinnerScore = thisPlayerWon ? thisScore : opponentScore;
+                    Data.LoserName = thisPlayerWon ? opponentBoard.playerTag : playerTag;
+                    Data.LoserScore = thisPlayerWon ? opponentScore : thisScore;
+                }
+
+                Data.gameMode = BoardManager.GameMode.TwoPlayer;
+
                 SceneManager.LoadScene(3);
                 return;
             }
         }
-
         // Regular human player game over
         Data.PlayerScore = this.playerScore;
         SceneManager.LoadScene(3);

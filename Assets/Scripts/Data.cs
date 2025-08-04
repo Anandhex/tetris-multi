@@ -7,6 +7,7 @@ public static class Data
     public static readonly float sin = Mathf.Sin(Mathf.PI / 2f);
     public static readonly float[] RotationMatrix = new float[] { cos, sin, -sin, cos };
     public static string WinnerName = "";
+    public static int WinnerScore = 0;
     public static string LoserName = "";
     public static int LoserScore = 0;
 

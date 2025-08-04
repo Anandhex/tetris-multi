@@ -22,10 +22,19 @@ public class GameOver : MonoBehaviour
       case BoardManager.GameMode.AIVsAI:
       case BoardManager.GameMode.VsAI:
       case BoardManager.GameMode.TwoPlayer:
-        scoreText.text =
-            $"{Data.WinnerName} Wins!\n\n" +
-            $"{Data.WinnerName}: {Data.PlayerScore}\n" +
-            $"{Data.LoserName}: {Data.LoserScore}";
+        if (Data.WinnerName == "Draw")
+        {
+          scoreText.text = $"It's a Draw!\n\n" +
+                           $"Player1: {Data.WinnerScore}\n" +
+                           $"Player2: {Data.LoserScore}";
+        }
+        else
+        {
+          scoreText.text =
+              $"{Data.WinnerName} Wins!\n\n" +
+              $"{Data.WinnerName}: {Data.WinnerScore}\n" +
+              $"{Data.LoserName}: {Data.LoserScore}";
+        }
         break;
 
       default:
