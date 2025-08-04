@@ -159,6 +159,8 @@ public class BoardManager : MonoBehaviour
 
         // Instantiate the board prefab as a child of the container
         GameObject boardObj = Instantiate(boardPrefab, container.transform, false);
+        boardObj.transform.localPosition = Vector3.zero;
+
         boardObj.name = playerLabel + " Board";
 
         // Find the Board component in the hierarchy
