@@ -119,31 +119,10 @@ public class MLAgentDebugger : MonoBehaviour
             currentRewardAccumulated += rewardDelta;
             lastRewardValue = currentReward;
 
-            // Track curriculum changes
-            CheckCurriculumChanges();
         }
     }
 
-    private void CheckCurriculumChanges()
-    {
-        if (mlAgent.curriculumBoardHeight != lastBoardHeight)
-        {
-            Debug.Log($"[Curriculum] Board height changed: {lastBoardHeight} -> {mlAgent.curriculumBoardHeight}");
-            lastBoardHeight = mlAgent.curriculumBoardHeight;
-        }
 
-        if (mlAgent.allowedTetrominoTypes != lastTetrominoTypes)
-        {
-            Debug.Log($"[Curriculum] Tetromino types changed: {lastTetrominoTypes} -> {mlAgent.allowedTetrominoTypes}");
-            lastTetrominoTypes = mlAgent.allowedTetrominoTypes;
-        }
-
-        if (mlAgent.curriculumBoardPreset != lastBoardPreset)
-        {
-            Debug.Log($"[Curriculum] Board preset changed: {lastBoardPreset} -> {mlAgent.curriculumBoardPreset}");
-            lastBoardPreset = mlAgent.curriculumBoardPreset;
-        }
-    }
 
     // Updated: Store single placement action
     public void SetLastPlacementAction(int placementIndex)
@@ -201,11 +180,7 @@ public class MLAgentDebugger : MonoBehaviour
                 Debug.Log("- No model assigned");
             }
 
-            // Log curriculum settings
-            Debug.Log($"- Initial Curriculum Settings:");
-            Debug.Log($"  - Board Height: {mlAgent.curriculumBoardHeight}");
-            Debug.Log($"  - Tetromino Types: {mlAgent.allowedTetrominoTypes}");
-            Debug.Log($"  - Board Preset: {mlAgent.curriculumBoardPreset}");
+
         }
     }
 
@@ -242,8 +217,6 @@ public class MLAgentDebugger : MonoBehaviour
         Debug.Log($"- Total unique placements used: {placementCounts.Count}");
         Debug.Log(placementDistribution);
 
-        // Current curriculum status
-        Debug.Log($"- Curriculum Status: Height={mlAgent.curriculumBoardHeight}, Types={mlAgent.allowedTetrominoTypes}, Preset={mlAgent.curriculumBoardPreset}");
 
         // Reset the accumulated reward for the next interval
         currentRewardAccumulated = 0f;
