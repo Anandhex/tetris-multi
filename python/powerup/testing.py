@@ -1,7 +1,7 @@
 from powerup_dqn_agent import PowerupDQNAgent
-from environments import TrainingEnvironment
+from python.powerup.environments import TrainingEnvironment
 from python.powerup.dataset_generator import TetrisDatasetGenerator
-from trainer import PowerupTrainer
+from python.powerup.trainer import PowerupTrainer
 
 class ModelTester:
     """Test trained powerup model"""
