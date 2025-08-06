@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from tetris_client import UnityTetrisClient
-from simplified_dqn_network import DQNAgent
+from simplified_dqn_network import EnhancedDQNAgent
 
 
 class TetrisTrainer:
@@ -33,7 +33,7 @@ class TetrisTrainer:
 
         # Initialize agent
         if agent_type == 'dqn':
-            self.agent = DQNAgent(
+            self.agent = EnhancedDQNAgent(
                 state_size=208,
             )
             if load_model:
