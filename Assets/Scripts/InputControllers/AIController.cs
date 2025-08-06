@@ -5,97 +5,33 @@ using UnityEngine;
 using Unity.MLAgents.Policies;
 using System.Collections.Generic;
 using System.Linq;
-using System.Collections;
-
 
 public class TetrisMLAgent : Agent, IPlayerInputController
 {
     private Board board;
-    public Piece currentPiece;
+    private Piece currentPiece;
     private MLAgentDebugger debugger;
 
+    // Action flags
+    private bool moveLeft = false;
+    private bool moveRight = false;
+    private bool rotateLeft = false;
+    private bool rotateRight = false;
+    private bool moveDown = false;
+    private bool hardDrop = false;
 
-    private HashSet<int> processedPieceIds = new HashSet<int>();
-    private int currentPieceId = -1;
-    private bool waitingForDecision = false;
-    private bool executingPlacement = false;
-    private StatsRecorder m_StatsRecorder;
+    // Fields needed for the improved reward functions
+    private float lastSurfaceRoughness = 0f;
+    private float previousAccessibility = 0f;
+    private int consecutiveClears = 0;
 
-    private RewardWeights rewardWeights = new RewardWeights();
+    private int previousHoleCount = 0;
 
-    [Header("Curriculum Parameters")]
-    public int allowedTetrominoTypes = 7;
-    public int curriculumBoardPreset;
-    public float curriculumBoardHeight = 20f;
-    public float curriculumDropSpeed = 0.75f;
-    public float curriculumHolePenaltyWeight = 0.5f;
-    public bool enableAdvancedMechanics = false;
-    private int episodeSteps = 0;
-    private bool moveLeft;
-    private bool moveRight;
-    private bool moveDown;
-    private bool rotateLeft;
-    private bool rotateRight;
-    private bool hardDrop;
-
-    public override void Initialize()
-    {
-        var envParams = Academy.Instance.EnvironmentParameters;
-        m_StatsRecorder = Academy.Instance.StatsRecorder;
-        curriculumBoardPreset = (int)Academy.Instance.EnvironmentParameters.GetWithDefault("board_preset", 6);
-
-
-        // Get curriculum parameters
-        allowedTetrominoTypes = (int)envParams.GetWithDefault("tetromino_types", 7f);
-        curriculumBoardHeight = envParams.GetWithDefault("board_height", 20f);
-        curriculumDropSpeed = envParams.GetWithDefault("drop_speed", 0.75f);
-        curriculumHolePenaltyWeight = envParams.GetWithDefault("hole_penalty_weight", 0.5f);
-        enableAdvancedMechanics = envParams.GetWithDefault("enable_t_spins", 0f) > 0.5f;
-
-
-        // Apply curriculum settings to reward weights
-        rewardWeights.holeCreationPenalty *= curriculumHolePenaltyWeight;
-        rewardWeights.clearReward = envParams.GetWithDefault("clearReward", 5.0f);
-        rewardWeights.comboMultiplier = envParams.GetWithDefault("comboMultiplier", 0.5f);
-        rewardWeights.perfectClearBonus = envParams.GetWithDefault("perfectClearBonus", 50.0f);
-
-
-    }
-
-
-    private void Start()
-    {
-        if (board != null)
-        {
-            board.inputController = this;
-        }
-    }
-
-
-
-    // Called by Board.cs to set the current piece reference
-
-
-
-    public override void OnEpisodeBegin()
-    {
-        var envParams = Academy.Instance.EnvironmentParameters;
-        processedPieceIds.Clear();
-        currentPieceId = -1;
-        waitingForDecision = false;
-        executingPlacement = false;
-
-        allowedTetrominoTypes = (int)envParams.GetWithDefault("tetromino_types", 7f);
-        curriculumBoardHeight = envParams.GetWithDefault("board_height", 20f);
-        curriculumDropSpeed = envParams.GetWithDefault("drop_speed", 0.75f);
-        curriculumHolePenaltyWeight = envParams.GetWithDefault("hole_penalty_weight", 0.5f);
-        enableAdvancedMechanics = envParams.GetWithDefault("enable_t_spins", 0f) > 0.5f;
-        curriculumBoardPreset = (int)envParams.GetWithDefault("board_preset", 6);
-
-        rewardWeights.holeCreationPenalty *= curriculumHolePenaltyWeight;
-        episodeSteps = 0;
-
-    }
+    // Previous state for reward calculation
+    private int previousScore = 0;
+    private int stepsSinceLastClear = 0;
+    private float previousHeight;
+    private List<Vector2Int> previousHolePositions = new List<Vector2Int>();
 
     private void Awake()
     {
@@ -105,300 +41,110 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             debugger = gameObject.AddComponent<MLAgentDebugger>();
         }
 
-
         // Find board in children
         board = GetComponentInChildren<Board>();
-
-
+        if (board == null)
+        {
+            Debug.Log("Board not found in children!");
+        }
         var behavior = gameObject.GetComponent<BehaviorParameters>();
         if (behavior == null)
         {
             behavior = gameObject.AddComponent<BehaviorParameters>();
             behavior.BehaviorName = "TetrisAgent";
-            behavior.BrainParameters.VectorObservationSize = 218;
+            behavior.BrainParameters.VectorObservationSize = 217;
             behavior.BrainParameters.NumStackedVectorObservations = 1;
 
-
-            // Two discrete actions - column (10 options) and rotation (4 options)
-            ActionSpec actionSpec = ActionSpec.MakeDiscrete(new int[] { 40 });
+            // Set up discrete actions (7 possible actions)
+            ActionSpec actionSpec = ActionSpec.MakeDiscrete(new int[] { 7 });
             behavior.BrainParameters.ActionSpec = actionSpec;
         }
         else
         {
             behavior.BehaviorName = "TetrisAgent";
-            behavior.BrainParameters.VectorObservationSize = 218;
+            behavior.BrainParameters.VectorObservationSize = 217;
             behavior.BrainParameters.NumStackedVectorObservations = 1;
 
-
-            // Two discrete actions - column (10 options) and rotation (4 options)
-            ActionSpec actionSpec = ActionSpec.MakeDiscrete(new int[] { 40 });
+            // Set up discrete actions (7 possible actions)
+            ActionSpec actionSpec = ActionSpec.MakeDiscrete(new int[] { 7 });
             behavior.BrainParameters.ActionSpec = actionSpec;
         }
-
 
         // Add a decision requester component if it doesn't exist
         var requestor = gameObject.GetComponent<DecisionRequester>();
         if (requestor == null)
         {
             requestor = gameObject.AddComponent<DecisionRequester>();
+            requestor.DecisionPeriod = 1;  // Request decision every frame
         }
-
-        requestor.DecisionPeriod = 1; // Very large number so it doesn't auto-request
-        requestor.TakeActionsBetweenDecisions = false;
-
 
     }
 
-
-
-
-
-    // Keep the simple placement logic without complex timing
-    public override void OnActionReceived(ActionBuffers actions)
+    private void Start()
     {
-        if (currentPiece == null || board == null || executingPlacement)
-            return;
-
-        // Generate unique ID for this piece based on its properties and spawn time
-        int pieceId = GeneratePieceId(currentPiece);
-
-        // Check if we've already processed this specific piece
-        if (processedPieceIds.Contains(pieceId))
+        // Make sure the board knows we're the input controller
+        if (board != null)
         {
-            return;
+            board.inputController = this;
+            Debug.Log("TetrisMLAgent set as input controller for board");
         }
-
-        // Mark this piece as processed
-        processedPieceIds.Add(pieceId);
-        currentPieceId = pieceId;
-        waitingForDecision = false;
-        executingPlacement = true;
-
-        Debug.Log($"Processing piece ID: {pieceId}, Type: {currentPiece.data.tetromino}");
-
-        // Generate valid placements
-        int[,] currentBoard = GetBoardState();
-        List<PlacementInfo> allPlacements = GenerateAllPossiblePlacements(currentPiece, currentBoard);
-
-        if (allPlacements.Count == 0)
-        {
-            AddReward(rewardWeights.deathPenalty);
-            m_StatsRecorder.Add("Tetris/EpisodeCount", 1);
-            m_StatsRecorder.Add("Tetris/CumulativeReward", GetCumulativeReward());
-            EndEpisode();
-            return;
-        }
-
-        int selectedAction = actions.DiscreteActions[0];
-
-        // Find the placement that corresponds to this action
-        PlacementInfo selectedPlacement = null;
-        foreach (var placement in allPlacements)
-        {
-            int actionIndex = placement.targetRotation * 10 + placement.targetColumn;
-            if (actionIndex == selectedAction)
-            {
-                selectedPlacement = placement;
-                break;
-            }
-        }
-
-        // If somehow an invalid action was selected, fall back to the first valid placement
-        if (selectedPlacement == null)
-        {
-            selectedPlacement = allPlacements[0];
-            Debug.LogWarning($"Invalid action {selectedAction} selected, falling back to first valid placement");
-        }
-
-        Debug.Log($"Selected Action: {selectedAction} → Column: {selectedPlacement.targetColumn}, Rotation: {selectedPlacement.targetRotation}");
-
-        ExecutePlacement(selectedPlacement);
-        CalculatePlacementReward(selectedPlacement);
     }
 
-    private int GeneratePieceId(Piece piece)
+    // Called by Board.cs to set the current piece reference
+    public void SetCurrentPiece(Piece piece)
     {
-        // Combine piece type, spawn position, and current frame count for uniqueness
-        int hash = ((int)piece.data.tetromino * 1000) +
-                   (piece.position.x * 100) +
-                   (piece.position.y * 10) +
-                   (Time.frameCount % 1000);
-        return hash;
-    }
-    public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
-    {
-        if (currentPiece == null || board == null)
-        {
-            // If no piece, mask all actions
-            for (int i = 0; i < 40; i++)
-            {
-                actionMask.SetActionEnabled(0, i, false);
-            }
-            return;
-        }
+        currentPiece = piece;
 
-        // Generate all possible placements for current piece
-        int[,] currentBoard = GetBoardState();
-        List<PlacementInfo> validPlacements = GenerateAllPossiblePlacements(currentPiece, currentBoard);
-
-        // Create a set of valid action indices for quick lookup
-        HashSet<int> validActionIndices = new HashSet<int>();
-
-        foreach (var placement in validPlacements)
-        {
-            // Convert placement back to action index
-            int actionIndex = placement.targetRotation * 10 + placement.targetColumn;
-            validActionIndices.Add(actionIndex);
-        }
-
-        // Mask actions: enable valid ones, disable invalid ones
-        for (int i = 0; i < 40; i++)
-        {
-            bool isValid = validActionIndices.Contains(i);
-            actionMask.SetActionEnabled(0, i, isValid);
-        }
-    }
-    private void ExecutePlacement(PlacementInfo placement)
-    {
-        // Move piece to target position and rotation
-        // This would involve setting the piece's position and rotation
-        // then dropping it using hard drop
-
-        // For now, simulate the action by directly placing
-        StartCoroutine(ExecutePlacementCoroutine(placement));
     }
 
-    private IEnumerator ExecutePlacementCoroutine(PlacementInfo placement)
+    public override void OnEpisodeBegin()
     {
-        while (currentPiece.rotationIndex != placement.targetRotation)
-        {
-            rotateRight = true;
-            yield return new WaitForFixedUpdate();
-            rotateRight = false;
-            yield return new WaitForFixedUpdate();
-        }
+        Debug.Log("ML Agent Episode began");
+        previousHeight = board.CalculateStackHeight();
 
-        // Move piece to target column
-        int currentCol = currentPiece.position.x - board.Bounds.xMin;
-        while (currentCol != placement.targetColumn)
-        {
-            if (currentCol < placement.targetColumn)
-            {
-                moveRight = true;
-                yield return new WaitForFixedUpdate();
-                moveRight = false;
-            }
-            else
-            {
-                moveLeft = true;
-                yield return new WaitForFixedUpdate();
-                moveLeft = false;
-            }
-            yield return new WaitForFixedUpdate();
-            currentCol = currentPiece.position.x - board.Bounds.xMin;
-        }
+        // Reset agent state
+        previousScore = 0;
+        stepsSinceLastClear = 0;
+        previousHoleCount = board.CountHoles();
 
-        // Hard drop
-        hardDrop = true;
-        yield return new WaitForFixedUpdate();
+        // Reset action flags
+        moveLeft = false;
+        moveRight = false;
+        rotateLeft = false;
+        rotateRight = false;
+        moveDown = false;
         hardDrop = false;
-
-        // Mark placement as complete
-        executingPlacement = false;
     }
-
-    private void CalculatePlacementReward(PlacementInfo placement)
-    {
-        float reward = 0f;
-
-        reward += placement.linesCleared * rewardWeights.clearReward;
-        m_StatsRecorder.Add("Tetris/LinesCleared", placement.linesCleared);
-
-        reward += -placement.holes * rewardWeights.holeCreationPenalty;
-        m_StatsRecorder.Add("Tetris/Holes", placement.holes);
-
-        reward += -placement.aggregateHeight * 0.04f;
-        m_StatsRecorder.Add("Tetris/AggregateHeight", placement.aggregateHeight);
-
-        reward += -placement.bumpiness * 0.03f;
-        m_StatsRecorder.Add("Tetris/Bumpiness", placement.bumpiness);
-
-        if (placement.linesCleared == 4)
-        {
-            reward += rewardWeights.perfectClearBonus;
-            m_StatsRecorder.Add("Tetris/TetrisClears", 1);
-        }
-
-        reward += -0.001f; // step penalty
-
-        AddReward(reward);
-        m_StatsRecorder.Add("Tetris/PlacementReward", reward);
-    }
-
-
-
-    public void OnGameOver()
-    {
-        AddReward(rewardWeights.deathPenalty);
-        EndEpisode();
-    }
-
-
-    // IPlayerInputController implementation - unchanged
-    public bool GetLeft() => moveLeft;
-    public bool GetRight() => moveRight;
-    public bool GetRotateLeft() => rotateLeft;
-    public bool GetRotateRight() => rotateRight;
-    public bool GetDown() => moveDown;
-    public bool GetHardDrop() => hardDrop;
-
-
 
     public override void CollectObservations(VectorSensor sensor)
     {
-
-
-        // Convert current board state to 2D array for simulation
-        int[,] currentBoard = GetBoardState();
-
-        // Generate all possible placements for current piece
-        List<PlacementInfo> allPlacements = GenerateAllPossiblePlacements(currentPiece, currentBoard);
-
-        // 1. ALL POSSIBLE PLACEMENTS (34 placements × 6 features = 204 observations)
-        for (int i = 0; i < 34; i++)
+        if (board == null)
         {
-            if (i < allPlacements.Count)
+            Debug.LogError("Board is null during observation collection!");
+            return;
+        }
+
+        int obsCount = 0;
+
+        // 1. Board state (200 observations for 10x20 board)
+        RectInt bounds = board.Bounds;
+        for (int y = bounds.yMin; y < bounds.yMax; y++)
+        {
+            for (int x = bounds.xMin; x < bounds.xMax; x++)
             {
-                PlacementInfo placement = allPlacements[i];
-                sensor.AddObservation(placement.linesCleared / 4f);      // Normalized (0-1)
-                sensor.AddObservation(placement.aggregateHeight / 40f);  // Normalized
-                sensor.AddObservation(placement.maxHeight / 20f);        // Normalized
-                sensor.AddObservation(placement.holes / 20f);            // Normalized
-                sensor.AddObservation(placement.bumpiness / 30f);        // Normalized
-                sensor.AddObservation(placement.wellDepth / 15f);        // Normalized
-            }
-            else
-            {
-                // Pad with zeros for unused placement slots
-                for (int j = 0; j < 6; j++)
-                {
-                    sensor.AddObservation(0f);
-                }
+                sensor.AddObservation(board.tilemap.HasTile(new Vector3Int(x, y, 0)) ? 1f : 0f);
+                obsCount++;
             }
         }
 
-        // 2. CURRENT PIECE ONE-HOT (7 observations)
-        for (int i = 0; i < 7; i++)
+        // 2. Current piece type (7 observations for one-hot encoding of tetromino types)
+        if (currentPiece != null && currentPiece.data.tetromino != null)
         {
-            sensor.AddObservation(((int)currentPiece.data.tetromino == i) ? 1f : 0f);
-        }
-
-        // 3. NEXT PIECE ONE-HOT (7 observations)
-        if (board.nextPieceData.tetromino != Tetromino.I) // Check if valid
-        {
-            for (int i = 0; i < 7; i++)
+            int pieceTypeIndex = System.Array.IndexOf(board.tetrominoes, currentPiece.data);
+            for (int i = 0; i < board.tetrominoes.Length; i++)
             {
-                sensor.AddObservation(((int)board.nextPieceData.tetromino == i) ? 1f : 0f);
+                sensor.AddObservation(i == pieceTypeIndex ? 1.0f : 0.0f);
+                obsCount++;
             }
         }
         else
@@ -406,487 +152,454 @@ public class TetrisMLAgent : Agent, IPlayerInputController
             for (int i = 0; i < 7; i++)
             {
                 sensor.AddObservation(0f);
+                obsCount++;
             }
         }
 
-        // Total: 204 + 7 + 7 = 218 observations
+        // 3. Current piece position and rotation (3 observations)
+        if (currentPiece != null)
+        {
+            // Normalize position relative to board bounds
+            float normalizedX = (currentPiece.position.x - bounds.xMin) / (float)bounds.width;
+            float normalizedY = (currentPiece.position.y - bounds.yMin) / (float)bounds.height;
+
+            sensor.AddObservation(normalizedX);
+            sensor.AddObservation(normalizedY);
+            sensor.AddObservation(currentPiece.rotationIndex / 4.0f); // Normalized rotation 0-1
+            obsCount += 3;
+        }
+        else
+        {
+            sensor.AddObservation(0.5f); // Default X
+            sensor.AddObservation(0.5f); // Default Y
+            sensor.AddObservation(0f);   // Default rotation
+            obsCount += 3;
+        }
+
+        // 4. Next piece type (7 observations)
+        int nextPieceTypeIndex = System.Array.IndexOf(board.tetrominoes, board.nextPieceData);
+        for (int i = 0; i < board.tetrominoes.Length; i++)
+        {
+            sensor.AddObservation(i == nextPieceTypeIndex ? 1.0f : 0.0f);
+            obsCount++;
+        }
+
+
+
     }
 
-    private int[,] GetBoardState()
+    private List<Vector2Int> previousBottomRowHoles = new List<Vector2Int>();
+    private int steps = 0;
+    public override void OnActionReceived(ActionBuffers actions)
     {
-        var bounds = board.Bounds;
-        int[,] boardArray = new int[bounds.height, bounds.width];
+        // Reset action flags
+        moveLeft = false;
+        moveRight = false;
+        rotateLeft = false;
+        rotateRight = false;
+        moveDown = false;
+        hardDrop = false;
 
-        for (int y = 0; y < bounds.height; y++)
+        Vector3Int prevPosition = board.activePiece.position;
+        Vector3Int[] prevCells = (Vector3Int[])board.activePiece.cells.Clone();
+        steps++;
+
+        // Process discrete actions
+        int actionIndex = actions.DiscreteActions[0];
+
+
+        // Basic action rewards - simplified
+        switch (actionIndex)
         {
-            for (int x = 0; x < bounds.width; x++)
+            case 0: AddReward(-0.01f); break; // Do nothing - small penalty
+            case 1: moveLeft = true; break;   // Neutral - let outcomes determine reward
+            case 2: moveRight = true; break;  // Neutral - let outcomes determine reward
+            case 3: rotateLeft = true; break; // Neutral - let outcomes determine reward
+            case 4: rotateRight = true; break; // Neutral - let outcomes determine reward
+            case 5: moveDown = true; AddReward(0.01f); break; // Small reward for efficiency
+            case 6: hardDrop = true; AddReward(0.025f); break; // Reduced from 0.05 to prevent premature dropping
+        }
+
+        if (board == null)
+            return;
+
+        // === LINE CLEAR REWARDS ===
+        if (board.playerScore > previousScore)
+        {
+            int scoreDelta = board.playerScore - previousScore;
+            int linesCleared = scoreDelta / 100; // Each line is worth 100 points in Board.cs
+
+            // Exponential reward scaling for multiple lines
+            float clearReward = 0f;
+            switch (linesCleared)
             {
-                Vector3Int pos = new Vector3Int(bounds.xMin + x, bounds.yMin + y, 0);
-                boardArray[bounds.height - 1 - y, x] = board.tilemap.HasTile(pos) ? 1 : 0;
+                case 1: clearReward = 1.0f; break;
+                case 2: clearReward = 3.0f; break;
+                case 3: clearReward = 7.0f; break;
+                case 4: clearReward = 15.0f; break; // Increased Tetris reward
+            }
+
+            // Combo system with increasing returns
+            if (consecutiveClears > 0)
+            {
+                clearReward *= (1.0f + (consecutiveClears * 0.2f)); // Scale by combo count
+            }
+            consecutiveClears++;
+
+            AddReward(clearReward);
+            previousScore = board.playerScore;
+            stepsSinceLastClear = 0;
+
+            // Perfect clear bonus (keep as is - good reward)
+            if (board.IsPerfectClear())
+            {
+                AddReward(20.0f);
+            }
+        }
+        else
+        {
+            consecutiveClears = 0; // Reset combo counter
+            stepsSinceLastClear++;
+
+            // Progressive stagnation penalty
+            if (stepsSinceLastClear > 50)
+            {
+                // Gradually increasing penalty for stagnation
+                float stagnationPenalty = Mathf.Min((stepsSinceLastClear - 50) * 0.01f, 1.0f);
+                AddReward(-stagnationPenalty);
             }
         }
 
-        return boardArray;
+        // === BOARD STATE EVALUATION ===
+
+        // --- Surface Smoothness Reward ---
+        float previousRoughness = lastSurfaceRoughness;
+        float currentRoughness = CalculateSurfaceRoughness();
+        float roughnessDelta = previousRoughness - currentRoughness;
+
+        if (roughnessDelta > 0)
+            AddReward(roughnessDelta * 0.3f); // Reward smoother surface
+        else if (roughnessDelta < -1) // Only penalize significant roughness increases
+            AddReward(roughnessDelta * 0.05f);
+
+        lastSurfaceRoughness = currentRoughness;
+
+        // --- Hole Management ---
+        List<Vector2Int> currentHoles = board.GetHolePositions();
+
+        // Reward filling existing holes
+        var filledHoles = previousHolePositions.Where(oldPos => !currentHoles.Contains(oldPos)).ToList();
+        if (filledHoles.Count > 0)
+        {
+            // Higher reward for filling holes in lower rows
+            float holeReward = 0f;
+            foreach (var pos in filledHoles)
+            {
+                // Scale reward by position - filling deeper holes is better
+                float depthFactor = 1f + (pos.y * 0.1f); // Higher reward for deeper holes
+                holeReward += 0.3f * depthFactor;
+            }
+            AddReward(holeReward);
+        }
+
+        // Penalty for creating new holes - more severe
+        var newHoles = currentHoles.Where(newPos => !previousHolePositions.Contains(newPos)).ToList();
+        if (newHoles.Count > 0)
+        {
+            // Higher penalty for creating holes in higher positions
+            float holePenalty = 0f;
+            foreach (var pos in newHoles)
+            {
+                // Scale penalty by position - creating higher holes is worse
+                int boardHeight = board.boardSize[0];
+                float heightFactor = 1f + ((boardHeight - pos.y) * 0.1f);
+                holePenalty += 0.2f * heightFactor;
+            }
+            AddReward(-holePenalty);
+        }
+
+        previousHolePositions = currentHoles;
+
+        // --- Well Formation Reward ---
+        (int wellCol, int wellDepth) = GetDeepestWell();
+        if (wellDepth >= 3)
+        {
+            // Better reward for deeper wells, but cap at reasonable depth
+            float wellReward = Mathf.Min(wellDepth * 0.1f, 0.5f);
+            AddReward(wellReward);
+
+            // Extra reward if the I-piece is next and we have a good well for it
+            if (IsIPieceNext() && wellDepth >= 4)
+            {
+                AddReward(0.3f);
+            }
+        }
+
+        // --- Stack Height Management ---
+        float currentHeight = board.CalculateStackHeight();
+        float heightDelta = previousHeight - currentHeight;
+
+        // Dynamic height penalty based on current stack height
+        // Heavier penalty when stack is already high
+        if (currentHeight > 10) // Only care about height when it's getting dangerous
+        {
+            float heightFactor = Mathf.Max(0, (currentHeight - 10) / 10f); // Scale from 0 to 1
+            AddReward(-0.1f * heightFactor); // Progressive penalty for having a tall stack
+        }
+
+        previousHeight = currentHeight;
+
+        // --- Piece-specific strategy rewards ---
+        if (actionIndex == 6) // Hard drop - evaluate final placement
+        {
+            // Reward good T-piece placements (potential T-spins)
+            if (board.activePiece.data.tetromino == Tetromino.T && IsPotentialTSpin())
+            {
+                AddReward(0.5f);
+            }
+
+            // Reward I-piece horizontal placements that fill gaps
+            if (board.activePiece.data.tetromino == Tetromino.I &&
+                IsHorizontalPiece() && FillsMultipleGaps())
+            {
+                AddReward(0.4f);
+            }
+        }
+
+        // --- Penalize Inefficient Play ---
+        if ((rotateLeft || rotateRight) && board.LastRotationWasUseless(board.activePiece, prevPosition, prevCells))
+        {
+            AddReward(-0.05f);  // Penalize useless rotations
+        }
+
+        // --- Accessibility Reward ---
+        float accessibilityScore = EvaluateAccessibility();
+        float accessibilityDelta = accessibilityScore - previousAccessibility;
+
+        if (accessibilityDelta > 0)
+            AddReward(accessibilityDelta * 0.2f);
+        else if (accessibilityDelta < 0)
+            AddReward(accessibilityDelta * 0.1f);
+
+        previousAccessibility = accessibilityScore;
     }
 
-    // Generate all possible placements for the current piece
-    private List<PlacementInfo> GenerateAllPossiblePlacements(Piece piece, int[,] currentBoard)
+    // New helper methods for enhanced rewards
+
+    // Calculate surface roughness by measuring height differences between adjacent columns
+    private float CalculateSurfaceRoughness()
     {
-        List<PlacementInfo> placements = new List<PlacementInfo>();
-        List<int[,]> rotations = GetPieceRotations(piece);
+        float roughness = 0f;
+        int[] columnHeights = GetColumnHeights();
 
-        // Generate placements in a systematic way that matches action encoding
-        for (int rotation = 0; rotation < 4; rotation++)
+        for (int i = 0; i < columnHeights.Length - 1; i++)
         {
-            if (rotation >= rotations.Count) continue;
+            roughness += Mathf.Abs(columnHeights[i] - columnHeights[i + 1]);
+        }
 
-            int[,] pieceShape = rotations[rotation];
-            int pieceWidth = pieceShape.GetLength(1);
-            int boardWidth = currentBoard.GetLength(1);
+        return roughness;
+    }
 
-            // Try each column position (0-9 for standard Tetris)
-            for (int col = 0; col < 10; col++)
+    // Get heights of each column
+    private int[] GetColumnHeights()
+    {
+        RectInt bounds = board.Bounds;
+        int width = bounds.width;
+        int[] heights = new int[width];
+
+        for (int x = 0; x < width; x++)
+        {
+            int columnX = bounds.xMin + x;
+            heights[x] = 0;
+
+            for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
             {
-                // Check if piece fits in this column
-                if (col + pieceWidth <= boardWidth)
+                if (board.tilemap.HasTile(new Vector3Int(columnX, y, 0)))
                 {
-                    if (CanPlacePieceAt(pieceShape, currentBoard, col, out int landingRow))
-                    {
-                        // Create simulation
-                        int[,] simulatedBoard = CopyBoard(currentBoard);
-                        PlacePieceOnBoard(pieceShape, simulatedBoard, col, landingRow);
-                        int linesCleared = ClearLinesAndCount(simulatedBoard);
-
-                        PlacementInfo placement = new PlacementInfo
-                        {
-                            linesCleared = linesCleared,
-                            aggregateHeight = CalculateAggregateHeight(simulatedBoard),
-                            maxHeight = CalculateMaxHeight(simulatedBoard),
-                            holes = CalculateHoles(simulatedBoard),
-                            bumpiness = CalculateBumpiness(simulatedBoard),
-                            wellDepth = CalculateWellDepth(simulatedBoard),
-                            targetColumn = col,
-                            targetRotation = rotation
-                        };
-
-                        placements.Add(placement);
-                    }
+                    heights[x] = bounds.yMax - y;
+                    break;
                 }
             }
         }
 
-        return placements;
+        return heights;
     }
-    private List<int[,]> GetPieceRotations(Piece piece)
+
+    // Find the deepest well in the board
+    private (int column, int depth) GetDeepestWell()
     {
-        List<int[,]> rotations = new List<int[,]>();
+        int[] columnHeights = GetColumnHeights();
+        int deepestWellCol = -1;
+        int deepestWellDepth = 0;
 
-
-        TetrominoData data = piece.data;
-        if (data.cells == null || data.cells.Length == 0)
+        // Check each column except edges
+        for (int i = 1; i < columnHeights.Length - 1; i++)
         {
-            Debug.LogError("GetPieceRotations: piece.data.cells is null or not initialized. Did you forget to call Initialize()?");
-            return rotations;
+            int leftHeight = columnHeights[i - 1];
+            int rightHeight = columnHeights[i + 1];
+            int centerHeight = columnHeights[i];
+
+            int wellDepth = Mathf.Min(leftHeight, rightHeight) - centerHeight;
+
+            if (wellDepth > deepestWellDepth && wellDepth >= 2)
+            {
+                deepestWellDepth = wellDepth;
+                deepestWellCol = i;
+            }
         }
 
-        // Convert piece cells to different rotations
-        for (int rotation = 0; rotation < 4; rotation++)
+        // Also check edge columns
+        if (columnHeights.Length > 1)
         {
-            Vector3Int[] rotatedCells = new Vector3Int[data.cells.Length];
-
-            // Copy original cells
-            for (int i = 0; i < data.cells.Length; i++)
+            // Left edge
+            int leftEdgeWell = columnHeights[1] - columnHeights[0];
+            if (leftEdgeWell > deepestWellDepth && leftEdgeWell >= 2)
             {
-                rotatedCells[i] = (Vector3Int)data.cells[i];
+                deepestWellDepth = leftEdgeWell;
+                deepestWellCol = 0;
             }
 
-            // Apply rotation transformations
-            for (int r = 0; r < rotation; r++)
+            // Right edge
+            int rightIdx = columnHeights.Length - 1;
+            int rightEdgeWell = columnHeights[rightIdx - 1] - columnHeights[rightIdx];
+            if (rightEdgeWell > deepestWellDepth && rightEdgeWell >= 2)
             {
-                for (int i = 0; i < rotatedCells.Length; i++)
+                deepestWellDepth = rightEdgeWell;
+                deepestWellCol = rightIdx;
+            }
+        }
+
+        return (deepestWellCol, deepestWellDepth);
+    }
+
+    // Check if next piece is an I tetromino
+    private bool IsIPieceNext()
+    {
+        return board.nextPieceData.tetromino == Tetromino.I;
+    }
+
+    // Check if current piece is horizontal I tetromino
+    private bool IsHorizontalPiece()
+    {
+        // For I piece, check if all cells have same y value
+        if (board.activePiece.data.tetromino == Tetromino.I)
+        {
+            int y = board.activePiece.cells[0].y;
+            for (int i = 1; i < board.activePiece.cells.Length; i++)
+            {
+                if (board.activePiece.cells[i].y != y)
                 {
-                    Vector3Int cell = rotatedCells[i];
-                    // 90-degree clockwise rotation matrix
-                    int newX = -cell.y;
-                    int newY = cell.x;
-                    rotatedCells[i] = new Vector3Int(newX, newY, 0);
+                    return false;
                 }
             }
-
-            // Convert to 2D array representation
-            int[,] shapeArray = ConvertCellsToArray(rotatedCells);
-            rotations.Add(shapeArray);
-        }
-
-        return rotations;
-    }
-
-    // Convert piece cells to 2D array
-    private int[,] ConvertCellsToArray(Vector3Int[] cells)
-    {
-        if (cells.Length == 0) return new int[1, 1];
-
-        // Find bounds
-        int minX = cells[0].x, maxX = cells[0].x;
-        int minY = cells[0].y, maxY = cells[0].y;
-
-        foreach (var cell in cells)
-        {
-            minX = Mathf.Min(minX, cell.x);
-            maxX = Mathf.Max(maxX, cell.x);
-            minY = Mathf.Min(minY, cell.y);
-            maxY = Mathf.Max(maxY, cell.y);
-        }
-
-        int width = maxX - minX + 1;
-        int height = maxY - minY + 1;
-        int[,] array = new int[height, width];
-
-        foreach (var cell in cells)
-        {
-            array[cell.y - minY, cell.x - minX] = 1;
-        }
-
-        return array;
-    }
-
-    // Check if piece can be placed at specific column
-    private bool CanPlacePieceAt(int[,] pieceShape, int[,] board, int col, out int landingRow)
-    {
-        int boardHeight = board.GetLength(0);
-        int pieceHeight = pieceShape.GetLength(0);
-        landingRow = -1;
-
-        // Drop piece from top until collision
-        for (int row = 0; row <= boardHeight - pieceHeight; row++)
-        {
-            if (HasCollision(pieceShape, board, row, col))
-            {
-                landingRow = row - 1;
-                return landingRow >= 0;
-            }
-        }
-
-        landingRow = boardHeight - pieceHeight;
-        return landingRow >= 0;
-    }
-
-    // Check collision between piece and board
-    private bool HasCollision(int[,] piece, int[,] board, int row, int col)
-    {
-        int pieceHeight = piece.GetLength(0);
-        int pieceWidth = piece.GetLength(1);
-
-        for (int r = 0; r < pieceHeight; r++)
-        {
-            for (int c = 0; c < pieceWidth; c++)
-            {
-                if (piece[r, c] == 1)
-                {
-                    int boardRow = row + r;
-                    int boardCol = col + c;
-
-                    if (boardRow >= board.GetLength(0) ||
-                        boardCol >= board.GetLength(1) ||
-                        board[boardRow, boardCol] == 1)
-                    {
-                        return true;
-                    }
-                }
-            }
+            return true;
         }
         return false;
     }
 
-    // Place piece on board
-    private void PlacePieceOnBoard(int[,] piece, int[,] board, int col, int row)
+    // Check if horizontal I piece fills multiple gaps
+    private bool FillsMultipleGaps()
     {
-        int pieceHeight = piece.GetLength(0);
-        int pieceWidth = piece.GetLength(1);
+        if (!IsHorizontalPiece() || board.activePiece.data.tetromino != Tetromino.I)
+            return false;
 
-        for (int r = 0; r < pieceHeight; r++)
+        int gapsFilled = 0;
+        Vector3Int pos = board.activePiece.position;
+
+        // Check for cells beneath each cell of the piece
+        foreach (Vector3Int cell in board.activePiece.cells)
         {
-            for (int c = 0; c < pieceWidth; c++)
+            Vector3Int posBelow = new Vector3Int(cell.x + pos.x, cell.y + pos.y - 1, 0);
+            if (!board.tilemap.HasTile(posBelow) && posBelow.y >= board.Bounds.yMin)
             {
-                if (piece[r, c] == 1)
-                {
-                    board[row + r, col + c] = 1;
-                }
-            }
-        }
-    }
-
-    // Clear lines and return count
-    private int ClearLinesAndCount(int[,] board)
-    {
-        int linesCleared = 0;
-        int height = board.GetLength(0);
-        int width = board.GetLength(1);
-
-        for (int row = height - 1; row >= 0; row--)
-        {
-            bool fullLine = true;
-            for (int col = 0; col < width; col++)
-            {
-                if (board[row, col] == 0)
-                {
-                    fullLine = false;
-                    break;
-                }
-            }
-
-            if (fullLine)
-            {
-                linesCleared++;
-                // Shift rows down
-                for (int moveRow = row; moveRow > 0; moveRow--)
-                {
-                    for (int col = 0; col < width; col++)
-                    {
-                        board[moveRow, col] = board[moveRow - 1, col];
-                    }
-                }
-                // Clear top row
-                for (int col = 0; col < width; col++)
-                {
-                    board[0, col] = 0;
-                }
-                row++; // Check same row again after shift
+                gapsFilled++;
             }
         }
 
-        return linesCleared;
+        return gapsFilled >= 2; // Fills at least 2 gaps
     }
 
-    // Calculate aggregate height (sum of all column heights)
-    private int CalculateAggregateHeight(int[,] board)
+    // Check if T-piece is placed in potential T-spin position
+    private bool IsPotentialTSpin()
     {
-        int height = board.GetLength(0);
-        int width = board.GetLength(1);
-        int totalHeight = 0;
+        if (board.activePiece.data.tetromino != Tetromino.T)
+            return false;
 
-        for (int col = 0; col < width; col++)
+        Vector3Int pos = board.activePiece.position;
+        int cornersCount = 0;
+
+        // Check corners around T-piece (3 corners filled = potential T-spin)
+        Vector3Int[] corners = new Vector3Int[]
         {
-            for (int row = 0; row < height; row++)
+        new Vector3Int(-1, -1, 0), // bottom left
+        new Vector3Int(1, -1, 0),  // bottom right
+        new Vector3Int(-1, 1, 0),  // top left
+        new Vector3Int(1, 1, 0)    // top right
+        };
+
+        foreach (Vector3Int corner in corners)
+        {
+            Vector3Int checkPos = pos + corner;
+            if (!board.Bounds.Contains((Vector2Int)checkPos) || board.tilemap.HasTile(checkPos))
             {
-                if (board[row, col] == 1)
-                {
-                    totalHeight += (height - row);
-                    break;
-                }
+                cornersCount++;
             }
         }
 
-        return totalHeight;
+        return cornersCount >= 3;
     }
 
-    // Calculate maximum height
-    private int CalculateMaxHeight(int[,] board)
+    // Evaluate how accessible the board is for future pieces
+    private float EvaluateAccessibility()
     {
-        int height = board.GetLength(0);
-        int width = board.GetLength(1);
-        int maxHeight = 0;
+        int[] colHeights = GetColumnHeights();
+        float accessibility = 0f;
 
-        for (int col = 0; col < width; col++)
+        // Reward having space at the top for new pieces
+        for (int i = 0; i < colHeights.Length; i++)
         {
-            for (int row = 0; row < height; row++)
-            {
-                if (board[row, col] == 1)
-                {
-                    maxHeight = Mathf.Max(maxHeight, height - row);
-                    break;
-                }
-            }
+            // Give more value to center columns being lower
+            float centerFactor = 1.0f - (Mathf.Abs(i - (colHeights.Length / 2)) / (float)colHeights.Length);
+            float heightValue = Mathf.Max(0, 20 - colHeights[i]) / 20f; // 0-1 scale
+            accessibility += heightValue * (1 + centerFactor);
         }
 
-        return maxHeight;
+        return accessibility / colHeights.Length;
     }
-
-    // Calculate number of holes
-    private int CalculateHoles(int[,] board)
+    // Check if a move is safe
+    // Called by Board.cs when game over occurs
+    public void OnGameOver()
     {
-        int height = board.GetLength(0);
-        int width = board.GetLength(1);
-        int holes = 0;
-
-        for (int col = 0; col < width; col++)
-        {
-            bool blockFound = false;
-            for (int row = 0; row < height; row++)
-            {
-                if (board[row, col] == 1)
-                {
-                    blockFound = true;
-                }
-                else if (blockFound)
-                {
-                    holes++;
-                }
-            }
-        }
-
-        return holes;
+        AddReward(-10.0f); // Big penalty for losing
+        EndEpisode();
+        Debug.Log("Game over - episode ended");
     }
 
-    // Calculate bumpiness (sum of height differences between adjacent columns)
-    private int CalculateBumpiness(int[,] board)
-    {
-        int height = board.GetLength(0);
-        int width = board.GetLength(1);
-        int[] columnHeights = new int[width];
+    // IPlayerInputController implementation
+    public bool GetLeft() => moveLeft;
+    public bool GetRight() => moveRight;
+    public bool GetRotateLeft() => rotateLeft;
+    public bool GetRotateRight() => rotateRight;
+    public bool GetDown() => moveDown;
+    public bool GetHardDrop() => hardDrop;
 
-        // Get height of each column
-        for (int col = 0; col < width; col++)
-        {
-            for (int row = 0; row < height; row++)
-            {
-                if (board[row, col] == 1)
-                {
-                    columnHeights[col] = height - row;
-                    break;
-                }
-            }
-        }
-
-        // Calculate bumpiness
-        int bumpiness = 0;
-        for (int col = 0; col < width - 1; col++)
-        {
-            bumpiness += Mathf.Abs(columnHeights[col] - columnHeights[col + 1]);
-        }
-
-        return bumpiness;
-    }
-
-    // Calculate well depth (depth of single-width wells)
-    private int CalculateWellDepth(int[,] board)
-    {
-        int height = board.GetLength(0);
-        int width = board.GetLength(1);
-        int totalWellDepth = 0;
-
-        for (int col = 0; col < width; col++)
-        {
-            bool leftWall = (col == 0) || HasBlockInColumn(board, col - 1);
-            bool rightWall = (col == width - 1) || HasBlockInColumn(board, col + 1);
-
-            if (leftWall && rightWall)
-            {
-                // This is a potential well, calculate its depth
-                int wellDepth = 0;
-                for (int row = height - 1; row >= 0; row--)
-                {
-                    if (board[row, col] == 0)
-                    {
-                        wellDepth++;
-                    }
-                    else
-                    {
-                        break;
-                    }
-                }
-                totalWellDepth += wellDepth;
-            }
-        }
-
-        return totalWellDepth;
-    }
-
-    // Helper function to check if column has any blocks
-    private bool HasBlockInColumn(int[,] board, int col)
-    {
-        int height = board.GetLength(0);
-        for (int row = 0; row < height; row++)
-        {
-            if (board[row, col] == 1) return true;
-        }
-        return false;
-    }
-
-    // Copy board for simulation
-    private int[,] CopyBoard(int[,] original)
-    {
-        int height = original.GetLength(0);
-        int width = original.GetLength(1);
-        int[,] copy = new int[height, width];
-
-        for (int r = 0; r < height; r++)
-        {
-            for (int c = 0; c < width; c++)
-            {
-                copy[r, c] = original[r, c];
-            }
-        }
-
-        return copy;
-    }
-
-
-    public void SetCurrentPiece(Piece piece)
-    {
-        if (piece == null) return;
-
-        currentPiece = piece;
-        int pieceId = GeneratePieceId(piece);
-
-        // Clean up any null references in processed pieces
-        processedPieceIds.RemoveWhere(id => id < 0);
-
-        // Only request decision for genuinely new pieces
-        if (!processedPieceIds.Contains(pieceId) && !waitingForDecision && !executingPlacement)
-        {
-            waitingForDecision = true;
-            Debug.Log($"New piece detected - ID: {pieceId}, Type: {piece.data.tetromino}");
-            RequestDecision();
-        }
-
-    }
-
-
+    // For testing in editor
     public override void Heuristic(in ActionBuffers actionsOut)
     {
         var discreteActionsOut = actionsOut.DiscreteActions;
-
-        // Generate all possible placements for current piece
-        if (currentPiece == null || board == null)
-        {
-            discreteActionsOut[0] = 0;
-            return;
-        }
-
-        int[,] currentBoard = GetBoardState();
-        List<PlacementInfo> allPlacements = GenerateAllPossiblePlacements(currentPiece, currentBoard);
-
-        if (allPlacements.Count == 0)
-        {
-            discreteActionsOut[0] = 0;
-            return;
-        }
-
-        int selectedPlacement = 7; // Default to first placement
-
-
-        // Allow player to cycle through placements with number keys
-        if (Input.GetKey(KeyCode.Alpha1) && allPlacements.Count > 0) selectedPlacement = 0;
-        else if (Input.GetKey(KeyCode.Alpha2) && allPlacements.Count > 1) selectedPlacement = 1;
-        else if (Input.GetKey(KeyCode.Alpha3) && allPlacements.Count > 2) selectedPlacement = 2;
-        else if (Input.GetKey(KeyCode.Alpha4) && allPlacements.Count > 3) selectedPlacement = 3;
-        else if (Input.GetKey(KeyCode.Alpha5) && allPlacements.Count > 4) selectedPlacement = 4;
-        else if (Input.GetKey(KeyCode.Alpha6) && allPlacements.Count > 5) selectedPlacement = 5;
-        else if (Input.GetKey(KeyCode.Alpha7) && allPlacements.Count > 6) selectedPlacement = 6;
-        else if (Input.GetKey(KeyCode.Alpha8) && allPlacements.Count > 7) selectedPlacement = 7;
-        else if (Input.GetKey(KeyCode.Alpha9) && allPlacements.Count > 8) selectedPlacement = 8;
-        else if (Input.GetKey(KeyCode.Alpha0) && allPlacements.Count > 9) selectedPlacement = 9;
-
-        // Use arrow keys to adjust selection
-        if (Input.GetKey(KeyCode.LeftArrow))
-            selectedPlacement = Mathf.Max(0, selectedPlacement - 1);
-        else if (Input.GetKey(KeyCode.RightArrow))
-            selectedPlacement = Mathf.Min(allPlacements.Count - 1, selectedPlacement + 1);
-
-        // Ensure selection is within bounds
-        selectedPlacement = Mathf.Clamp(selectedPlacement, 0, allPlacements.Count - 1);
-        discreteActionsOut[0] = selectedPlacement;
-
+        if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow))
+            discreteActionsOut[0] = 1; // Move left
+        else if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow))
+            discreteActionsOut[0] = 2; // Move right
+        else if (Input.GetKey(KeyCode.Q))
+            discreteActionsOut[0] = 3; // Rotate left
+        else if (Input.GetKey(KeyCode.E) || Input.GetKey(KeyCode.UpArrow))
+            discreteActionsOut[0] = 4; // Rotate right
+        else if (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow))
+            discreteActionsOut[0] = 5; // Move down
+        else if (Input.GetKey(KeyCode.Space))
+            discreteActionsOut[0] = 6; // Hard drop
+        else
+            discreteActionsOut[0] = 0; // Do nothing
     }
 }

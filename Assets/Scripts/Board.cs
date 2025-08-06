@@ -41,18 +41,7 @@ public class Board : MonoBehaviour
         {
             int currentHeight = 20; // Default height
 
-            // Check for both types of ML agents
-            TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
-            SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
 
-            if (mlAgent != null)
-            {
-                currentHeight = (int)mlAgent.curriculumBoardHeight;
-            }
-            else if (socketAgent != null)
-            {
-                currentHeight = (int)socketAgent.curriculumBoardHeight;
-            }
 
             // Adjust spawn position to be at the top of the current board height
             return new Vector3Int(baseSpawnPosition.x, currentHeight / 2 - 2, baseSpawnPosition.z);
@@ -204,24 +193,8 @@ public class Board : MonoBehaviour
     {
         int allowedTypes = 7; // Default to all pieces
 
-        //Check for both types of ML agents
-        TetrisMLAgent mlAgent = this.inputController as TetrisMLAgent;
-        SocketTetrisAgent socketAgent = this.inputController as SocketTetrisAgent;
-        TetrisSentisAgent sentisAgent = this.inputController as TetrisSentisAgent;
 
-        if (mlAgent != null)
-        {
-            allowedTypes = mlAgent.allowedTetrominoTypes;
-        }
-        else if (socketAgent != null)
-        {
-            allowedTypes = socketAgent.allowedTetrominoTypes;
-        }
-        else if (sentisAgent != null)
-        {
-            allowedTypes = sentisAgent.allowedTetrominoTypes;
 
-        }
 
         // Limit piece selection based on curriculum
         int maxIndex = Mathf.Min(allowedTypes, this.tetrominoes.Length);
@@ -736,5 +709,97 @@ public class Board : MonoBehaviour
 
     }
 
+    public int CountHoles()
+    {
+        int holes = 0;
+        for (int x = Bounds.xMin; x < Bounds.xMax; x++)
+        {
+            bool blockFound = false;
+            for (int y = Bounds.yMax - 1; y >= Bounds.yMin; y--)
+            {
+                if (tilemap.HasTile(new Vector3Int(x, y, 0)))
+                {
+                    blockFound = true;
+                }
+                else if (blockFound)
+                {
+                    // Empty cell below a block is a hole
+                    holes++;
+                }
+            }
+        }
+        return holes;
+    }
+
+    public float CalculateStackHeight()
+    {
+        int maxHeight = 0;
+        for (int x = Bounds.xMin; x < Bounds.xMax; x++)
+        {
+            for (int y = Bounds.yMax - 1; y >= Bounds.yMin; y--)
+            {
+                if (tilemap.HasTile(new Vector3Int(x, y, 0))) // Found a filled cell
+                {
+                    maxHeight = Mathf.Max(maxHeight, Bounds.yMax - y);
+                    break;
+                }
+            }
+        }
+        return maxHeight;
+    }
+
+    public bool LastRotationWasUseless(Piece piece, Vector3Int originalPosition, Vector3Int[] originalCells)
+    {
+        Vector3Int[] rotatedCells = piece.cells;
+        for (int i = 0; i < originalCells.Length; i++)
+        {
+            if (originalCells[i] + originalPosition != rotatedCells[i] + piece.position)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public bool IsPerfectClear()
+    {
+        RectInt bounds = this.Bounds;
+
+        for (int x = bounds.xMin; x < bounds.xMax; x++)
+        {
+            for (int y = bounds.yMin; y < bounds.yMax; y++)
+            {
+                if (tilemap.HasTile(new Vector3Int(x, y, 0)))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    public List<Vector2Int> GetHolePositions()
+    {
+        List<Vector2Int> holes = new List<Vector2Int>();
+        RectInt bounds = this.Bounds;
+
+        for (int x = bounds.xMin; x < bounds.xMax; x++)
+        {
+            bool blockAbove = false;
+            for (int y = bounds.yMax - 1; y >= bounds.yMin; y--)
+            {
+                if (tilemap.HasTile(new Vector3Int(x, y, 0)))
+                {
+                    blockAbove = true;
+                }
+                else if (blockAbove)
+                {
+                    holes.Add(new Vector2Int(x, y));
+                }
+            }
+        }
+        return holes;
+    }
 
 }
